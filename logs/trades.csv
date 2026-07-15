@@ -1,0 +1,2 @@
+Entry Time,Exit Time,Symbol,Side,Quantity,Entry Price,Exit Price,Stop Loss,Target,Exit Reason,Risk,Reward,Risk Reward,PnL,PnL %,Result
+2026-07-15 12:24:42.789661,2026-07-15 12:24:42.789680,TCS,BUY,10,100,110,95,110,TARGET,50,100,2.0,100,10.0,WIN

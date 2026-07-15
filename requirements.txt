@@ -1,0 +1,5 @@
+dhanhq
+python-dotenv
+pandas
+requests
+colorama

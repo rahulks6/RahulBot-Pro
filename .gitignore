@@ -1,0 +1,45 @@
+# ============================================================
+# RahulBot Pro
+# ============================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# Environment Variables
+.env
+
+# VS Code
+.vscode/
+
+# Pytest
+.pytest_cache/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug Files
+debug_*.py
+
+# Coverage
+.coverage
+htmlcov/
+
+# Temporary
+*.tmp
+*.bak
