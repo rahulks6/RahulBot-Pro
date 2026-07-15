@@ -7,7 +7,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual Environments
+# Virtual Environment
 venv/
 .venv/
 env/
@@ -26,15 +26,10 @@ build/
 dist/
 *.egg-info/
 
-# Logs
+# Runtime Logs
+logs/
 *.log
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Debug Files
-debug_*.py
+trades.csv
 
 # Coverage
 .coverage
@@ -43,3 +38,10 @@ htmlcov/
 # Temporary
 *.tmp
 *.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug Files
+debug_*.py
