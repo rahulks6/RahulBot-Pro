@@ -6,6 +6,7 @@ import { registerAuthRoutes } from "./modules/auth/auth.routes";
 import { registerUserRoutes } from "./modules/users/users.routes";
 import { registerSocialRoutes } from "./modules/social/social.routes";
 import { registerSearchRoutes } from "./modules/search/search.routes";
+import { registerMediaRoutes } from "./modules/media/media.routes";
 
 export function buildApp(): Server {
   const router = new Router();
@@ -18,6 +19,7 @@ export function buildApp(): Server {
   registerUserRoutes(router);
   registerSocialRoutes(router);
   registerSearchRoutes(router);
+  registerMediaRoutes(router);
 
   return createServer(router);
 }

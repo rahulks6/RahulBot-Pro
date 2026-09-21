@@ -70,9 +70,8 @@ export function createServer(router: Router): http.Server {
           return;
         }
 
-        const body = ["POST", "PUT", "PATCH"].includes((req.method ?? "").toUpperCase())
-          ? await readBody(req)
-          : undefined;
+        const isBodyMethod = ["POST", "PUT", "PATCH"].includes((req.method ?? "").toUpperCase());
+        const body = isBodyMethod && !match.options.rawBody ? await readBody(req) : undefined;
 
         const katkeeReq = req as KatkeeRequest;
         katkeeReq.params = match.params;

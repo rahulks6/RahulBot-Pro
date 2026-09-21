@@ -4,7 +4,7 @@ import type { MainTabParamList } from "./types";
 import { BottomTabBar } from "./BottomTabBar";
 import { HomeScreen } from "../screens/home/HomeScreen";
 import { SearchStack } from "./SearchStack";
-import { CreateScreen } from "../screens/create/CreateScreen";
+import { CreateStack } from "./CreateStack";
 import { ActivityScreen } from "../screens/activity/ActivityScreen";
 import { DMInboxScreen } from "../screens/dm/DMInboxScreen";
 import { ProfileScreen } from "../screens/profile/ProfileScreen";
@@ -20,7 +20,7 @@ export function MainTabs(): React.JSX.Element {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Search" component={SearchStack} />
-      <Tab.Screen name="Create" component={CreateScreen} />
+      <Tab.Screen name="Create" component={CreateStack} />
       <Tab.Screen name="Activity" component={ActivityScreen} />
       <Tab.Screen name="DM" component={DMInboxScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />

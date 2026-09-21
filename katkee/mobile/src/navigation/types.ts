@@ -16,3 +16,14 @@ export type SearchStackParamList = {
   SearchHome: undefined;
   UserProfile: { username: string };
 };
+
+export type CreateStackParamList = {
+  Camera: undefined;
+  StoryEditor: {
+    mediaUri: string;
+    kind: "photo" | "video";
+    mimeType: string;
+    width: number | null;
+    height: number | null;
+  };
+};

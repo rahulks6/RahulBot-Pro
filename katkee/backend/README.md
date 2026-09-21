@@ -1,9 +1,10 @@
-# KATKEE backend — Phase 1 + Phase 2
+# KATKEE backend — Phase 1 + Phase 2 + Phase 3
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
-and people search — all backed by a real database and a test suite that
-exercises it end to end. No mocked data anywhere in this service.
+people search, and now real media upload/storage/retrieval — all backed by
+a real database and a test suite that exercises it end to end. No mocked
+data anywhere in this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -21,6 +22,15 @@ under `src/` therefore uses only Node.js built-ins:
   with `node:crypto` instead of the `jsonwebtoken` package.
 - Validation (`dto.ts`) and the HTTP router/server are hand-written instead
   of using `zod`/`express`/`NestJS`.
+- `src/modules/media/validation.ts` sniffs real magic bytes and parses real
+  PNG/JPEG chunk structure by hand (no `file-type`/`sharp`) — even
+  `apt-get install ffmpeg` was refused by this session's network policy
+  (403 on every package, not just npm/pip), so there's no way to transcode
+  video, generate thumbnails, or read a video's real duration/dimensions
+  yet; `media.service.ts` documents exactly where that plugs in later.
+- `src/modules/media/storage.ts` stores uploaded files on local disk
+  behind a `MediaStorage` interface instead of an S3 SDK — no cloud
+  credentials are available here either.
 
 Every one of these is swappable behind its existing function signatures —
 once npm access is available, replace `psql.ts` with the `pg` driver first
@@ -73,6 +83,20 @@ they shipped:
   corrective migration (`0003`) rebuilding it as an expression index on
   `username::text`.
 
+Phase 3 media upload/retrieval was verified the same way: hand-built (but
+spec-valid) PNG/JPEG/MP4 fixtures uploaded via real `curl` requests,
+including a genuine 30 MiB oversized upload to confirm the 413 path and
+that its temp file actually gets cleaned up — plus a byte-for-byte
+round-trip of a downloaded file against the original, and confirming a
+second account gets 404 on someone else's media. 10 more automated tests
+cover the same ground.
+
+Media uploads accept a **raw binary body**, not `multipart/form-data` — no
+multipart parser (`busboy`/`formidable`) is available either, and the
+upload streams straight to a temp file on disk (hashing and enforcing the
+size limit as it goes) rather than buffering the whole thing in memory, so
+even large video uploads don't blow up process RAM.
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -98,6 +122,10 @@ they shipped:
 | POST\/DELETE | `/api/v1/users/:username/mute` | Bearer | Persisted, independent of the follow graph |
 | GET | `/api/v1/mutes` | Bearer | Your muted-users list, paginated |
 | GET | `/api/v1/search/users?q=` | Bearer | Substring match on username/display name; excludes yourself and any blocked relationship |
+| POST | `/api/v1/media/photos` | Bearer | Raw binary body (`Content-Type: image/png` or `image/jpeg`) → `{media}`; validates real magic bytes + dimensions, 25 MiB max |
+| POST | `/api/v1/media/videos` | Bearer | Raw binary body (`Content-Type: video/mp4` or `video/quicktime`) → `{media}`; validates the ISO-BMFF container, 200 MiB max |
+| GET | `/api/v1/media/:id` | Bearer, owner-only | Metadata only |
+| GET | `/api/v1/media/:id/file` | Bearer, owner-only | Streams the original bytes back, byte-for-byte |
 
 Errors are JSON: `{"error": "validation_error", "fields": {...}}` (422),
 `{"error": "auth_error", "message": "..."}` (401/409), or
@@ -113,13 +141,16 @@ actually matter.
 `0001_init.sql`: `users`, `refresh_tokens`, `follows`, `follow_requests`,
 `blocks`, `mutes` — the identity and social-graph foundation. `0002` +
 `0003`: trigram search indexes (see the bugfix note above for why `0003`
-exists). Media, Stories, Highlights, conversations, and notifications are
-deliberately left to their own phases (see the KATKEE build-plan doc) so
-these migrations stay reviewable.
+exists). `0004`: `media` — metadata for uploaded photos/videos; the binary
+itself lives on disk, never in a row (spec section 44/52). Stories,
+Highlights, conversations, and notifications are deliberately left to their
+own phases so these migrations stay reviewable.
 
-## What's NOT in Phase 1/2
+## What's NOT in Phase 1/2/3
 
-Camera, Story publishing/lifecycle, the Home feed, DMs, Highlights,
-recommendations, and moderation are later phases per the build plan — this
-is intentionally just foundation + auth + social graph, done for real
-rather than a wide shallow pass across everything.
+Story publishing/lifecycle (attaching uploaded media to an actual Story,
+audience/privacy rules, 24h expiration), the Home feed, DMs, Highlights,
+recommendations, video transcoding/thumbnails, and moderation are later
+phases per the build plan — this is intentionally just foundation + auth +
+social graph + raw media upload, done for real rather than a wide shallow
+pass across everything.

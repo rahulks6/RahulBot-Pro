@@ -8,10 +8,20 @@ export interface KatkeeRequest extends IncomingMessage {
 
 export type Handler = (req: KatkeeRequest, res: ServerResponse) => Promise<void> | void;
 
+export interface RouteOptions {
+  /**
+   * Skip the server's JSON body parsing for this route and leave the
+   * request stream untouched — for binary uploads (media), which the
+   * handler itself pipes to disk instead of buffering as JSON in memory.
+   */
+  rawBody?: boolean;
+}
+
 interface Route {
   method: string;
   segments: string[];
   handler: Handler;
+  options: RouteOptions;
 }
 
 function splitPath(path: string): string[] {
@@ -21,24 +31,24 @@ function splitPath(path: string): string[] {
 export class Router {
   private routes: Route[] = [];
 
-  add(method: string, path: string, handler: Handler): void {
-    this.routes.push({ method: method.toUpperCase(), segments: splitPath(path), handler });
+  add(method: string, path: string, handler: Handler, options: RouteOptions = {}): void {
+    this.routes.push({ method: method.toUpperCase(), segments: splitPath(path), handler, options });
   }
 
-  get(path: string, handler: Handler): void {
-    this.add("GET", path, handler);
+  get(path: string, handler: Handler, options?: RouteOptions): void {
+    this.add("GET", path, handler, options);
   }
-  post(path: string, handler: Handler): void {
-    this.add("POST", path, handler);
+  post(path: string, handler: Handler, options?: RouteOptions): void {
+    this.add("POST", path, handler, options);
   }
-  delete(path: string, handler: Handler): void {
-    this.add("DELETE", path, handler);
+  delete(path: string, handler: Handler, options?: RouteOptions): void {
+    this.add("DELETE", path, handler, options);
   }
-  patch(path: string, handler: Handler): void {
-    this.add("PATCH", path, handler);
+  patch(path: string, handler: Handler, options?: RouteOptions): void {
+    this.add("PATCH", path, handler, options);
   }
 
-  match(method: string, path: string): { handler: Handler; params: Record<string, string> } | null {
+  match(method: string, path: string): { handler: Handler; params: Record<string, string>; options: RouteOptions } | null {
     const requestSegments = splitPath(path.split("?")[0] ?? "");
     for (const route of this.routes) {
       if (route.method !== method.toUpperCase()) continue;
@@ -56,7 +66,7 @@ export class Router {
           break;
         }
       }
-      if (matched) return { handler: route.handler, params };
+      if (matched) return { handler: route.handler, params, options: route.options };
     }
     return null;
   }

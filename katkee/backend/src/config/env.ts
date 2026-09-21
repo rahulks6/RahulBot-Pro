@@ -51,6 +51,11 @@ export const config = {
     user: process.env.PGUSER ?? "katkee",
     password: process.env.PGPASSWORD ?? "",
   },
+  media: {
+    // Resolved from cwd (this package's root), matching loadDotEnvIfPresent's
+    // reasoning above — __dirname would point into dist/ once compiled.
+    storageRoot: process.env.MEDIA_STORAGE_ROOT || path.resolve(process.cwd(), "data", "media"),
+  },
   jwt: {
     accessSecret: required("JWT_ACCESS_SECRET"),
     refreshSecret: required("JWT_REFRESH_SECRET"),
