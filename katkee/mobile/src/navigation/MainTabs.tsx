@@ -1,0 +1,29 @@
+import React from "react";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import type { MainTabParamList } from "./types";
+import { BottomTabBar } from "./BottomTabBar";
+import { HomeScreen } from "../screens/home/HomeScreen";
+import { SearchScreen } from "../screens/search/SearchScreen";
+import { CreateScreen } from "../screens/create/CreateScreen";
+import { ActivityScreen } from "../screens/activity/ActivityScreen";
+import { DMInboxScreen } from "../screens/dm/DMInboxScreen";
+import { ProfileScreen } from "../screens/profile/ProfileScreen";
+
+const Tab = createBottomTabNavigator<MainTabParamList>();
+
+/** HOME | SEARCH | + | ACTIVITY | DM | PROFILE — exactly 6 items, no Discover tab. */
+export function MainTabs(): React.JSX.Element {
+  return (
+    <Tab.Navigator
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <BottomTabBar {...props} />}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Search" component={SearchScreen} />
+      <Tab.Screen name="Create" component={CreateScreen} />
+      <Tab.Screen name="Activity" component={ActivityScreen} />
+      <Tab.Screen name="DM" component={DMInboxScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
