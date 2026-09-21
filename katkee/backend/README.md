@@ -1,8 +1,9 @@
-# KATKEE backend — Phase 1
+# KATKEE backend — Phase 1 + Phase 2
 
-Real, running foundation: Postgres schema, signup/login/refresh/logout/me, and
-a test suite that exercises it end to end against a real database. No mocked
-data anywhere in this service.
+Real, running foundation: Postgres schema, authentication, profiles, the
+follow system (including private-account follow requests), blocking, muting,
+and people search — all backed by a real database and a test suite that
+exercises it end to end. No mocked data anywhere in this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -55,10 +56,22 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 | `npm test` | Compiles, then runs `test/*.test.ts` against `PGDATABASE=katkee_test` with Node's built-in test runner — no test framework dependency needed |
 
 All of the above were actually run against a live local Postgres instance
-while building this: migrations applied and inspected with `\d`, the server
-started and exercised with real `curl` requests (signup → login → refresh
-rotation → reuse rejection → logout → refresh-after-logout, each asserted
-by status code), and the 12-case test suite passing for real.
+while building this: migrations applied and inspected with `\d`/`EXPLAIN`,
+the server started and exercised with real `curl` requests across auth,
+profiles, follow/block/mute, and search (each asserted by status code), and
+the 24-case test suite passing for real — which caught two real bugs before
+they shipped:
+
+- Refresh-token rotation was writing a shared literal placeholder
+  (`"pending"`) into a `UNIQUE` column before finalizing it, which
+  collided under concurrent signups (`refresh_tokens_token_hash_unique`
+  violation) — fixed by making the placeholder unique per call.
+- The `users_username_trgm_idx` from the first search migration was
+  silently unusable: `pg_trgm`'s `gin_trgm_ops` is only registered for
+  `text`, not `citext` (confirmed via `pg_opclass`), so `EXPLAIN` kept
+  choosing a sequential scan even with `enable_seqscan=off`. Fixed with a
+  corrective migration (`0003`) rebuilding it as an expression index on
+  `username::text`.
 
 ## API (v1)
 
@@ -70,22 +83,43 @@ by status code), and the 12-case test suite passing for real.
 | POST | `/api/v1/auth/refresh` | – | `{refreshToken}` → `{tokens}`; single-use, rotates on every call |
 | POST | `/api/v1/auth/logout` | – | `{refreshToken}` → 204; idempotent |
 | GET | `/api/v1/auth/me` | Bearer access token | → `{user}` |
+| GET | `/api/v1/users/:username` | Bearer | Public profile + viewer relationship flags; 404 if either side blocked the other |
+| PATCH | `/api/v1/users/me` | Bearer | `{displayName?, bio?, isPrivate?}` → `{user}`; untouched fields are preserved |
+| GET | `/api/v1/users/:username/followers` | Bearer | Paginated (`?limit&offset`); 403 if the account is private and you don't follow it |
+| GET | `/api/v1/users/:username/following` | Bearer | Same gating as followers |
+| POST | `/api/v1/users/:username/follow` | Bearer | → `{status: "following"}` immediately, or `{status: "requested"}` for a private account |
+| DELETE | `/api/v1/users/:username/follow` | Bearer | Unfollows, or cancels your own pending request; idempotent |
+| GET | `/api/v1/follow-requests` | Bearer | Paginated incoming pending requests |
+| POST | `/api/v1/follow-requests/:id/accept` | Bearer | Must own the request; 409 if already resolved |
+| POST | `/api/v1/follow-requests/:id/decline` | Bearer | Same ownership/409 rule |
+| POST | `/api/v1/users/:username/block` | Bearer | Also severs any existing follow/pending-request both directions |
+| DELETE | `/api/v1/users/:username/block` | Bearer | Unblocks; does **not** restore a severed follow |
+| GET | `/api/v1/blocks` | Bearer | Your blocked-users list, paginated |
+| POST\/DELETE | `/api/v1/users/:username/mute` | Bearer | Persisted, independent of the follow graph |
+| GET | `/api/v1/mutes` | Bearer | Your muted-users list, paginated |
+| GET | `/api/v1/search/users?q=` | Bearer | Substring match on username/display name; excludes yourself and any blocked relationship |
 
 Errors are JSON: `{"error": "validation_error", "fields": {...}}` (422),
 `{"error": "auth_error", "message": "..."}` (401/409), or
 `{"error": "not_found" | "http_error" | "internal_error", "message": "..."}`.
 
-## Schema (migrations/0001_init.sql)
+Pagination is `?limit` (default 20, max 50) + `?offset` — plain OFFSET-based,
+which is simple and correct at Phase 2's data volumes; worth revisiting as
+keyset pagination once real usage numbers make OFFSET's cost on deep pages
+actually matter.
 
-`users`, `refresh_tokens`, `follows`, `follow_requests`, `blocks`, `mutes` —
-the identity and social-graph foundation the rest of the spec's phases build
-on. Media, Stories, Highlights, conversations, and notifications are
+## Schema (migrations/)
+
+`0001_init.sql`: `users`, `refresh_tokens`, `follows`, `follow_requests`,
+`blocks`, `mutes` — the identity and social-graph foundation. `0002` +
+`0003`: trigram search indexes (see the bugfix note above for why `0003`
+exists). Media, Stories, Highlights, conversations, and notifications are
 deliberately left to their own phases (see the KATKEE build-plan doc) so
-this migration stays reviewable.
+these migrations stay reviewable.
 
-## What's NOT in Phase 1
+## What's NOT in Phase 1/2
 
 Camera, Story publishing/lifecycle, the Home feed, DMs, Highlights,
 recommendations, and moderation are later phases per the build plan — this
-is intentionally just foundation + auth, done for real rather than a wide
-shallow pass across everything.
+is intentionally just foundation + auth + social graph, done for real
+rather than a wide shallow pass across everything.

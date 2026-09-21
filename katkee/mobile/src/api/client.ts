@@ -71,3 +71,18 @@ export function apiPost<T>(path: string, body?: unknown, accessToken?: string): 
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
+
+export function apiPatch<T>(path: string, body?: unknown, accessToken?: string): Promise<T> {
+  return request<T>(path, {
+    method: "PATCH",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+export function apiDelete<T>(path: string, accessToken?: string): Promise<T> {
+  return request<T>(path, {
+    method: "DELETE",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+}

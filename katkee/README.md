@@ -7,12 +7,12 @@ code elsewhere in this repository (`rahulks6/rahulbot-pro`) so the two
 unrelated projects don't collide — see the feasibility doc from earlier in
 this build for why they ended up in the same repo and what to do about it.
 
-## Status: Phase 1 (foundation, database, authentication)
+## Status: Phase 1 + Phase 2 (foundation, auth, profiles, follow system, privacy)
 
 | Package | What it is | State |
 | --- | --- | --- |
-| `backend/` | Node/TypeScript API, real Postgres schema, real signup/login/refresh/logout/me | Built, migrated, and tested against a live database in this session — 12/12 tests passing |
-| `mobile/` | React Native/TypeScript design system, navigation shell, auth screens | Real hand-written source, wired to the backend's actual API — not built or run here (see `mobile/README.md`) |
+| `backend/` | Node/TypeScript API: auth, profiles, follow system (incl. private-account requests), blocking, muting, search | Built, migrated, and tested against a live database in this session — 24/24 tests passing, 2 real bugs found and fixed along the way (see `backend/README.md`) |
+| `mobile/` | React Native/TypeScript design system, navigation shell, auth + search + profile/follow screens | Real hand-written source, wired to the backend's actual API — not built or run here (see `mobile/README.md`) |
 
 See each package's own README for setup, what's real vs. deferred, and the
 sandbox network limitation that shaped some backend implementation choices

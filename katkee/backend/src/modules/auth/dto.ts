@@ -3,15 +3,14 @@
  * networkSandboxLimitation). Each validator returns a typed, narrowed value
  * or throws ValidationError with a field-level message.
  */
+import { EMAIL_RE, USERNAME_RE } from "../../shared/validation";
+
 export class ValidationError extends Error {
   constructor(public readonly fieldErrors: Record<string, string>) {
     super("Validation failed");
     this.name = "ValidationError";
   }
 }
-
-const USERNAME_RE = /^[a-z0-9_.]{3,30}$/;
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export interface SignupInput {
   username: string;

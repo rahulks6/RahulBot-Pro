@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { nullable, query, queryOne } from "../../db/psql";
 
 function hashToken(token: string): string {
@@ -19,14 +19,16 @@ export async function insertRefreshToken(input: {
 }): Promise<string> {
   // Two-step insert (get an id, then a placeholder hash) so the caller can
   // mint the JWT's `jti` from the row id before the real token exists. The
-  // hash is written in the same call once the token bytes are known.
+  // placeholder must be unique per call — a literal like "pending" collides
+  // under concurrent signups/logins, since token_hash is UNIQUE and many
+  // rows would briefly share it before finalizeRefreshToken() overwrites it.
   const row = await queryOne(
     `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent)
      VALUES (:'user_id', :'placeholder', :'expires_at', ${nullable("user_agent")})
      RETURNING id`,
     {
       user_id: input.userId,
-      placeholder: "pending",
+      placeholder: `pending:${randomUUID()}`,
       expires_at: input.expiresAt.toISOString(),
       user_agent: input.userAgent,
     },

@@ -34,6 +34,9 @@ export class Router {
   delete(path: string, handler: Handler): void {
     this.add("DELETE", path, handler);
   }
+  patch(path: string, handler: Handler): void {
+    this.add("PATCH", path, handler);
+  }
 
   match(method: string, path: string): { handler: Handler; params: Record<string, string> } | null {
     const requestSegments = splitPath(path.split("?")[0] ?? "");

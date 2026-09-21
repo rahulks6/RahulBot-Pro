@@ -3,6 +3,9 @@ import { Router } from "./http/router";
 import { createServer } from "./http/server";
 import { sendJson } from "./http/respond";
 import { registerAuthRoutes } from "./modules/auth/auth.routes";
+import { registerUserRoutes } from "./modules/users/users.routes";
+import { registerSocialRoutes } from "./modules/social/social.routes";
+import { registerSearchRoutes } from "./modules/search/search.routes";
 
 export function buildApp(): Server {
   const router = new Router();
@@ -12,6 +15,9 @@ export function buildApp(): Server {
   });
 
   registerAuthRoutes(router);
+  registerUserRoutes(router);
+  registerSocialRoutes(router);
+  registerSearchRoutes(router);
 
   return createServer(router);
 }

@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { MainTabParamList } from "./types";
 import { BottomTabBar } from "./BottomTabBar";
 import { HomeScreen } from "../screens/home/HomeScreen";
-import { SearchScreen } from "../screens/search/SearchScreen";
+import { SearchStack } from "./SearchStack";
 import { CreateScreen } from "../screens/create/CreateScreen";
 import { ActivityScreen } from "../screens/activity/ActivityScreen";
 import { DMInboxScreen } from "../screens/dm/DMInboxScreen";
@@ -19,7 +19,7 @@ export function MainTabs(): React.JSX.Element {
       tabBar={(props) => <BottomTabBar {...props} />}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Search" component={SearchScreen} />
+      <Tab.Screen name="Search" component={SearchStack} />
       <Tab.Screen name="Create" component={CreateScreen} />
       <Tab.Screen name="Activity" component={ActivityScreen} />
       <Tab.Screen name="DM" component={DMInboxScreen} />

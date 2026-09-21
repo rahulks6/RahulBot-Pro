@@ -11,3 +11,8 @@ export type MainTabParamList = {
   DM: undefined;
   Profile: undefined;
 };
+
+export type SearchStackParamList = {
+  SearchHome: undefined;
+  UserProfile: { username: string };
+};

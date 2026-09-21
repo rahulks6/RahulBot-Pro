@@ -20,11 +20,16 @@ see the limitation below before trusting it further.
   (kept in lockstep with `backend/src/modules/auth/*` — see the comment at
   the top of `src/api/client.ts`), with token persistence via AsyncStorage
   and automatic refresh-on-expiry.
-- `src/screens/` — Login and Signup are real, functional forms. Home,
-  Search, Activity, DM, Create, and Profile's stats are honest empty
-  states for phases that haven't been built yet (see spec build order) —
-  Profile itself already shows the real authenticated user fetched from
-  `/api/v1/auth/me`.
+- `src/screens/` — Login, Signup, Search, and the tapped-through user
+  profile (follow/unfollow, including the "Requested" state for private
+  accounts) are real, functional, wired to the Phase 2 backend endpoints.
+  Home, Activity, DM, and Create are honest empty states for phases that
+  haven't been built yet (see spec build order) — the Profile tab shows
+  the real authenticated user fetched from `/api/v1/auth/me`.
+- `src/navigation/SearchStack.tsx` — the Search tab is its own stack
+  (`SearchHome` → `UserProfile`) so tapping a result actually opens that
+  person's profile (spec section 30), rather than everything living flush
+  in the tab bar.
 
 ## Known sandbox limitation (read this first)
 
