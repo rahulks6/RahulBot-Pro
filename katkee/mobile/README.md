@@ -1,14 +1,16 @@
-# KATKEE mobile — Phase 1 + Phase 2 + Phase 3 + Phase 4
+# KATKEE mobile — Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5
 
 Real, hand-written TypeScript source for the design system, navigation shell,
-authentication, search/follow, camera capture + the Story editor, and now
-actually publishing and viewing Stories, wired to the actual backend API
-(`../backend`) — not generated boilerplate. It has **not** been built or run
-in this session; see the limitation below before trusting it further, and
-see "Phase 3 specifically" for why that phase carries more risk than 1-2
-(Phase 4 inherits the same camera/gesture risk, plus its own new one:
-Animated-driven progress bars and the tap/hold/swipe viewer gesture — see
-"Phase 4 specifically").
+authentication, search/follow, camera capture + the Story editor, publishing
+and viewing Stories, and now the full gesture set plus likes/comments/
+sharing, wired to the actual backend API (`../backend`) — not generated
+boilerplate. It has **not** been built or run in this session; see the
+limitation below before trusting it further, and see "Phase 3 specifically"
+for why that phase carries more risk than 1-2 (Phase 4 and 5 inherit the
+same camera/gesture risk, plus their own new ones — see "Phase 4
+specifically" and "Phase 5 specifically"). A best-effort `tsc` pass (no
+real library types installed — see below) ran clean against every Phase 5
+file, for what that's worth given its limits.
 
 ## What exists here
 
@@ -55,31 +57,45 @@ Animated-driven progress bars and the tap/hold/swipe viewer gesture — see
   a caption field and a Public/Followers audience picker, then "Share
   Story" uploads the media and calls the real `POST /api/v1/stories`
   from Phase 4's backend work, landing back on Home.
-- `src/screens/story/StoryViewerScreen.tsx` — the full-screen single-creator
-  Story viewer (spec section 4): tap right/left move within that
-  creator's Stories, hold pauses (a real `Animated.timing`-driven
-  progress bar per segment), swipe down closes, and each view is
+- `src/screens/story/StoryViewerScreen.tsx` — the full-screen Story viewer
+  (spec section 4), now with the complete gesture set: tap right/left move
+  within a creator's Stories (crossing to the next creator once you tap
+  past their last Story, per spec), swipe up/down move between creators
+  outright, hold pauses (a real `Animated.timing`-driven progress bar per
+  segment), and double-tap ensures a like — never unlikes, and single-tap
+  navigation is deliberately delayed behind the double-tap window so a
+  double-tap is never misread as two single taps first. Each view is
   recorded through `POST /api/v1/stories/:id/view`. It's reached from
   three real places: the Story ring on your own Profile and on another
   user's profile (both tappable only when they actually have an active
   Story — checked via a real API call, not assumed), and a horizontal
-  tray of followed creators at the top of Home.
+  tray of followed creators at the top of Home, which now opens the
+  viewer with that whole tray as the swipe order (not just one person).
 - `src/screens/home/HomeScreen.tsx` — no longer only an empty state: it
   fetches `GET /api/v1/stories/feed/following` and shows a real tray of
-  people you follow who currently have an active Story. The ranked,
-  swipeable full feed is still Phase 5 (see "Phase 4 specifically").
-- `RootNavigator.tsx` now wraps the tab navigator in a root-level stack
-  so `StoryViewer` is reachable from any tab (Profile, Search, Home)
-  without each tab's own stack needing to know about it.
+  people you follow who currently have an active Story. It's still
+  follow-graph order, not a recommendation-ranked feed — that's Phase 6.
+- `RootNavigator.tsx` wraps the tab navigator in a root-level stack so
+  `StoryViewer` is reachable from any tab (Profile, Search, Home) without
+  each tab's own stack needing to know about it.
+- `src/components/CommentsSheet.tsx` — a bottom-sheet Modal (no
+  bottom-sheet library installed) with real pagination, posting, and
+  delete (your own comment, or any comment if you own the Story — spec
+  section 14's moderation allowance), wired to the Phase 5 backend.
+- `src/components/ShareSheet.tsx` — native OS share via React Native's
+  built-in `Share` API, plus "Copy link" gated to public Stories only (spec
+  section 15: "Sharing must NEVER bypass Story privacy") — see "Phase 5
+  specifically" for what the copied link actually is.
+- `src/components/StoryMoreMenu.tsx` — View Insights (real view count) and
+  Delete for your own Story; Mute/Block (Phase 2 endpoints) for someone
+  else's. "Not Interested" and "Report" are left out on purpose — see
+  "Phase 5 specifically".
+- The right-side action rail (Heart with live count, Comment with live
+  count, Share, More) on the Story viewer is real, not decorative — spec
+  section 5.
 
 ### Phase 4 specifically
 
-- **Cross-creator swipe navigation isn't here.** Spec section 4 covers
-  both "move within a creator's Stories" (tap left/right — real, in this
-  pass) and "swipe up/down to the next/previous creator," which the spec
-  itself groups into Phase 5's "full Home gesture system." Closing the
-  viewer (swipe down or the ✕) and reopening it for someone else from the
-  Home tray is the honest stand-in for now.
 - **Video duration for the progress bar comes from the player, not the
   server.** The backend doesn't parse a video's real duration yet (see
   `backend/README.md` — that needs `ffmpeg`, which the sandbox's network
@@ -90,6 +106,34 @@ Animated-driven progress bars and the tap/hold/swipe viewer gesture — see
   `GET /api/v1/media/:id` metadata lookup (Phase 4 also opened that
   endpoint up beyond owner-only — see `backend/README.md`) rather than
   guessing from a file extension.
+
+### Phase 5 specifically
+
+- **The copied/shared link is real but inert.** `ShareSheet.tsx` builds a
+  `katkee://story/:id` deep link — correct scheme, correct id — but
+  Universal Links (iOS) / App Links (Android) aren't configured in the
+  (nonexistent) native projects, so tapping that link on a device won't
+  open the app yet. That native configuration is a real, separate step;
+  the link format itself isn't a placeholder.
+- **"Send to a Katkee user" isn't in the Share sheet.** Spec section 15
+  lists it alongside Copy Link and native share, but it needs a
+  conversation to send it into — DMs are Phase 8. Offering a picker that
+  saved to nothing would be fake functionality.
+- **"Not Interested" and "Report" aren't in the More menu.** The spec
+  lists them (section 16), but "Not Interested" is a recommendation
+  signal with no recommender to feed yet (Phase 6), and "Report" needs
+  a moderation queue that doesn't exist (Phase 11). Mute and Block —
+  the two items that already have a real backend — are there and work.
+- **Haptic feedback on like uses `Vibration.vibrate()`**, React Native's
+  built-in API, rather than a dedicated haptics package — this sandbox
+  can't install one, and a short vibration is a real (if blunter)
+  substitute for a haptic tick, not a stub.
+- **The hand-rolled tap/double-tap/hold/swipe recognizer in
+  `StoryViewerScreen.tsx`** is now doing more at once than Phase 4's
+  version (it also has to not mistake a double-tap-to-like for two
+  single taps) — worth deliberately testing on a real device before
+  trusting the timing values (`HOLD_DELAY_MS`, `DOUBLE_TAP_WINDOW_MS`,
+  `SWIPE_CLOSE_THRESHOLD`) feel right, not just that they compile.
 
 ### Phase 3 specifically
 

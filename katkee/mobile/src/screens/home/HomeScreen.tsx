@@ -67,10 +67,15 @@ export function HomeScreen(): React.JSX.Element {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.tray}
         keyExtractor={(entry) => entry.owner.id}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <Pressable
             style={styles.trayItem}
-            onPress={() => navigation.navigate("StoryViewer", { username: item.owner.username })}
+            onPress={() =>
+              navigation.navigate("StoryViewer", {
+                creators: feed.map((e) => e.owner.username),
+                startIndex: index,
+              })
+            }
           >
             <View style={styles.ring}>
               <Text style={styles.ringInitial}>{item.owner.displayName.charAt(0).toUpperCase()}</Text>

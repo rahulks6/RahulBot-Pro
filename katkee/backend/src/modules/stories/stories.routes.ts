@@ -28,7 +28,7 @@ export function registerStoriesRoutes(router: Router): void {
 
   router.get("/api/v1/stories/:id", async (req, res) => {
     requireAuth(req);
-    const story = await storiesService.getStoryForViewer(req.params.id as string, req.userId as string);
+    const story = await storiesService.getStoryDetailForViewer(req.params.id as string, req.userId as string);
     sendJson(res, 200, { story });
   });
 

@@ -1,11 +1,11 @@
-# KATKEE backend — Phase 1 + Phase 2 + Phase 3 + Phase 4
+# KATKEE backend — Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
-people search, media upload/storage/retrieval, and now real Story
-publishing with a genuine 24-hour lifecycle — all backed by a real database
-and a test suite that exercises it end to end. No mocked data anywhere in
-this service.
+people search, media upload/storage/retrieval, Story publishing with a
+genuine 24-hour lifecycle, and now likes/comments/shares — all backed by a
+real database and a test suite that exercises it end to end. No mocked
+data anywhere in this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -104,14 +104,25 @@ overridable (`.env.example`), so one test publishes a Story with a 1-second
 TTL, waits ~1.2 real seconds, and then asserts it's genuinely gone from
 `GET /api/v1/stories/:id` (for anyone else) and `mine/active`, while the
 owner can still reach it directly — the same real-time-passing technique,
-just scaled down from 24h to 1s rather than mocking `Date.now()`. 49/49
-tests pass, including 15 new Phase 4 tests. Building this also surfaced a
-real integration gap: media was owner-only from Phase 3 (there was no
-Story yet to grant broader access), which meant a Story viewer couldn't
-actually load anyone else's photo/video — fixed by having the media route
-ask `stories.service.canAccessMediaViaStory()` before falling back to
-"not found," reusing the exact same audience/block/privacy rules rather
-than re-implementing them.
+just scaled down from 24h to 1s rather than mocking `Date.now()`. Building
+that phase also surfaced a real integration gap: media was owner-only from
+Phase 3 (there was no Story yet to grant broader access), which meant a
+Story viewer couldn't actually load anyone else's photo/video — fixed by
+having the media route ask `stories.service.canAccessMediaViaStory()`
+before falling back to "not found," reusing the exact same
+audience/block/privacy rules rather than re-implementing them.
+
+Phase 5 (likes/comments/shares) reuses that same `getStoryForViewer` access
+check everywhere — liking, commenting, and sharing a Story you can't view
+are all denied the identical way viewing it would be, rather than each
+action inventing its own rule. It also caught a real test-hygiene bug: by
+this point the test database had accumulated hundreds of `test_*` users
+across every `npm test` run all session, and the search test's substring
+query eventually stopped finding its own freshly-created user within the
+default 20-row page — not a Phase 5 regression, but real flakiness from
+never resetting test data. Fixed with a `pretest` npm script
+(`scripts/reset-test-db.ts`) that truncates the test database before every
+run. 59/59 tests pass (10 new).
 
 ## API (v1)
 
@@ -143,13 +154,18 @@ than re-implementing them.
 | GET | `/api/v1/media/:id` | Bearer | Owner, or anyone permitted to view a Story built from this media (see below) |
 | GET | `/api/v1/media/:id/file` | Bearer | Same access rule; streams the original bytes back, byte-for-byte |
 | POST | `/api/v1/stories` | Bearer | `{mediaId, caption, audience, allowComments, allowSharing}` → `{story}`; media must be your own, `ready`, and not already published |
-| GET | `/api/v1/stories/:id` | Bearer | Owner always; others need it active + visible per audience/privacy/block rules |
+| GET | `/api/v1/stories/:id` | Bearer | Owner always; others need it active + visible per audience/privacy/block rules; includes `likeCount`/`commentCount`/`viewerHasLiked` |
 | DELETE | `/api/v1/stories/:id` | Bearer, owner-only | Soft-deletes; gone even to the owner afterward (unlike natural expiry) |
 | POST | `/api/v1/stories/:id/view` | Bearer | Records a view once per viewer; the owner's own view never counts |
 | GET | `/api/v1/stories/:id/views` | Bearer, owner-only | View count |
 | GET | `/api/v1/stories/mine/active` | Bearer | Your own non-expired Stories, oldest first |
-| GET | `/api/v1/stories/feed/following` | Bearer | Owners you follow (+ yourself) with an active Story, most-recent-first — raw data for Phase 5's Home, not a ranked feed |
+| GET | `/api/v1/stories/feed/following` | Bearer | Owners you follow (+ yourself) with an active Story, most-recent-first — real, but plain follow-graph order, not a ranked recommendation (that's Phase 6) |
 | GET | `/api/v1/users/:username/stories` | Bearer | That user's active Stories visible to you |
+| POST\/DELETE | `/api/v1/stories/:id/like` | Bearer | Idempotent; needs the same view access as the Story itself |
+| POST | `/api/v1/stories/:id/comments` | Bearer | `{body}` (1-500 chars) → `{comment}`; respects the Story's `allowComments` (`everyone`\/`followers`\/`disabled`) — the owner can always comment on their own |
+| GET | `/api/v1/stories/:id/comments` | Bearer | Paginated, oldest first; only needs Story view access, not comment-post permission |
+| DELETE | `/api/v1/comments/:id` | Bearer | The comment's author, or the Story's owner (moderation), can delete it |
+| POST | `/api/v1/stories/:id/share` | Bearer | Records a share event; 403 if the Story's `allowSharing` is false |
 
 Errors are JSON: `{"error": "validation_error", "fields": {...}}` (422),
 `{"error": "auth_error", "message": "..."}` (401/409), or
@@ -170,15 +186,18 @@ itself lives on disk, never in a row (spec section 44/52). `0005`:
 `stories` + `story_views` — a Story wraps one media row with
 audience/comment/sharing settings and a server-computed `expires_at`; rows
 are never hard-deleted on expiry (soft `deleted_at` only), since Archive
-(Phase 9) will need the history. Highlights, conversations, and
-notifications are deliberately left to their own phases so these
-migrations stay reviewable.
+(Phase 9) will need the history. `0006`: `story_likes` (idempotent
+per-viewer state, like `story_views`), `story_comments` (soft-deletable),
+`story_shares` (append-only analytics log — repeated sharing is a real,
+meaningful action, unlike a view or a like, so it's never deduplicated).
+Highlights, conversations, and notifications are deliberately left to
+their own phases so these migrations stay reviewable.
 
-## What's NOT in Phase 1/2/3/4
+## What's NOT in Phase 1-5
 
-The ranked, swipeable Home feed and its gesture system (Phase 5),
-recommendations/discovery beyond your own following graph (Phase 6), DMs,
+Recommendations/discovery beyond your own following graph (Phase 6), DMs
+(so Share's "send to a Katkee user" isn't here — see mobile/README.md),
 Highlights, video transcoding/thumbnails, and moderation are later phases
 per the build plan — this is intentionally just foundation + auth + social
-graph + media + Story publishing/lifecycle, done for real rather than a
-wide shallow pass across everything.
+graph + media + Stories + engagement, done for real rather than a wide
+shallow pass across everything.

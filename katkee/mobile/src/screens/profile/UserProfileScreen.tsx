@@ -60,7 +60,7 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
 
   const openStoryViewer = () => {
     if (!hasActiveStory) return;
-    rootNavigation.navigate("StoryViewer", { username });
+    rootNavigation.navigate("StoryViewer", { creators: [username], startIndex: 0 });
   };
 
   const onFollowPress = async () => {

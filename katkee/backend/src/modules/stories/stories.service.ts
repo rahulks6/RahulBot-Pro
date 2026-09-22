@@ -4,6 +4,8 @@ import * as usersRepo from "../users/users.repository";
 import * as mediaRepo from "../media/media.repository";
 import * as socialRepo from "../social/social.repository";
 import * as storiesRepo from "./stories.repository";
+import * as likesRepo from "./likes.repository";
+import * as commentsRepo from "./comments.repository";
 import type { StoryRecord } from "./stories.repository";
 import type { PublishStoryInput } from "./dto";
 
@@ -91,6 +93,28 @@ export async function getStoryForViewer(storyId: string, viewerId: string): Prom
   }
 
   return toPublicStory(story);
+}
+
+export interface StoryDetail extends PublicStory {
+  likeCount: number;
+  commentCount: number;
+  viewerHasLiked: boolean;
+}
+
+/**
+ * The single-story fetch (what the viewer actually calls as it plays)
+ * gets engagement counts; list/feed endpoints deliberately don't — see
+ * this function's own extra queries vs. the plain toPublicStory() used
+ * everywhere else, so listing 20 Stories doesn't fire 60 extra queries.
+ */
+export async function getStoryDetailForViewer(storyId: string, viewerId: string): Promise<StoryDetail> {
+  const story = await getStoryForViewer(storyId, viewerId);
+  const [likeCount, commentCount, viewerHasLiked] = await Promise.all([
+    likesRepo.countLikes(storyId),
+    commentsRepo.countComments(storyId),
+    likesRepo.hasLiked(storyId, viewerId),
+  ]);
+  return { ...story, likeCount, commentCount, viewerHasLiked };
 }
 
 /**

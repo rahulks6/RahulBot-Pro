@@ -8,6 +8,7 @@ import { registerSocialRoutes } from "./modules/social/social.routes";
 import { registerSearchRoutes } from "./modules/search/search.routes";
 import { registerMediaRoutes } from "./modules/media/media.routes";
 import { registerStoriesRoutes } from "./modules/stories/stories.routes";
+import { registerEngagementRoutes } from "./modules/stories/engagement.routes";
 
 export function buildApp(): Server {
   const router = new Router();
@@ -22,6 +23,7 @@ export function buildApp(): Server {
   registerSearchRoutes(router);
   registerMediaRoutes(router);
   registerStoriesRoutes(router);
+  registerEngagementRoutes(router);
 
   return createServer(router);
 }

@@ -30,5 +30,11 @@ export type CreateStackParamList = {
 
 export type RootStackParamList = {
   Main: undefined;
-  StoryViewer: { username: string; initialStoryId?: string };
+  /**
+   * `creators` is the ordered list of usernames swipe up/down moves
+   * through (spec section 4) — a single-element list when opened from a
+   * profile's Story ring (nowhere to swipe to), the full Home tray order
+   * when opened from there. `startIndex` is which one to open on.
+   */
+  StoryViewer: { creators: string[]; startIndex: number; initialStoryId?: string };
 };

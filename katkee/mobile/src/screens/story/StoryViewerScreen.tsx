@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Dimensions, Image, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Dimensions, Image, PanResponder, Pressable, StyleSheet, Text, Vibration, View } from "react-native";
 import Video from "react-native-video";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../navigation/types";
@@ -7,126 +7,200 @@ import { colors, radii, spacing, typography } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { getMyActiveStories, getUserActiveStories, mediaFileUrl, recordStoryView, type PublicStory } from "../../api/stories";
 import { getMedia } from "../../api/media";
+import { getStoryDetail, likeStory, unlikeStory, type StoryDetail } from "../../api/engagement";
 import { EmptyState } from "../../components/EmptyState";
+import { CommentsSheet } from "../../components/CommentsSheet";
+import { ShareSheet } from "../../components/ShareSheet";
+import { StoryMoreMenu } from "../../components/StoryMoreMenu";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StoryViewer">;
 
 const PHOTO_DURATION_MS = 5000;
-const DEFAULT_VIDEO_DURATION_MS = 15000; // until the Video component's onLoad reports the real one
 const HOLD_DELAY_MS = 250;
 const SWIPE_CLOSE_THRESHOLD = 100;
 const TAP_MOVE_THRESHOLD = 10;
+const DOUBLE_TAP_WINDOW_MS = 250;
 
 /**
- * Full-screen viewer for ONE creator's active Story sequence (spec
- * section 4). Cross-creator swipe navigation is bundled with Phase 5's
- * "full Home gesture system" and isn't attempted here — tap right/left
- * move within this creator's own Stories, hold pauses, swipe down closes.
+ * Full-screen Story viewer with the complete gesture set (spec section
+ * 4): tap right/left move within a creator's Stories (crossing to the
+ * next creator only at the end of their sequence, per spec), swipe
+ * up/down move between creators outright, hold pauses, double-tap
+ * ensures a like (never unlikes), and the right-side action rail
+ * (Heart/Comment/Share/More — spec section 5) is real, not decorative.
  */
 export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Element {
-  const { username, initialStoryId } = route.params;
+  const { creators, startIndex, initialStoryId } = route.params;
   const { user: authUser, accessToken } = useAuth();
 
-  const [stories, setStories] = useState<PublicStory[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const [creatorIndex, setCreatorIndex] = useState(startIndex);
+  const [storiesByCreator, setStoriesByCreator] = useState<Record<string, PublicStory[]>>({});
+  const [storyIndexByCreator, setStoryIndexByCreator] = useState<Record<string, number>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [detail, setDetail] = useState<StoryDetail | null>(null);
   const [mediaKind, setMediaKind] = useState<"photo" | "video" | null>(null);
   const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [heartPulse] = useState(() => new Animated.Value(0));
+
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const progress = useRef(new Animated.Value(0)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
 
+  const currentUsername = creators[creatorIndex];
+  const currentStories = currentUsername ? storiesByCreator[currentUsername] : undefined;
+  const currentStoryIndex = currentUsername ? (storyIndexByCreator[currentUsername] ?? 0) : 0;
+  const currentStory = currentStories?.[currentStoryIndex] ?? null;
+
+  const sheetOpen = commentsOpen || shareOpen || moreOpen;
+
+  // Fetch (and cache) a creator's active Stories the first time we reach them.
   useEffect(() => {
+    if (!currentUsername || !accessToken || storiesByCreator[currentUsername]) return;
     let cancelled = false;
     (async () => {
-      if (!accessToken) return;
       try {
-        const isSelf = authUser?.username === username;
-        const { stories: fetched } = isSelf
+        const isSelf = authUser?.username === currentUsername;
+        const { stories } = isSelf
           ? await getMyActiveStories(accessToken)
-          : await getUserActiveStories(username, accessToken);
+          : await getUserActiveStories(currentUsername, accessToken);
         if (cancelled) return;
-        if (fetched.length === 0) {
-          setError("No active Stories.");
+        if (stories.length === 0) {
+          navigation.goBack();
           return;
         }
-        setStories(fetched);
-        const startIndex = initialStoryId ? fetched.findIndex((s) => s.id === initialStoryId) : 0;
-        setIndex(startIndex >= 0 ? startIndex : 0);
+        setStoriesByCreator((prev) => ({ ...prev, [currentUsername]: stories }));
+        if (creatorIndex === startIndex && initialStoryId) {
+          const idx = stories.findIndex((s) => s.id === initialStoryId);
+          if (idx >= 0) setStoryIndexByCreator((prev) => ({ ...prev, [currentUsername]: idx }));
+        }
       } catch {
-        if (!cancelled) setError("Couldn't load this Story.");
+        if (!cancelled) setLoadError("Couldn't load this Story.");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [username, accessToken, authUser, initialStoryId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUsername, accessToken]);
 
-  const currentStory = stories?.[index] ?? null;
-
-  // Reset per-story playback state, then look up whether this Story's
-  // media is a photo or video so the right player renders (media metadata
-  // is reachable here even for someone else's Story — see
-  // media.routes.ts's requireAccessibleMedia — so this is a real lookup,
-  // not a guess).
+  // Fetch full engagement detail + media kind for whichever story is now current, and record the view.
   useEffect(() => {
+    setDetail(null);
     setMediaKind(null);
     setVideoDurationMs(null);
     if (!currentStory || !accessToken) return;
     let cancelled = false;
-    getMedia(currentStory.mediaId, accessToken)
-      .then((media) => {
-        if (!cancelled) setMediaKind(media.kind);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Couldn't load this Story.");
-      });
+    (async () => {
+      try {
+        const [{ story }, media] = await Promise.all([
+          getStoryDetail(currentStory.id, accessToken),
+          getMedia(currentStory.mediaId, accessToken),
+        ]);
+        if (cancelled) return;
+        setDetail(story);
+        setMediaKind(media.kind);
+      } catch {
+        if (!cancelled) setLoadError("Couldn't load this Story.");
+      }
+    })();
+    void recordStoryView(currentStory.id, accessToken).catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [currentStory, accessToken]);
 
-  useEffect(() => {
-    if (!currentStory || !accessToken) return;
-    void recordStoryView(currentStory.id, accessToken).catch(() => undefined);
-  }, [currentStory, accessToken]);
-
-  const goNext = useCallback(() => {
-    if (!stories) return;
-    if (index >= stories.length - 1) {
+  const goNextCreator = useCallback(() => {
+    if (creatorIndex >= creators.length - 1) {
       navigation.goBack();
       return;
     }
-    setIndex((i) => i + 1);
-  }, [stories, index, navigation]);
+    setCreatorIndex((i) => i + 1);
+  }, [creatorIndex, creators.length, navigation]);
 
-  const goPrevious = useCallback(() => {
-    setIndex((i) => Math.max(0, i - 1));
-  }, []);
+  const goPreviousCreator = useCallback(() => {
+    if (creatorIndex <= 0) {
+      navigation.goBack();
+      return;
+    }
+    setCreatorIndex((i) => i - 1);
+  }, [creatorIndex, navigation]);
 
+  const goNextStory = useCallback(() => {
+    if (!currentUsername || !currentStories) return;
+    if (currentStoryIndex >= currentStories.length - 1) {
+      goNextCreator(); // spec section 4: a right tap past the last Story moves to the next creator
+      return;
+    }
+    setStoryIndexByCreator((prev) => ({ ...prev, [currentUsername]: currentStoryIndex + 1 }));
+  }, [currentUsername, currentStories, currentStoryIndex, goNextCreator]);
+
+  const goPreviousStory = useCallback(() => {
+    if (!currentUsername) return;
+    setStoryIndexByCreator((prev) => ({ ...prev, [currentUsername]: Math.max(0, currentStoryIndex - 1) }));
+  }, [currentUsername, currentStoryIndex]);
+
+  // Auto-advance progress bar.
   useEffect(() => {
     progress.setValue(0);
-    if (paused || !currentStory || mediaKind === null) return;
-    if (mediaKind === "video" && videoDurationMs === null) return; // wait for onLoad before starting the bar
+    if (paused || sheetOpen || !currentStory || mediaKind === null) return;
+    if (mediaKind === "video" && videoDurationMs === null) return;
 
     const durationMs = mediaKind === "video" ? (videoDurationMs as number) : PHOTO_DURATION_MS;
     animationRef.current?.stop();
     const anim = Animated.timing(progress, { toValue: 1, duration: durationMs, useNativeDriver: false });
     animationRef.current = anim;
     anim.start(({ finished }) => {
-      if (finished) goNext();
+      if (finished) goNextStory();
     });
     return () => anim.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, paused, mediaKind, videoDurationMs]);
+  }, [currentStory, paused, sheetOpen, mediaKind, videoDurationMs]);
 
+  const ensureLiked = useCallback(async () => {
+    if (!accessToken || !currentStory || !detail || detail.viewerHasLiked) return;
+    setDetail((d) => (d ? { ...d, viewerHasLiked: true, likeCount: d.likeCount + 1 } : d));
+    Vibration.vibrate(10); // no haptics package available — a short vibration is a real, if blunter, substitute
+    Animated.sequence([
+      Animated.timing(heartPulse, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.timing(heartPulse, { toValue: 0, duration: 150, useNativeDriver: true }),
+    ]).start();
+    try {
+      await likeStory(currentStory.id, accessToken);
+    } catch {
+      setDetail((d) => (d ? { ...d, viewerHasLiked: false, likeCount: Math.max(0, d.likeCount - 1) } : d));
+    }
+  }, [accessToken, currentStory, detail, heartPulse]);
+
+  const toggleLike = useCallback(async () => {
+    if (!accessToken || !currentStory || !detail) return;
+    const wasLiked = detail.viewerHasLiked;
+    setDetail((d) => (d ? { ...d, viewerHasLiked: !wasLiked, likeCount: d.likeCount + (wasLiked ? -1 : 1) } : d));
+    if (!wasLiked) Vibration.vibrate(10);
+    try {
+      if (wasLiked) await unlikeStory(currentStory.id, accessToken);
+      else await likeStory(currentStory.id, accessToken);
+    } catch {
+      setDetail((d) => (d ? { ...d, viewerHasLiked: wasLiked, likeCount: d.likeCount + (wasLiked ? 1 : -1) } : d));
+    }
+  }, [accessToken, currentStory, detail]);
+
+  // Combined tap(left/right) / double-tap(like) / hold(pause) / swipe(creator) recognizer.
+  // Single-tap navigation is deliberately delayed behind the double-tap
+  // window so a double-tap is never misread as two single taps first
+  // (same rule as spec section 4's Home gestures).
   const gesture = useMemo(() => {
     const screenWidth = Dimensions.get("window").width;
     let startX = 0;
     let startY = 0;
     let holdTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingTapTimer: ReturnType<typeof setTimeout> | null = null;
     let didHold = false;
+    let lastTapAt = 0;
 
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -151,26 +225,43 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
         const dy = evt.nativeEvent.pageY - startY;
 
         if (dy > SWIPE_CLOSE_THRESHOLD && Math.abs(dx) < SWIPE_CLOSE_THRESHOLD) {
-          navigation.goBack();
+          goPreviousCreator();
+          return;
+        }
+        if (dy < -SWIPE_CLOSE_THRESHOLD && Math.abs(dx) < SWIPE_CLOSE_THRESHOLD) {
+          goNextCreator();
           return;
         }
         if (Math.abs(dx) > TAP_MOVE_THRESHOLD || Math.abs(dy) > TAP_MOVE_THRESHOLD) return;
 
-        if (evt.nativeEvent.pageX < screenWidth / 2) {
-          goPrevious();
-        } else {
-          goNext();
+        const now = Date.now();
+        if (now - lastTapAt < DOUBLE_TAP_WINDOW_MS) {
+          if (pendingTapTimer) {
+            clearTimeout(pendingTapTimer);
+            pendingTapTimer = null;
+          }
+          lastTapAt = 0;
+          void ensureLiked();
+          return;
         }
+        lastTapAt = now;
+        const tapX = evt.nativeEvent.pageX;
+        pendingTapTimer = setTimeout(() => {
+          pendingTapTimer = null;
+          if (tapX < screenWidth / 2) goPreviousStory();
+          else goNextStory();
+        }, DOUBLE_TAP_WINDOW_MS);
       },
       onPanResponderTerminate: () => {
         if (holdTimer) clearTimeout(holdTimer);
         setPaused(false);
       },
     });
-  }, [goNext, goPrevious, navigation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goNextStory, goPreviousStory, goNextCreator, goPreviousCreator, ensureLiked]);
 
-  if (error) {
-    return <EmptyState title="Story unavailable" message={error} />;
+  if (loadError) {
+    return <EmptyState title="Story unavailable" message={loadError} />;
   }
   if (!currentStory) {
     return (
@@ -182,6 +273,7 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
 
   const mediaUrl = mediaFileUrl(currentStory.mediaId);
   const authHeaders = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
+  const isOwnStory = authUser?.username === currentUsername;
 
   return (
     <View style={styles.container} {...gesture.panHandlers}>
@@ -190,25 +282,32 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
           source={{ uri: mediaUrl, headers: authHeaders }}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
-          paused={paused}
+          paused={paused || sheetOpen}
           onLoad={(meta) => setVideoDurationMs(Math.max(meta.duration * 1000, 1000))}
-          onEnd={goNext}
+          onEnd={goNextStory}
         />
       ) : mediaKind === "photo" ? (
         <Image source={{ uri: mediaUrl, headers: authHeaders }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       ) : null}
 
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.heartBurst, { opacity: heartPulse, transform: [{ scale: heartPulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.4] }) }] }]}
+      >
+        <Text style={styles.heartBurstIcon}>♥</Text>
+      </Animated.View>
+
       <View style={styles.progressRow}>
-        {stories?.map((s, i) => (
+        {currentStories?.map((s, i) => (
           <View key={s.id} style={styles.progressTrack}>
             <Animated.View
               style={[
                 styles.progressFill,
                 {
                   width:
-                    i < index
+                    i < currentStoryIndex
                       ? "100%"
-                      : i > index
+                      : i > currentStoryIndex
                         ? "0%"
                         : progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
                 },
@@ -218,16 +317,33 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
         ))}
       </View>
 
+      <View style={styles.actionRail}>
+        <Pressable onPress={toggleLike} hitSlop={10} style={styles.actionButton}>
+          <Text style={[styles.actionIcon, detail?.viewerHasLiked && styles.actionIconLiked]}>♥</Text>
+          <Text style={styles.actionCount}>{detail?.likeCount ?? "—"}</Text>
+        </Pressable>
+        <Pressable onPress={() => setCommentsOpen(true)} hitSlop={10} style={styles.actionButton}>
+          <Text style={styles.actionIcon}>◯</Text>
+          <Text style={styles.actionCount}>{detail?.commentCount ?? "—"}</Text>
+        </Pressable>
+        <Pressable onPress={() => setShareOpen(true)} hitSlop={10} style={styles.actionButton}>
+          <Text style={styles.actionIcon}>↗</Text>
+        </Pressable>
+        <Pressable onPress={() => setMoreOpen(true)} hitSlop={10} style={styles.actionButton}>
+          <Text style={styles.actionIcon}>•••</Text>
+        </Pressable>
+      </View>
+
       <View style={styles.footer}>
         <View style={styles.avatarPlaceholder}>
-          <Text style={styles.avatarInitial}>{username.charAt(0).toUpperCase()}</Text>
+          <Text style={styles.avatarInitial}>{(currentUsername ?? "?").charAt(0).toUpperCase()}</Text>
         </View>
         <View style={styles.footerText}>
-          <Text style={styles.username}>@{username}</Text>
+          <Text style={styles.username}>@{currentUsername}</Text>
           {currentStory.caption ? <Text style={styles.caption}>{currentStory.caption}</Text> : null}
-          {stories && stories.length > 1 ? (
+          {currentStories && currentStories.length > 1 ? (
             <Text style={styles.sequence}>
-              {index + 1} of {stories.length} today
+              {currentStoryIndex + 1} of {currentStories.length} today
             </Text>
           ) : null}
         </View>
@@ -236,6 +352,33 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
       <Pressable style={styles.closeButton} onPress={() => navigation.goBack()} hitSlop={12}>
         <Text style={styles.closeIcon}>✕</Text>
       </Pressable>
+
+      <CommentsSheet
+        visible={commentsOpen}
+        storyId={currentStory.id}
+        storyOwnerId={currentStory.ownerId}
+        commentsDisabled={currentStory.allowComments === "disabled"}
+        onClose={() => setCommentsOpen(false)}
+        onCommentCountChange={(delta) => setDetail((d) => (d ? { ...d, commentCount: Math.max(0, d.commentCount + delta) } : d))}
+      />
+      <ShareSheet
+        visible={shareOpen}
+        storyId={currentStory.id}
+        ownerUsername={currentUsername ?? ""}
+        isPublic={currentStory.audience === "public" && currentStory.allowSharing}
+        onClose={() => setShareOpen(false)}
+      />
+      <StoryMoreMenu
+        visible={moreOpen}
+        storyId={currentStory.id}
+        isOwnStory={isOwnStory}
+        otherUsername={isOwnStory ? null : (currentUsername ?? null)}
+        onClose={() => setMoreOpen(false)}
+        onDeleted={() => {
+          setMoreOpen(false);
+          navigation.goBack();
+        }}
+      />
     </View>
   );
 }
@@ -243,6 +386,8 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
+  heartBurst: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  heartBurstIcon: { fontSize: 96, color: colors.textPrimary },
   progressRow: {
     position: "absolute",
     top: spacing.xl,
@@ -259,11 +404,22 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressFill: { height: "100%", backgroundColor: colors.textPrimary },
+  actionRail: {
+    position: "absolute",
+    right: spacing.md,
+    bottom: spacing.xl * 3,
+    alignItems: "center",
+    gap: spacing.lg,
+  },
+  actionButton: { alignItems: "center", gap: 2 },
+  actionIcon: { color: colors.textPrimary, fontSize: 26 },
+  actionIconLiked: { color: colors.accent },
+  actionCount: { color: colors.textPrimary, fontSize: 12 },
   footer: {
     position: "absolute",
     bottom: spacing.xl,
     left: spacing.md,
-    right: spacing.md,
+    right: spacing.xxl * 2,
     flexDirection: "row",
     gap: spacing.sm,
     alignItems: "center",

@@ -37,3 +37,14 @@ export function parsePublishStoryInput(body: unknown): PublishStoryInput {
   if (Object.keys(errors).length > 0) throw new ValidationError(errors);
   return { mediaId, caption, audience, allowComments, allowSharing: allowSharing as boolean };
 }
+
+const MAX_COMMENT_LENGTH = 500;
+
+export function parseCommentInput(body: unknown): string {
+  const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+  const text = typeof b.body === "string" ? b.body.trim() : "";
+  if (text.length < 1 || text.length > MAX_COMMENT_LENGTH) {
+    throw new ValidationError({ body: `Comment must be 1-${MAX_COMMENT_LENGTH} characters.` });
+  }
+  return text;
+}

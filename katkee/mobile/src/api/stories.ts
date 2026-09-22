@@ -50,6 +50,10 @@ export function deleteStory(storyId: string, accessToken: string): Promise<void>
   return apiDelete(`/api/v1/stories/${storyId}`, accessToken);
 }
 
+export function getViewCount(storyId: string, accessToken: string): Promise<{ views: number }> {
+  return apiGet(`/api/v1/stories/${storyId}/views`, accessToken);
+}
+
 export function mediaFileUrl(mediaId: string): string {
   // Consumed with an Authorization header by the viewer (Image/Video source supports a `headers` field).
   return `${API_BASE_URL}/api/v1/media/${mediaId}/file`;

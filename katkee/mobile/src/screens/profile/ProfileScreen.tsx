@@ -52,7 +52,7 @@ export function ProfileScreen(): React.JSX.Element {
     <View style={styles.container}>
       <Pressable
         onPress={() => {
-          if (hasActiveStory) navigation.navigate("StoryViewer", { username: user.username });
+          if (hasActiveStory) navigation.navigate("StoryViewer", { creators: [user.username], startIndex: 0 });
         }}
         disabled={!hasActiveStory}
         style={[styles.avatarPlaceholder, hasActiveStory && styles.avatarRingActive]}
