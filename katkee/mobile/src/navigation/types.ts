@@ -1,20 +1,24 @@
+import type { NavigatorScreenParams } from "@react-navigation/native";
+
 export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
 };
 
+export type SearchStackParamList = {
+  SearchHome: undefined;
+  UserProfile: { username: string };
+};
+
 export type MainTabParamList = {
   Home: undefined;
-  Search: undefined;
+  // Nested-params typing so a sibling tab (e.g. Activity) can deep-link into
+  // Search's UserProfile via navigation.navigate("Search", { screen: ..., params: ... }).
+  Search: NavigatorScreenParams<SearchStackParamList>;
   Create: undefined;
   Activity: undefined;
   DM: undefined;
   Profile: undefined;
-};
-
-export type SearchStackParamList = {
-  SearchHome: undefined;
-  UserProfile: { username: string };
 };
 
 export type CreateStackParamList = {

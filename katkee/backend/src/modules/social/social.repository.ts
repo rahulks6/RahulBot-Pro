@@ -164,13 +164,16 @@ function mapFollowRequestRow(row: Row): FollowRequestRow {
   };
 }
 
-export async function createFollowRequest(requesterId: string, targetId: string): Promise<void> {
-  await query(
+/** Returns the new request's id, or null if a pending request already existed (idempotent no-op). */
+export async function createFollowRequest(requesterId: string, targetId: string): Promise<string | null> {
+  const rows = await query(
     `INSERT INTO follow_requests (requester_id, target_id)
      VALUES (:'requester_id', :'target_id')
-     ON CONFLICT (requester_id, target_id) WHERE status = 'pending' DO NOTHING`,
+     ON CONFLICT (requester_id, target_id) WHERE status = 'pending' DO NOTHING
+     RETURNING id`,
     { requester_id: requesterId, target_id: targetId },
   );
+  return rows.length > 0 ? (rows[0]!.id as string) : null;
 }
 
 export async function deletePendingFollowRequest(requesterId: string, targetId: string): Promise<void> {

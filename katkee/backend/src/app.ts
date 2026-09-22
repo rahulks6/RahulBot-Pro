@@ -11,6 +11,7 @@ import { registerStoriesRoutes } from "./modules/stories/stories.routes";
 import { registerEngagementRoutes } from "./modules/stories/engagement.routes";
 import { registerEventsRoutes } from "./modules/recommendations/events.routes";
 import { registerRecommendationRoutes } from "./modules/recommendations/recommendation.routes";
+import { registerNotificationsRoutes } from "./modules/notifications/notifications.routes";
 
 export function buildApp(): Server {
   const router = new Router();
@@ -28,6 +29,7 @@ export function buildApp(): Server {
   registerEngagementRoutes(router);
   registerEventsRoutes(router);
   registerRecommendationRoutes(router);
+  registerNotificationsRoutes(router);
 
   return createServer(router);
 }

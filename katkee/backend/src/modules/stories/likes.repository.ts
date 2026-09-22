@@ -1,11 +1,14 @@
 import { query, queryOne } from "../../db/psql";
 
-export async function likeStory(storyId: string, userId: string): Promise<void> {
-  await query(
+/** Returns true only if this call actually created a new like (false if it was already liked) — callers use this to fire a notification exactly once, not on every idempotent repeat call. */
+export async function likeStory(storyId: string, userId: string): Promise<boolean> {
+  const rows = await query(
     `INSERT INTO story_likes (story_id, user_id) VALUES (:'story_id', :'user_id')
-     ON CONFLICT (story_id, user_id) DO NOTHING`,
+     ON CONFLICT (story_id, user_id) DO NOTHING
+     RETURNING story_id`,
     { story_id: storyId, user_id: userId },
   );
+  return rows.length > 0;
 }
 
 export async function unlikeStory(storyId: string, userId: string): Promise<void> {

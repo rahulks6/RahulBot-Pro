@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { colors, radii, spacing, typography } from "../theme";
+import { useNotifications } from "../state/NotificationsContext";
 
 const TAB_LABELS: Record<string, string> = {
   Home: "Home",
@@ -18,6 +19,8 @@ const TAB_LABELS: Record<string, string> = {
  * immediately as the primary action, not a 7th equal tab.
  */
 export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps): React.JSX.Element {
+  const { unreadCount } = useNotifications();
+
   return (
     <View style={styles.container}>
       {state.routes.map((route, index) => {
@@ -48,16 +51,29 @@ export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarPro
           );
         }
 
+        const showUnreadBadge = route.name === "Activity" && unreadCount > 0;
+
         return (
           <Pressable
             key={route.key}
             accessibilityRole="button"
             accessibilityState={isFocused ? { selected: true } : {}}
-            accessibilityLabel={options.tabBarAccessibilityLabel ?? label}
+            accessibilityLabel={
+              showUnreadBadge
+                ? `${options.tabBarAccessibilityLabel ?? label}, ${unreadCount} unread`
+                : (options.tabBarAccessibilityLabel ?? label)
+            }
             onPress={onPress}
             style={styles.tabItem}
           >
-            <Text style={[typography.caption, isFocused && styles.labelFocused]}>{label}</Text>
+            <View>
+              <Text style={[typography.caption, isFocused && styles.labelFocused]}>{label}</Text>
+              {showUnreadBadge ? (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadBadgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text>
+                </View>
+              ) : null}
+            </View>
             {isFocused ? <View style={styles.focusDot} /> : null}
           </Pressable>
         );
@@ -92,6 +108,23 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: radii.pill,
     backgroundColor: colors.accent,
+  },
+  unreadBadge: {
+    position: "absolute",
+    top: -6,
+    right: -14,
+    minWidth: 16,
+    height: 16,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  unreadBadgeText: {
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: "700",
   },
   createButtonWrapper: {
     flex: 1,

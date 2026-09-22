@@ -1,13 +1,14 @@
-# KATKEE backend — Phase 1 through Phase 6
+# KATKEE backend — Phase 1 through Phase 7
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
 people search, media upload/storage/retrieval, Story publishing with a
-genuine 24-hour lifecycle, likes/comments/shares, and now a real (heuristic,
+genuine 24-hour lifecycle, likes/comments/shares, a real (heuristic,
 not ML — see below) recommendation system with analytics event collection
-and new-creator exploration — all backed by a real database and a test
-suite that exercises it end to end. No mocked data anywhere in this
-service.
+and new-creator exploration, and now real notifications (likes, comments,
+follows, follow requests, and @mentions) — all backed by a real database
+and a test suite that exercises it end to end. No mocked data anywhere in
+this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -169,6 +170,30 @@ confirmed this live: following a previously-last-ranked creator
 mid-session immediately moved them to first place. 88/88 tests passing
 (29 new).
 
+Phase 7 (notifications) reuses the same pattern as Phase 4/5's access
+checks: every notification-creating call site (`likeStory`, `createComment`,
+`follow`, `acceptFollowRequest`) fires through `notifications.service.ts`
+rather than each feature writing its own notification row, and
+`createNotification()` itself refuses to notify someone about their own
+action (`actorId === recipientId`). Building it surfaced a real duplicate-
+notification bug before it shipped: `likesRepo.likeStory` originally
+returned `void`, so the idempotent like endpoint would have fired a fresh
+"like" notification on every repeat call even though the underlying
+`story_likes` row never changed — fixed by having it `RETURNING story_id`
+and only notifying when a row was actually inserted
+(`test/notifications.test.ts`'s first test asserts this directly: liking
+the same Story three times produces exactly one notification).
+`socialRepo.createFollowRequest` had the same shape of fix applied
+proactively (`RETURNING id`, so `follow()` can pass the new request's real
+id into `notifyFollowRequest` instead of a second lookup). @mention
+detection (`notifyMentions`) is a real regex over comment bodies
+(`/@([a-z0-9_.]{3,30})/gi`, capped at 10 distinct mentions per comment),
+resolving each to a real user via `usersRepo.findUserByUsername` — unknown
+usernames and self-mentions are silently skipped, the same way a typo in a
+real app's mention just doesn't link anyone. 100/100 tests passing (12
+new), plus manual `curl` verification of follow/like/mark-read/mark-all-read
+against a live server.
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -213,6 +238,10 @@ mid-session immediately moved them to first place. 88/88 tests passing
 | POST | `/api/v1/stories/:id/share` | Bearer | Records a share event; 403 if the Story's `allowSharing` is false |
 | GET | `/api/v1/stories/feed/home` | Bearer | Phase 6: followed + discovered public creators with an active Story, ranked by `scoring.ts`'s heuristic; your own Stories always lead, unscored |
 | POST | `/api/v1/events` | Bearer | `{eventType, creatorId?, storyId?, valueMs?}` → 204; validates required fields per type and that any `storyId`/`creatorId` is real and visible to you — see `events.dto.ts` for the full type list |
+| GET | `/api/v1/notifications` | Bearer | Paginated (`?limit&offset`), newest first; each row denormalizes its actor/Story/comment/follow-request |
+| GET | `/api/v1/notifications/unread-count` | Bearer | → `{count}` |
+| POST | `/api/v1/notifications/read-all` | Bearer | Marks every unread notification for the caller read → 204 |
+| POST | `/api/v1/notifications/:id/read` | Bearer | Ownership-scoped (a non-recipient's call is a silent no-op) → 204; 404 for a malformed id |
 
 `not_interested` is one of `POST /api/v1/events`'s `eventType` values — it
 both logs the event and immediately excludes that creator from your
@@ -245,10 +274,16 @@ meaningful action, unlike a view or a like, so it's never deduplicated).
 lists that don't already have a dedicated table — likes/comments/shares
 are read directly from their own tables, not duplicated here) and
 `creator_not_interested` (the one real per-viewer hard-exclusion rule).
-Highlights, conversations, and notifications are deliberately left to
-their own phases so these migrations stay reviewable.
+Highlights and conversations are deliberately left to their own phases so
+these migrations stay reviewable. `0008`: `notifications` — one row per
+like/comment/follow/follow_request/mention, with nullable FKs to whichever
+of `stories`/`story_comments`/`follow_requests` is relevant to that type
+(`CHECK (type IN (...))` keeps the type column closed), `read_at` for the
+unread state, and a partial index (`WHERE read_at IS NULL`) so the unread
+count/badge query stays cheap regardless of how large a user's full
+notification history grows.
 
-## What's NOT in Phase 1-6
+## What's NOT in Phase 1-7
 
 DMs (so Share's "send to a Katkee user" isn't here, and `follow_after_story`
 attribution is best-effort client-reported rather than cross-referenced
@@ -258,4 +293,7 @@ later phases per the build plan. The recommendation system itself is real
 but explicitly a starting heuristic, not a trained model — see "Phase 6:
 the recommendation system is a real heuristic, not a model" above for why,
 and spec section 7 for why that's the intended starting point, not a
-shortcut.
+shortcut. Notifications are delivered by polling (`GET
+/api/v1/notifications/unread-count`) — there's no push/websocket channel in
+this sandbox, so a real client has to poll or a later phase has to add one;
+see mobile/README.md for the polling interval this build settled on.

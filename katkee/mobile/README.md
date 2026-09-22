@@ -1,17 +1,18 @@
-# KATKEE mobile — Phase 1 through Phase 6
+# KATKEE mobile — Phase 1 through Phase 7
 
 Real, hand-written TypeScript source for the design system, navigation shell,
 authentication, search/follow, camera capture + the Story editor, publishing
-and viewing Stories, the full gesture set plus likes/comments/sharing, and
-now real analytics-event emission feeding the backend's recommendation
-system, wired to the actual backend API (`../backend`) — not generated
-boilerplate. It has **not** been built or run in this session; see the
-limitation below before trusting it further, and see "Phase 3 specifically"
-for why that phase carries more risk than 1-2 (Phases 4-6 inherit the same
-camera/gesture risk, plus their own new ones — see each phase's own
-"specifically" section). A best-effort `tsc` pass (no real library types
-installed — see below) ran clean against every file touched through
-Phase 6, for what that's worth given its limits.
+and viewing Stories, the full gesture set plus likes/comments/sharing, real
+analytics-event emission feeding the backend's recommendation system, and
+now a real Activity tab backed by the backend's notifications, wired to the
+actual backend API (`../backend`) — not generated boilerplate. It has
+**not** been built or run in this session; see the limitation below before
+trusting it further, and see "Phase 3 specifically" for why that phase
+carries more risk than 1-2 (Phases 4-7 inherit the same camera/gesture risk,
+plus their own new ones — see each phase's own "specifically" section). A
+best-effort `tsc` pass (no real library types installed — see below) ran
+clean against every file touched through Phase 7, for what that's worth
+given its limits.
 
 ## What exists here
 
@@ -31,9 +32,10 @@ Phase 6, for what that's worth given its limits.
 - `src/screens/` — Login, Signup, Search, and the tapped-through user
   profile (follow/unfollow, including the "Requested" state for private
   accounts) are real, functional, wired to the Phase 2 backend endpoints.
-  Home, Activity, DM, and Create are honest empty states for phases that
-  haven't been built yet (see spec build order) — the Profile tab shows
-  the real authenticated user fetched from `/api/v1/auth/me`.
+  Home, Create (camera + editor), and Activity are now real too (see
+  below); DM is still an honest empty state for its own phase (see spec
+  build order) — the Profile tab shows the real authenticated user fetched
+  from `/api/v1/auth/me`.
 - `src/navigation/SearchStack.tsx` — the Search tab is its own stack
   (`SearchHome` → `UserProfile`) so tapping a result actually opens that
   person's profile (spec section 30), rather than everything living flush
@@ -108,6 +110,51 @@ Phase 6, for what that's worth given its limits.
   arriving), and `comment_open`. `profile_visit` needs no client
   emission at all — the backend records it server-side, more reliably
   than trusting the client (see `backend/README.md`).
+- `src/screens/activity/ActivityScreen.tsx` — a real notification list
+  (spec section 31) fetched from the Phase 7 backend, grouped into
+  Today/Earlier sections, with a Katkee-amber unread dot per row, pull to
+  refresh, and pagination (`onEndReached` loads the next page). Tapping a
+  like/comment notification opens that Story directly in the viewer (the
+  recipient of those two types is always the Story's owner, so the
+  viewer's own username is the correct `creators` entry — no extra lookup
+  needed); tapping a follow, follow_request, or mention notification opens
+  the actor's profile instead — see "Phase 7 specifically" for why mention
+  doesn't always open the Story itself. "Mark all read" appears whenever
+  the loaded page has an unread row.
+- `src/state/NotificationsContext.tsx` — shares the unread count between
+  `ActivityScreen` and a new amber badge on the Activity tab icon in
+  `BottomTabBar.tsx`, polling `GET /api/v1/notifications/unread-count`
+  every 20s while signed in (there's no push/websocket channel available
+  in this sandbox — see `backend/README.md`).
+- `src/navigation/types.ts` — `MainTabParamList`'s `Search` entry is now
+  typed with `NavigatorScreenParams<SearchStackParamList>` so a sibling tab
+  (Activity) can deep-link into Search's nested `UserProfile` screen via
+  `navigation.navigate("Search", { screen: "UserProfile", params: {...} })`
+  — the standard React Navigation pattern for reaching a screen nested
+  inside a different tab than the one you're navigating from.
+
+### Phase 7 specifically
+
+- **A mention notification on a Story you don't own can't deep-link
+  straight to that Story.** For like/comment notifications the recipient
+  is always the Story's owner, so the viewer's own username is enough to
+  reopen it. A mention's recipient is just whoever got @-mentioned in a
+  comment — the Story underneath it could belong to anyone — and the
+  mobile client has no "look up a Story's owner by id" call yet (the
+  backend's own `notification.story` field only carries `{id, mediaId}`,
+  not an owner username). Rather than guess wrong, tapping a mention opens
+  the mentioning actor's profile instead; adding a real owner lookup is a
+  small, isolated follow-up whenever it's worth the endpoint.
+- **There's no screen for managing incoming follow requests yet.** The
+  backend's `GET /api/v1/follow-requests` /
+  `POST /api/v1/follow-requests/:id/accept|decline` have existed since
+  Phase 2, but no mobile screen was ever built against them. Tapping a
+  `follow_request` notification opens the requester's profile — useful,
+  but not the same as an actual request-management inbox, which is a real
+  gap worth closing in a later pass.
+- **The unread badge is polled, not pushed**, per the
+  `NotificationsContext.tsx` note above — a 20s worst-case staleness
+  window, not a stub.
 
 ### Phase 4 specifically
 

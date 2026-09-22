@@ -1,6 +1,7 @@
 import { HttpError } from "../../http/errors";
 import * as usersRepo from "../users/users.repository";
 import * as socialRepo from "./social.repository";
+import * as notificationsService from "../notifications/notifications.service";
 
 async function requireOtherUser(username: string, viewerId: string): Promise<usersRepo.UserRecord> {
   const target = await usersRepo.findUserByUsername(username);
@@ -22,12 +23,16 @@ export async function follow(viewerId: string, targetUsername: string): Promise<
 
   if (target.isPrivate) {
     if (!relationship.hasPendingRequestFromViewer) {
-      await socialRepo.createFollowRequest(viewerId, target.id);
+      const requestId = await socialRepo.createFollowRequest(viewerId, target.id);
+      if (requestId) {
+        await notificationsService.notifyFollowRequest(viewerId, target.id, requestId);
+      }
     }
     return { status: "requested" };
   }
 
   await socialRepo.createFollow(viewerId, target.id);
+  await notificationsService.notifyFollow(viewerId, target.id);
   return { status: "following" };
 }
 
@@ -52,6 +57,7 @@ export async function acceptFollowRequest(viewerId: string, requestId: string): 
   const request = await requireOwnedPendingRequest(requestId, viewerId);
   await socialRepo.createFollow(request.requesterId, request.targetId);
   await socialRepo.resolveFollowRequest(requestId, "accepted");
+  await notificationsService.notifyFollow(request.targetId, request.requesterId);
 }
 
 export async function declineFollowRequest(viewerId: string, requestId: string): Promise<void> {

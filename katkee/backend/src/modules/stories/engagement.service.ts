@@ -4,12 +4,16 @@ import * as storiesRepo from "./stories.repository";
 import * as likesRepo from "./likes.repository";
 import * as commentsRepo from "./comments.repository";
 import * as sharesRepo from "./shares.repository";
+import * as notificationsService from "../notifications/notifications.service";
 import type { CommentRecord } from "./comments.repository";
 import { getStoryForViewer } from "./stories.service";
 
 export async function likeStory(viewerId: string, storyId: string): Promise<void> {
-  await getStoryForViewer(storyId, viewerId); // access check — reused, not re-implemented
-  await likesRepo.likeStory(storyId, viewerId);
+  const story = await getStoryForViewer(storyId, viewerId); // access check — reused, not re-implemented
+  const isNewLike = await likesRepo.likeStory(storyId, viewerId);
+  if (isNewLike) {
+    await notificationsService.notifyLike(viewerId, story.ownerId, storyId);
+  }
 }
 
 export async function unlikeStory(viewerId: string, storyId: string): Promise<void> {
@@ -37,8 +41,11 @@ async function assertCanComment(storyId: string, viewerId: string): Promise<stor
 }
 
 export async function createComment(viewerId: string, storyId: string, body: string): Promise<CommentRecord> {
-  await assertCanComment(storyId, viewerId);
-  return commentsRepo.createComment(storyId, viewerId, body);
+  const story = await assertCanComment(storyId, viewerId);
+  const comment = await commentsRepo.createComment(storyId, viewerId, body);
+  await notificationsService.notifyComment(viewerId, story.ownerId, storyId, comment.id);
+  await notificationsService.notifyMentions(viewerId, storyId, comment.id, body);
+  return comment;
 }
 
 export async function listComments(
