@@ -1,11 +1,14 @@
-# KATKEE mobile — Phase 1 + Phase 2 + Phase 3
+# KATKEE mobile — Phase 1 + Phase 2 + Phase 3 + Phase 4
 
 Real, hand-written TypeScript source for the design system, navigation shell,
-authentication, search/follow, and now camera capture + the Story editor,
-wired to the actual backend API (`../backend`) — not generated boilerplate.
-It has **not** been built or run in this session; see the limitation below
-before trusting it further, and see "Phase 3 specifically" for why this
-phase carries more risk than 1-2.
+authentication, search/follow, camera capture + the Story editor, and now
+actually publishing and viewing Stories, wired to the actual backend API
+(`../backend`) — not generated boilerplate. It has **not** been built or run
+in this session; see the limitation below before trusting it further, and
+see "Phase 3 specifically" for why that phase carries more risk than 1-2
+(Phase 4 inherits the same camera/gesture risk, plus its own new one:
+Animated-driven progress bars and the tap/hold/swipe viewer gesture — see
+"Phase 4 specifically").
 
 ## What exists here
 
@@ -48,6 +51,45 @@ phase carries more risk than 1-2.
 - `src/models/storyDraft.ts` — the `StoryDraft`/`Overlay` shapes from spec
   section 26, so a real renderer (later) can consume exactly what the
   editor already produces.
+- `src/screens/create/StoryEditorScreen.tsx` now actually **publishes**:
+  a caption field and a Public/Followers audience picker, then "Share
+  Story" uploads the media and calls the real `POST /api/v1/stories`
+  from Phase 4's backend work, landing back on Home.
+- `src/screens/story/StoryViewerScreen.tsx` — the full-screen single-creator
+  Story viewer (spec section 4): tap right/left move within that
+  creator's Stories, hold pauses (a real `Animated.timing`-driven
+  progress bar per segment), swipe down closes, and each view is
+  recorded through `POST /api/v1/stories/:id/view`. It's reached from
+  three real places: the Story ring on your own Profile and on another
+  user's profile (both tappable only when they actually have an active
+  Story — checked via a real API call, not assumed), and a horizontal
+  tray of followed creators at the top of Home.
+- `src/screens/home/HomeScreen.tsx` — no longer only an empty state: it
+  fetches `GET /api/v1/stories/feed/following` and shows a real tray of
+  people you follow who currently have an active Story. The ranked,
+  swipeable full feed is still Phase 5 (see "Phase 4 specifically").
+- `RootNavigator.tsx` now wraps the tab navigator in a root-level stack
+  so `StoryViewer` is reachable from any tab (Profile, Search, Home)
+  without each tab's own stack needing to know about it.
+
+### Phase 4 specifically
+
+- **Cross-creator swipe navigation isn't here.** Spec section 4 covers
+  both "move within a creator's Stories" (tap left/right — real, in this
+  pass) and "swipe up/down to the next/previous creator," which the spec
+  itself groups into Phase 5's "full Home gesture system." Closing the
+  viewer (swipe down or the ✕) and reopening it for someone else from the
+  Home tray is the honest stand-in for now.
+- **Video duration for the progress bar comes from the player, not the
+  server.** The backend doesn't parse a video's real duration yet (see
+  `backend/README.md` — that needs `ffmpeg`, which the sandbox's network
+  policy refused), so the viewer waits for `react-native-video`'s own
+  `onLoad` to report the real duration before starting that segment's
+  progress bar, falling back to a 15s guess only if that never fires.
+- **Knowing whether a Story's media is a photo or video** now uses a real
+  `GET /api/v1/media/:id` metadata lookup (Phase 4 also opened that
+  endpoint up beyond owner-only — see `backend/README.md`) rather than
+  guessing from a file extension.
 
 ### Phase 3 specifically
 
@@ -70,18 +112,25 @@ Two things are honestly scoped down rather than faked:
   unverified subsystems in one pass seemed like the wrong tradeoff. Text
   overlays are real and complete (drag, pinch-resize, rotate, delete,
   edit); the rest is a natural next slice.
-- **The editor's action is "Upload," not "Share Story."** Publishing
-  (audience selection, comment/sharing settings, the 24h lifecycle — spec
-  sections 28-29) is Phase 4 and doesn't exist yet; claiming to "share a
-  Story" without any of that would be exactly the fake-functionality this
-  build has been avoiding.
+- **The editor's action was "Upload," not "Share Story," in this phase.**
+  Phase 4 added real publishing underneath it — see below — so the button
+  now says "Share Story" and actually is one.
 
 ## Known sandbox limitation (read this first)
 
 This session's network policy blocks `registry.npmjs.org`, so `npm install`
 could not run here — meaning `react`, `react-native`, and
 `@react-navigation/*` were never actually resolved, and this code has not
-been typechecked, built, or run. Separately, React Native requires Xcode
+been properly typechecked, built, or run. As a partial, best-effort check,
+`tsc` was run directly against every file with real library types stubbed
+out (so most of its output is expected "cannot find module react-native"
+noise, not real findings) — it still caught one genuine bug worth knowing
+about: `StoryEditorScreen.tsx`'s error-message style spread `typography.caption`
+*after* setting `color: colors.danger`, so the spread's own gray silently
+overwrote the intended red. Fixed. That's the kind of thing this technique
+can catch (property-order bugs, obvious type mismatches) and the kind it
+can't (anything needing real React Native/library type information, or
+anything only wrong at runtime on a device). Separately, React Native requires Xcode
 (iOS) and/or the Android SDK plus a physical or emulated device to build and
 run at all — no cloud sandbox provides that, so real-device testing was
 always going to happen on your hardware regardless of network access (see

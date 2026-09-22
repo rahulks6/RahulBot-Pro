@@ -1,17 +1,44 @@
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
 import { colors, radii, spacing, typography } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
+import { getProfile } from "../../api/users";
+import { getMyActiveStories } from "../../api/stories";
+import type { RootStackParamList } from "../../navigation/types";
 
 /**
- * Real Phase 1 profile: the authenticated user's own data, fetched from
- * /api/v1/auth/me at app start (see AuthContext) and Log out, which calls
- * the real /auth/logout endpoint. Highlights, the Story ring, and follower
- * counts land in Phase 2/9 once those domains exist — per section 34/58,
- * this screen must never grow a post grid or a recent-Stories row.
+ * The authenticated user's own profile: real data from `/api/v1/auth/me`,
+ * real follower/following counts, and a tappable Story ring when there's
+ * an active Story (per spec section 34/58: Stories are reachable ONLY
+ * through the profile photo — no post grid, no recent-Stories row here).
  */
 export function ProfileScreen(): React.JSX.Element {
-  const { user, logout } = useAuth();
+  const { user, accessToken, logout } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const [counts, setCounts] = useState<{ followerCount: number; followingCount: number } | null>(null);
+  const [hasActiveStory, setHasActiveStory] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!user || !accessToken) return;
+    try {
+      const { profile } = await getProfile(user.username, accessToken);
+      setCounts({ followerCount: profile.followerCount, followingCount: profile.followingCount });
+    } catch {
+      // Non-fatal — the rest of the profile still renders with dashes below.
+    }
+    try {
+      const { stories } = await getMyActiveStories(accessToken);
+      setHasActiveStory(stories.length > 0);
+    } catch {
+      setHasActiveStory(false);
+    }
+  }, [user, accessToken]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   if (!user) {
     return (
@@ -23,20 +50,26 @@ export function ProfileScreen(): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <View style={styles.avatarPlaceholder}>
+      <Pressable
+        onPress={() => {
+          if (hasActiveStory) navigation.navigate("StoryViewer", { username: user.username });
+        }}
+        disabled={!hasActiveStory}
+        style={[styles.avatarPlaceholder, hasActiveStory && styles.avatarRingActive]}
+      >
         <Text style={styles.avatarInitial}>{user.displayName.charAt(0).toUpperCase()}</Text>
-      </View>
+      </Pressable>
       <Text style={[typography.title, styles.displayName]}>{user.displayName}</Text>
       <Text style={[typography.caption, styles.username]}>@{user.username}</Text>
       {user.bio ? <Text style={[typography.body, styles.bio]}>{user.bio}</Text> : null}
 
       <View style={styles.statsRow}>
         <View style={styles.stat}>
-          <Text style={typography.bodyStrong}>—</Text>
+          <Text style={typography.bodyStrong}>{counts ? counts.followerCount : "—"}</Text>
           <Text style={typography.caption}>Followers</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={typography.bodyStrong}>—</Text>
+          <Text style={typography.bodyStrong}>{counts ? counts.followingCount : "—"}</Text>
           <Text style={typography.caption}>Following</Text>
         </View>
       </View>
@@ -62,12 +95,13 @@ const styles = StyleSheet.create({
     height: 88,
     borderRadius: radii.pill,
     borderWidth: 3,
-    borderColor: colors.accent,
+    borderColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.surface,
     marginBottom: spacing.md,
   },
+  avatarRingActive: { borderColor: colors.accent },
   avatarInitial: {
     fontSize: 32,
     fontWeight: "700",

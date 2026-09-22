@@ -7,15 +7,18 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type LayoutChangeEvent,
 } from "react-native";
 import Video from "react-native-video";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import type { CreateStackParamList } from "../../navigation/types";
+import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
+import type { CreateStackParamList, RootStackParamList } from "../../navigation/types";
 import { colors, radii, spacing, typography } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { uploadPhoto, uploadVideo } from "../../api/media";
+import { publishStory } from "../../api/stories";
 import { ApiError } from "../../api/client";
 import { FILTER_PREVIEWS } from "../../models/filterPreviews";
 import { createEmptyDraft, hasMeaningfulEdits, type Overlay } from "../../models/storyDraft";
@@ -23,19 +26,21 @@ import { DraggableTextOverlay } from "../../components/DraggableTextOverlay";
 import { TextToolModal } from "../../components/TextToolModal";
 
 type Props = NativeStackScreenProps<CreateStackParamList, "StoryEditor">;
+type Audience = "public" | "followers";
 
 const TRASH_ZONE_SIZE = 80;
 
 /**
  * Story editor (spec section 19-27): text overlays, filters (preview-only —
- * see models/filterPreviews.ts for why), discard protection, and uploading
- * the finished media. Publishing (audience, comment/sharing settings, the
- * 24h lifecycle — spec section 28-29) is Phase 4, which doesn't exist yet,
- * so this screen's action is honestly labeled "Upload", not "Share Story".
+ * see models/filterPreviews.ts for why), discard protection, and now real
+ * publishing (spec section 28) now that Phase 4's backend exists: upload
+ * the media, then attach it to a Story with the chosen audience.
  */
 export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Element {
   const { mediaUri, kind, mimeType } = route.params;
   const { accessToken } = useAuth();
+  const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const [audience, setAudience] = useState<Audience>("public");
 
   const [draft, setDraft] = useState(() => createEmptyDraft({ uri: mediaUri, kind, width: route.params.width, height: route.params.height }));
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -118,20 +123,21 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
 
   const onClose = () => confirmDiscard(() => navigation.goBack());
 
-  const onUpload = async () => {
+  const onShare = async () => {
     if (!accessToken) return;
     setUploadState("uploading");
     setUploadError(null);
     try {
-      if (kind === "photo") {
-        await uploadPhoto(mediaUri, mimeType, accessToken);
-      } else {
-        await uploadVideo(mediaUri, mimeType, accessToken);
-      }
+      const media = kind === "photo" ? await uploadPhoto(mediaUri, mimeType, accessToken) : await uploadVideo(mediaUri, mimeType, accessToken);
+      await publishStory(
+        { mediaId: media.id, caption: draft.caption, audience, allowComments: "everyone", allowSharing: true },
+        accessToken,
+      );
       setUploadState("done");
+      rootNavigation.reset({ index: 0, routes: [{ name: "Main" }] });
     } catch (err) {
       setUploadState("error");
-      setUploadError(err instanceof ApiError ? err.message : "Upload failed — check your connection and try again.");
+      setUploadError(err instanceof ApiError ? err.message : "Sharing failed — check your connection and try again.");
     }
   };
 
@@ -219,19 +225,40 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           ))}
         </ScrollView>
 
+        <TextInput
+          style={styles.captionInput}
+          placeholder="Add a caption…"
+          placeholderTextColor="rgba(255,255,255,0.5)"
+          value={draft.caption}
+          onChangeText={(text) => setDraft((d) => ({ ...d, caption: text }))}
+          maxLength={280}
+        />
+
+        <View style={styles.audienceRow}>
+          {(["public", "followers"] as Audience[]).map((a) => (
+            <Pressable
+              key={a}
+              onPress={() => setAudience(a)}
+              style={[styles.audienceChip, audience === a && styles.audienceChipActive]}
+            >
+              <Text style={[styles.audienceLabel, audience === a && styles.audienceLabelActive]}>
+                {a === "public" ? "Public" : "Followers"}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         {uploadError ? <Text style={styles.uploadError}>{uploadError}</Text> : null}
 
         <Pressable
           style={[styles.uploadButton, uploadState === "uploading" && styles.uploadButtonDisabled]}
           disabled={uploadState === "uploading" || uploadState === "done"}
-          onPress={onUpload}
+          onPress={onShare}
         >
           {uploadState === "uploading" ? (
             <ActivityIndicator color={colors.onAccent} />
           ) : (
-            <Text style={styles.uploadButtonLabel}>
-              {uploadState === "done" ? "Uploaded ✓" : "Upload"}
-            </Text>
+            <Text style={styles.uploadButtonLabel}>{uploadState === "done" ? "Shared ✓" : "Share Story"}</Text>
           )}
         </Pressable>
       </View>
@@ -285,7 +312,25 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
   filterChipLabel: { color: colors.textPrimary, fontSize: 12 },
   filterChipLabelActive: { color: colors.onAccent, fontWeight: "700" },
-  uploadError: { color: colors.danger, textAlign: "center", ...typography.caption },
+  captionInput: {
+    color: colors.textPrimary,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  audienceRow: { flexDirection: "row", gap: spacing.xs, justifyContent: "center" },
+  audienceChip: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+  },
+  audienceChipActive: { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary },
+  audienceLabel: { color: colors.textPrimary, fontSize: 13 },
+  audienceLabelActive: { color: colors.background, fontWeight: "700" },
+  uploadError: { ...typography.caption, color: colors.danger, textAlign: "center" },
   uploadButton: {
     backgroundColor: colors.accent,
     borderRadius: radii.md,

@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import type { SearchStackParamList } from "../../navigation/types";
+import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
+import type { SearchStackParamList, RootStackParamList } from "../../navigation/types";
 import { colors, radii, spacing, typography } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { followUser, getProfile, unfollowUser, type ProfileView } from "../../api/users";
 import { ApiError } from "../../api/client";
+import { getUserActiveStories } from "../../api/stories";
 
 type Props = NativeStackScreenProps<SearchStackParamList, "UserProfile">;
 
@@ -18,7 +20,13 @@ type Props = NativeStackScreenProps<SearchStackParamList, "UserProfile">;
 export function UserProfileScreen({ route }: Props): React.JSX.Element {
   const { username } = route.params;
   const { accessToken } = useAuth();
+  // StoryViewer is registered on the root stack, above the tabs (see
+  // RootNavigator.tsx) — not on this screen's own SearchStack — so this
+  // screen reaches it via the shared root navigation type instead of its
+  // own typed `navigation` prop.
+  const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [profile, setProfile] = useState<ProfileView | null>(null);
+  const [hasActiveStory, setHasActiveStory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
@@ -30,6 +38,14 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
     try {
       const { profile: fetched } = await getProfile(username, accessToken);
       setProfile(fetched);
+      // A private account not yet followed 403s on the Stories list — that's
+      // just "no ring to show", not a real error, so it's swallowed here.
+      try {
+        const { stories } = await getUserActiveStories(username, accessToken);
+        setHasActiveStory(stories.length > 0);
+      } catch {
+        setHasActiveStory(false);
+      }
     } catch (err) {
       setProfile(null);
       setError(err instanceof ApiError && err.status === 404 ? "This account isn't available." : "Couldn't load this profile.");
@@ -41,6 +57,11 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const openStoryViewer = () => {
+    if (!hasActiveStory) return;
+    rootNavigation.navigate("StoryViewer", { username });
+  };
 
   const onFollowPress = async () => {
     if (!accessToken || !profile) return;
@@ -83,9 +104,13 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <View style={styles.avatarPlaceholder}>
+      <Pressable
+        onPress={openStoryViewer}
+        disabled={!hasActiveStory}
+        style={[styles.avatarPlaceholder, hasActiveStory && styles.avatarRingActive]}
+      >
         <Text style={styles.avatarInitial}>{profile.displayName.charAt(0).toUpperCase()}</Text>
-      </View>
+      </Pressable>
       <Text style={[typography.title, styles.displayName]}>{profile.displayName}</Text>
       <Text style={typography.caption}>@{profile.username}</Text>
       {profile.bio ? <Text style={[typography.body, styles.bio]}>{profile.bio}</Text> : null}
@@ -139,12 +164,13 @@ const styles = StyleSheet.create({
     height: 88,
     borderRadius: radii.pill,
     borderWidth: 3,
-    borderColor: colors.accent,
+    borderColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.surface,
     marginBottom: spacing.md,
   },
+  avatarRingActive: { borderColor: colors.accent },
   avatarInitial: { fontSize: 32, fontWeight: "700", color: colors.textPrimary },
   displayName: { marginTop: spacing.sm },
   bio: { marginTop: spacing.sm, textAlign: "center" },

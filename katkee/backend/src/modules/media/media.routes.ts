@@ -6,6 +6,7 @@ import * as mediaService from "./media.service";
 import * as mediaRepo from "./media.repository";
 import { mediaStorage } from "./instance";
 import type { MediaRecord } from "./media.repository";
+import * as storiesService from "../stories/stories.service";
 
 function toPublicMedia(media: MediaRecord) {
   return {
@@ -21,13 +22,17 @@ function toPublicMedia(media: MediaRecord) {
   };
 }
 
-async function requireOwnedMedia(id: string, viewerId: string): Promise<MediaRecord> {
+/**
+ * Owner-only, UNLESS the media has been published as a Story the viewer
+ * is otherwise allowed to see (audience/privacy/block rules all reused
+ * from stories.service — see canAccessMediaViaStory's own comment).
+ */
+async function requireAccessibleMedia(id: string, viewerId: string): Promise<MediaRecord> {
   const media = await mediaRepo.findMediaById(id);
-  // Media isn't attached to any Story/audience yet (that's Phase 4), so for
-  // now it's owner-only — not the eventual visibility rule, just what's
-  // correct to enforce before Stories exist to grant broader access.
-  if (!media || media.ownerId !== viewerId) throw new HttpError(404, "Media not found.");
-  return media;
+  if (!media) throw new HttpError(404, "Media not found.");
+  if (media.ownerId === viewerId) return media;
+  if (await storiesService.canAccessMediaViaStory(id, viewerId)) return media;
+  throw new HttpError(404, "Media not found.");
 }
 
 export function registerMediaRoutes(router: Router): void {
@@ -53,13 +58,13 @@ export function registerMediaRoutes(router: Router): void {
 
   router.get("/api/v1/media/:id", async (req, res) => {
     requireAuth(req);
-    const media = await requireOwnedMedia(req.params.id as string, req.userId as string);
+    const media = await requireAccessibleMedia(req.params.id as string, req.userId as string);
     sendJson(res, 200, { media: toPublicMedia(media) });
   });
 
   router.get("/api/v1/media/:id/file", async (req, res) => {
     requireAuth(req);
-    const media = await requireOwnedMedia(req.params.id as string, req.userId as string);
+    const media = await requireAccessibleMedia(req.params.id as string, req.userId as string);
 
     res.writeHead(200, {
       "Content-Type": media.mimeType,

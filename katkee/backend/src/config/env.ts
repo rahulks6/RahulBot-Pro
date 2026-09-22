@@ -56,6 +56,11 @@ export const config = {
     // reasoning above — __dirname would point into dist/ once compiled.
     storageRoot: process.env.MEDIA_STORAGE_ROOT || path.resolve(process.cwd(), "data", "media"),
   },
+  stories: {
+    // Overridable so tests can exercise real expiry without waiting 24h —
+    // see test/env.ts. Spec section 29's 24h lifetime is the production default.
+    ttlSeconds: optionalInt("STORY_TTL_SECONDS", 60 * 60 * 24),
+  },
   jwt: {
     accessSecret: required("JWT_ACCESS_SECRET"),
     refreshSecret: required("JWT_REFRESH_SECRET"),

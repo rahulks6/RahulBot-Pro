@@ -1,10 +1,11 @@
-# KATKEE backend — Phase 1 + Phase 2 + Phase 3
+# KATKEE backend — Phase 1 + Phase 2 + Phase 3 + Phase 4
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
-people search, and now real media upload/storage/retrieval — all backed by
-a real database and a test suite that exercises it end to end. No mocked
-data anywhere in this service.
+people search, media upload/storage/retrieval, and now real Story
+publishing with a genuine 24-hour lifecycle — all backed by a real database
+and a test suite that exercises it end to end. No mocked data anywhere in
+this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -97,6 +98,21 @@ upload streams straight to a temp file on disk (hashing and enforcing the
 size limit as it goes) rather than buffering the whole thing in memory, so
 even large video uploads don't blow up process RAM.
 
+Phase 4's 24-hour lifecycle was verified by actually letting a Story
+expire, not by inspecting the code and trusting it: `STORY_TTL_SECONDS` is
+overridable (`.env.example`), so one test publishes a Story with a 1-second
+TTL, waits ~1.2 real seconds, and then asserts it's genuinely gone from
+`GET /api/v1/stories/:id` (for anyone else) and `mine/active`, while the
+owner can still reach it directly — the same real-time-passing technique,
+just scaled down from 24h to 1s rather than mocking `Date.now()`. 49/49
+tests pass, including 15 new Phase 4 tests. Building this also surfaced a
+real integration gap: media was owner-only from Phase 3 (there was no
+Story yet to grant broader access), which meant a Story viewer couldn't
+actually load anyone else's photo/video — fixed by having the media route
+ask `stories.service.canAccessMediaViaStory()` before falling back to
+"not found," reusing the exact same audience/block/privacy rules rather
+than re-implementing them.
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -124,8 +140,16 @@ even large video uploads don't blow up process RAM.
 | GET | `/api/v1/search/users?q=` | Bearer | Substring match on username/display name; excludes yourself and any blocked relationship |
 | POST | `/api/v1/media/photos` | Bearer | Raw binary body (`Content-Type: image/png` or `image/jpeg`) → `{media}`; validates real magic bytes + dimensions, 25 MiB max |
 | POST | `/api/v1/media/videos` | Bearer | Raw binary body (`Content-Type: video/mp4` or `video/quicktime`) → `{media}`; validates the ISO-BMFF container, 200 MiB max |
-| GET | `/api/v1/media/:id` | Bearer, owner-only | Metadata only |
-| GET | `/api/v1/media/:id/file` | Bearer, owner-only | Streams the original bytes back, byte-for-byte |
+| GET | `/api/v1/media/:id` | Bearer | Owner, or anyone permitted to view a Story built from this media (see below) |
+| GET | `/api/v1/media/:id/file` | Bearer | Same access rule; streams the original bytes back, byte-for-byte |
+| POST | `/api/v1/stories` | Bearer | `{mediaId, caption, audience, allowComments, allowSharing}` → `{story}`; media must be your own, `ready`, and not already published |
+| GET | `/api/v1/stories/:id` | Bearer | Owner always; others need it active + visible per audience/privacy/block rules |
+| DELETE | `/api/v1/stories/:id` | Bearer, owner-only | Soft-deletes; gone even to the owner afterward (unlike natural expiry) |
+| POST | `/api/v1/stories/:id/view` | Bearer | Records a view once per viewer; the owner's own view never counts |
+| GET | `/api/v1/stories/:id/views` | Bearer, owner-only | View count |
+| GET | `/api/v1/stories/mine/active` | Bearer | Your own non-expired Stories, oldest first |
+| GET | `/api/v1/stories/feed/following` | Bearer | Owners you follow (+ yourself) with an active Story, most-recent-first — raw data for Phase 5's Home, not a ranked feed |
+| GET | `/api/v1/users/:username/stories` | Bearer | That user's active Stories visible to you |
 
 Errors are JSON: `{"error": "validation_error", "fields": {...}}` (422),
 `{"error": "auth_error", "message": "..."}` (401/409), or
@@ -142,15 +166,19 @@ actually matter.
 `blocks`, `mutes` — the identity and social-graph foundation. `0002` +
 `0003`: trigram search indexes (see the bugfix note above for why `0003`
 exists). `0004`: `media` — metadata for uploaded photos/videos; the binary
-itself lives on disk, never in a row (spec section 44/52). Stories,
-Highlights, conversations, and notifications are deliberately left to their
-own phases so these migrations stay reviewable.
+itself lives on disk, never in a row (spec section 44/52). `0005`:
+`stories` + `story_views` — a Story wraps one media row with
+audience/comment/sharing settings and a server-computed `expires_at`; rows
+are never hard-deleted on expiry (soft `deleted_at` only), since Archive
+(Phase 9) will need the history. Highlights, conversations, and
+notifications are deliberately left to their own phases so these
+migrations stay reviewable.
 
-## What's NOT in Phase 1/2/3
+## What's NOT in Phase 1/2/3/4
 
-Story publishing/lifecycle (attaching uploaded media to an actual Story,
-audience/privacy rules, 24h expiration), the Home feed, DMs, Highlights,
-recommendations, video transcoding/thumbnails, and moderation are later
-phases per the build plan — this is intentionally just foundation + auth +
-social graph + raw media upload, done for real rather than a wide shallow
-pass across everything.
+The ranked, swipeable Home feed and its gesture system (Phase 5),
+recommendations/discovery beyond your own following graph (Phase 6), DMs,
+Highlights, video transcoding/thumbnails, and moderation are later phases
+per the build plan — this is intentionally just foundation + auth + social
+graph + media + Story publishing/lifecycle, done for real rather than a
+wide shallow pass across everything.

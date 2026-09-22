@@ -27,3 +27,8 @@ export type CreateStackParamList = {
     height: number | null;
   };
 };
+
+export type RootStackParamList = {
+  Main: undefined;
+  StoryViewer: { username: string; initialStoryId?: string };
+};

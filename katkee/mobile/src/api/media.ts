@@ -1,4 +1,4 @@
-import { API_BASE_URL, ApiError } from "./client";
+import { API_BASE_URL, ApiError, apiGet } from "./client";
 
 export interface UploadedMedia {
   id: string;
@@ -51,4 +51,10 @@ export async function uploadPhoto(localUri: string, mimeType: string, accessToke
 export async function uploadVideo(localUri: string, mimeType: string, accessToken: string): Promise<UploadedMedia> {
   const blob = await fileUriToBlob(localUri);
   return uploadBlob("/api/v1/media/videos", blob, mimeType, accessToken);
+}
+
+/** Media access is owner-only unless it's attached to a Story the caller can see (backend Phase 4 rule). */
+export async function getMedia(mediaId: string, accessToken: string): Promise<UploadedMedia> {
+  const res = await apiGet<{ media: UploadedMedia }>(`/api/v1/media/${mediaId}`, accessToken);
+  return res.media;
 }
