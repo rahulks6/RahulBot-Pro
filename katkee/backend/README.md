@@ -1,4 +1,4 @@
-# KATKEE backend — Phase 1 through Phase 10
+# KATKEE backend — Phase 1 through Phase 11
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
@@ -9,10 +9,12 @@ and new-creator exploration, real notifications (likes, comments, follows,
 follow requests, and @mentions), real 1:1 direct messages (including
 sharing a Story into a conversation), a real Archive + Highlights
 (named collections of a user's own past Stories that outlive the normal
-24h expiry), and now real Moderation — user-filed Reports, a moderator
-queue, content removal, and account suspension that actually blocks
-login — all backed by a real database and a test suite that exercises it
-end to end. No mocked data anywhere in this service.
+24h expiry), real Moderation (user-filed Reports, a moderator queue,
+content removal, and account suspension that actually blocks login), and
+now real production hardening — rate limiting, structured request
+logging, a liveness check that actually pings the database, and startup
+config validation — all backed by a real database and a test suite that
+exercises it end to end. No mocked data anywhere in this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -316,11 +318,70 @@ mismatch rejection, and double-resolution rejection), plus manual `curl`
 verification of the full report → queue → suspend → login-denied flow
 against a live server.
 
+## Phase 11: production hardening
+
+Four real, independently testable pieces, not a vague "harden everything"
+pass:
+
+- **Rate limiting** (`src/http/rateLimiter.ts` + `rateLimiters.ts`): an
+  in-memory, fixed-window limiter — the honest tradeoff for a
+  single-process sandbox with no Redis/shared store (see the file's own
+  comment; it resets on restart and doesn't coordinate across instances,
+  and that's documented as the first thing to swap if this ever runs
+  behind a load balancer). A generous global limiter (600 req/min/IP by
+  default) sits in front of every request in `server.ts`; a much stricter
+  one (10 requests per 15 minutes per IP by default) is applied
+  specifically to `/api/v1/auth/signup`, `/login`, and `/refresh` in
+  `auth.routes.ts` — sharing one budget across all three, since an
+  attacker guessing passwords and an attacker mass-creating accounts are
+  the same shape of abuse against that endpoint family. The client IP
+  comes straight from the raw socket, not an `X-Forwarded-For` header —
+  trusting that header without also configuring which upstream proxies to
+  trust would let a client spoof it and evade the limiter entirely; a
+  deployment that adds a reverse proxy needs to update `clientIp()` after
+  establishing that trust.
+- **Structured request logging** (`server.ts`'s `logRequest`): one JSON
+  line per request (`ts`, `method`, `path`, `status`, `durationMs`, `ip`)
+  to stdout — real production observability without an external logging
+  package (this sandbox can't install one anyway). Query strings are
+  stripped from the logged path on principle, even though nothing here
+  puts secrets in one today.
+- **A real liveness check**: `GET /health` now runs an actual `SELECT 1`
+  and reports `{status: "degraded", db: "down"}` at 503 if it fails,
+  instead of a static 200 that would look identical whether the database
+  — or the `psql` process spawn itself — was healthy or not.
+- **Startup config validation** (`config/env.ts`): `JWT_ACCESS_SECRET`
+  and `JWT_REFRESH_SECRET` must now each be at least 32 characters and
+  must differ from each other, or the process refuses to start. The
+  access/refresh token `type` claim already prevented cross-use even if
+  the secrets matched (`tokens.ts`), but a weak or duplicated secret
+  shouldn't be allowed to reach production in the first place, and
+  failing fast at startup is cheaper than failing quietly at 3am.
+
+`server.headersTimeout` is also set to 10s — headers should always arrive
+quickly regardless of a request's body size, so this specifically blunts
+a slow/trickling-headers (slowloris-style) connection without punishing a
+legitimate large video upload on a slow network, which still gets
+`requestTimeout`'s generous default (Node's own 5 minutes, left
+untouched on purpose).
+
+141/141 tests passing (6 new: the `RateLimiter` class's own budget/
+per-key-isolation/window-reset/`reset()` behavior as pure unit tests, plus
+one HTTP-level test that exhausts a real per-IP auth budget against a live
+server instance and confirms the 429 — using a tight, file-scoped
+`RATE_LIMIT_AUTH_MAX` override that doesn't affect any other test file,
+since every other test's much more generous default lives in
+`test/env.ts`). Manually smoke-tested against a live server: `GET
+/health` reporting real DB status, the structured log lines appearing on
+stdout for both successful and rate-limited requests, and 10 real signups
+succeeding followed by the 11th and 12th genuinely receiving 429 with a
+`Retry-After`-style message.
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| GET | `/health` | – | liveness check |
+| GET | `/health` | – | Real liveness check — pings the database; 200 `{db: "up"}` or 503 `{db: "down"}` |
 | POST | `/api/v1/auth/signup` | – | `{username, email, password, displayName}` → `{user, tokens}` |
 | POST | `/api/v1/auth/login` | – | `{email, password}` → `{user, tokens}` |
 | POST | `/api/v1/auth/refresh` | – | `{refreshToken}` → `{tokens}`; single-use, rotates on every call |
@@ -445,7 +506,7 @@ polymorphic across three tables — see "Phase 10" above for that
 tradeoff, and two indexes: one for the moderator queue's status+FIFO
 ordering, one for looking up every report against a given target).
 
-## What's NOT in Phase 1-10
+## What's NOT in Phase 1-11
 
 `follow_after_story` attribution is still best-effort client-reported
 rather than cross-referenced against a conversation (see mobile/README.md
@@ -455,12 +516,22 @@ transcoding/thumbnails are later phases per the build plan. A Highlight's
 cover is computed (its first item's media), not a separately
 uploadable/croppable image — see "Phase 9" above for why. Moderation
 itself covers Reports, a moderator queue, content removal, and account
-suspension, but not a full trust-and-safety surface: no rate-limiting on
-filing reports, no report-aggregation ("this Story has 12 reports" is 12
-rows, not one with a count), no appeals flow, and no mobile UI for the
-moderator queue itself (it's a real, tested API with no admin screen
-built against it yet — a deliberately small, internal-only audience
-didn't justify a dedicated admin app in this pass). The recommendation
+suspension, but not a full trust-and-safety surface: filing a report only
+gets the generic global rate limit (600 req/min/IP, same as everything
+else), not a dedicated stricter budget of its own; no report-aggregation
+("this Story has 12 reports" is 12 rows, not one with a count); no
+appeals flow; and no mobile UI for the moderator queue itself (it's a
+real, tested API with no admin screen built against it yet — a
+deliberately small, internal-only audience didn't justify a dedicated
+admin app in this pass). Phase 11's hardening is real but bounded to what
+a single-process sandbox deployment can actually offer: rate limiting is
+in-memory and per-process (see "Phase 11" above — it won't coordinate
+across multiple server instances behind a load balancer, and resets on
+every restart), there's no TLS termination configured (that's normally a
+reverse proxy's job, not this application's), no automated database
+backup/restore strategy, and no APM/metrics/alerting beyond the
+structured request-log lines — a real production deployment layers those
+on top of, not instead of, what's here. The recommendation
 system itself is real
 but explicitly a starting heuristic, not a trained model — see "Phase 6:
 the recommendation system is a real heuristic, not a model" above for why,

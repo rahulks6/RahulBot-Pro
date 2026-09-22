@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { Router } from "./http/router";
 import { createServer } from "./http/server";
 import { sendJson } from "./http/respond";
+import { query } from "./db/psql";
 import { registerAuthRoutes } from "./modules/auth/auth.routes";
 import { registerUserRoutes } from "./modules/users/users.routes";
 import { registerSocialRoutes } from "./modules/social/social.routes";
@@ -19,8 +20,17 @@ import { registerModerationRoutes } from "./modules/moderation/moderation.routes
 export function buildApp(): Server {
   const router = new Router();
 
-  router.get("/health", (_req, res) => {
-    sendJson(res, 200, { status: "ok", service: "katkee-backend" });
+  // A real liveness check, not a static 200 — a psql-shim process spawn
+  // failure or a database that's actually down would otherwise look
+  // identical to a healthy server from outside. Never throws: a failed
+  // check reports 503/"down" instead of surfacing as an unhandled 500.
+  router.get("/health", async (_req, res) => {
+    try {
+      await query("SELECT 1");
+      sendJson(res, 200, { status: "ok", service: "katkee-backend", db: "up" });
+    } catch {
+      sendJson(res, 503, { status: "degraded", service: "katkee-backend", db: "down" });
+    }
   });
 
   registerAuthRoutes(router);

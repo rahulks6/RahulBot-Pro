@@ -4,6 +4,8 @@ import { AuthError } from "../modules/auth/auth.service";
 import { DatabaseError } from "../db/psql";
 import { HttpError } from "./errors";
 import { sendJson } from "./respond";
+import { globalRateLimiter } from "./rateLimiters";
+import { clientIp } from "./rateLimiter";
 import type { KatkeeRequest, Router } from "./router";
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024; // 1 MiB
@@ -59,10 +61,33 @@ function handleError(res: http.ServerResponse, error: unknown): void {
   sendJson(res, 500, { error: "internal_error", message: "Something went wrong." });
 }
 
+function logRequest(req: http.IncomingMessage, res: http.ServerResponse, durationMs: number): void {
+  // One structured JSON line per request — real production observability
+  // without an external logging package (this sandbox can't install one
+  // anyway). The path is logged without its query string: nothing here
+  // uses query params for secrets today, but stripping them is a cheap
+  // habit that stays correct if that ever changes.
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      method: req.method,
+      path: (req.url ?? "").split("?")[0],
+      status: res.statusCode,
+      durationMs,
+      ip: clientIp(req),
+    }),
+  );
+}
+
 export function createServer(router: Router): http.Server {
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
+    const startedAt = Date.now();
+    res.on("finish", () => logRequest(req, res, Date.now() - startedAt));
+
     void (async () => {
       try {
+        globalRateLimiter.check(clientIp(req));
+
         const url = req.url ?? "/";
         const match = router.match(req.method ?? "GET", url);
         if (!match) {
@@ -83,4 +108,13 @@ export function createServer(router: Router): http.Server {
       }
     })();
   });
+
+  // Headers must arrive quickly regardless of a request's body size — this
+  // specifically targets a slow/trickling-headers (slowloris-style)
+  // connection without punishing a legitimate large video upload on a slow
+  // network, which needs `requestTimeout` (left at Node's own 5-minute
+  // default) to stay generous.
+  server.headersTimeout = 10_000;
+
+  return server;
 }

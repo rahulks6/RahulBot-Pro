@@ -1,4 +1,4 @@
-# KATKEE mobile — Phase 1 through Phase 10
+# KATKEE mobile — Phase 1 through Phase 11
 
 Real, hand-written TypeScript source for the design system, navigation shell,
 authentication, search/follow, camera capture + the Story editor, publishing
@@ -7,7 +7,7 @@ analytics-event emission feeding the backend's recommendation system, a real
 Activity tab backed by the backend's notifications, a real DM inbox and
 conversation thread (including sharing a Story into a conversation), real
 Highlights — create/edit/view, picked from a real Archive of every Story
-you've ever published — and now a real Report flow (Story, comment, and
+you've ever published — and a real Report flow (Story, comment, and
 account) feeding the backend's moderation queue, wired to the actual
 backend API (`../backend`) — not generated boilerplate. It has **not**
 been built or run in this session; see the limitation below before
@@ -15,8 +15,10 @@ trusting it further, and see "Phase 3 specifically" for why that phase
 carries more risk than 1-2 (Phases 4-10 inherit the same camera/gesture
 risk, plus their own new ones — see each phase's own "specifically"
 section). A best-effort `tsc` pass (no real library types installed —
-see below) ran clean against every file touched through Phase 10, for
-what that's worth given its limits.
+see below) ran clean against every file touched through Phase 10 (Phase
+11 — the backend's production hardening — needed no mobile changes at
+all; see "Phase 11 specifically" below for why), for what that's worth
+given its limits.
 
 ## What exists here
 
@@ -202,6 +204,23 @@ what that's worth given its limits.
   `UserProfileScreen.tsx` gained a small **Report this account** link.
   `CommentsSheet.tsx` gained a **Report** action per comment that isn't
   your own, alongside the existing Delete.
+
+### Phase 11 specifically
+
+- **No new files, no new UI — and that's not a gap.** Phase 11 was the
+  backend's production hardening (rate limiting, structured logging, a
+  real DB-backed health check, startup config validation — see
+  backend/README.md's Phase 11 section). None of that needed a mobile
+  change because the error-handling plumbing built all the way back in
+  Phase 1 already does the right thing by construction: `api/client.ts`'s
+  `request()` already turns any non-2xx JSON response's `message` field
+  into an `ApiError`, and every screen that calls `login`/`signup`
+  already catches `ApiError` and shows `err.message` — so a 429 rate-limit
+  response (`{"error":"http_error","message":"Too many requests — try
+  again in 898s."}`) already surfaces to the user correctly, verified by
+  reading that code path rather than assumed. That's a real payoff of
+  having kept error shapes consistent across nine prior phases, not
+  something added for Phase 11 specifically.
 
 ### Phase 10 specifically
 
