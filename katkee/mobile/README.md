@@ -1,18 +1,19 @@
-# KATKEE mobile — Phase 1 through Phase 7
+# KATKEE mobile — Phase 1 through Phase 8
 
 Real, hand-written TypeScript source for the design system, navigation shell,
 authentication, search/follow, camera capture + the Story editor, publishing
 and viewing Stories, the full gesture set plus likes/comments/sharing, real
-analytics-event emission feeding the backend's recommendation system, and
-now a real Activity tab backed by the backend's notifications, wired to the
-actual backend API (`../backend`) — not generated boilerplate. It has
-**not** been built or run in this session; see the limitation below before
-trusting it further, and see "Phase 3 specifically" for why that phase
-carries more risk than 1-2 (Phases 4-7 inherit the same camera/gesture risk,
-plus their own new ones — see each phase's own "specifically" section). A
-best-effort `tsc` pass (no real library types installed — see below) ran
-clean against every file touched through Phase 7, for what that's worth
-given its limits.
+analytics-event emission feeding the backend's recommendation system, a real
+Activity tab backed by the backend's notifications, and now a real DM inbox
+and conversation thread (including sharing a Story into a conversation),
+wired to the actual backend API (`../backend`) — not generated boilerplate.
+It has **not** been built or run in this session; see the limitation below
+before trusting it further, and see "Phase 3 specifically" for why that
+phase carries more risk than 1-2 (Phases 4-8 inherit the same
+camera/gesture risk, plus their own new ones — see each phase's own
+"specifically" section). A best-effort `tsc` pass (no real library types
+installed — see below) ran clean against every file touched through
+Phase 8, for what that's worth given its limits.
 
 ## What exists here
 
@@ -32,9 +33,8 @@ given its limits.
 - `src/screens/` — Login, Signup, Search, and the tapped-through user
   profile (follow/unfollow, including the "Requested" state for private
   accounts) are real, functional, wired to the Phase 2 backend endpoints.
-  Home, Create (camera + editor), and Activity are now real too (see
-  below); DM is still an honest empty state for its own phase (see spec
-  build order) — the Profile tab shows the real authenticated user fetched
+  Home, Create (camera + editor), Activity, and DM are now all real too
+  (see below) — the Profile tab shows the real authenticated user fetched
   from `/api/v1/auth/me`.
 - `src/navigation/SearchStack.tsx` — the Search tab is its own stack
   (`SearchHome` → `UserProfile`) so tapping a result actually opens that
@@ -132,19 +132,74 @@ given its limits.
   `navigation.navigate("Search", { screen: "UserProfile", params: {...} })`
   — the standard React Navigation pattern for reaching a screen nested
   inside a different tab than the one you're navigating from.
+- `src/navigation/DMStack.tsx` — the DM tab is now its own stack
+  (`DMInbox` → `Conversation` / `SendStory`), the same pattern as
+  `SearchStack.tsx`.
+- `src/screens/dm/DMInboxScreen.tsx` — a real conversation list fetched
+  from the Phase 8 backend: other participant, a last-message preview
+  ("You: " prefix for your own, "Shared a Story" for a story-only
+  message), and an unread dot, pull-to-refresh, tap to open the thread.
+- `src/screens/dm/ConversationScreen.tsx` — a real message thread: an
+  `inverted` `FlatList` kept in the backend's own newest-first order (so
+  "load older" is just `onEndReached` on the same list, no reversing),
+  a composer that actually posts via `POST
+  /api/v1/conversations/:id/messages`, mark-read on focus, and a 4s poll
+  for new messages while the screen is open (see "Phase 8 specifically").
+  A shared-Story bubble resolves its real owner via the new
+  `GET /api/v1/stories/:id/owner` and opens it in `StoryViewer`,
+  falling back to doing nothing if the Story's no longer accessible.
+- `src/screens/dm/SendStoryScreen.tsx` — the "Send to a Katkee user" leg
+  of the Share sheet: search for someone, tap to open (or reuse) the
+  conversation with them and send the Story as a message. Reached from
+  `ShareSheet.tsx` via a root → `Main` → `DM` → `SendStory` deep link
+  (`StoryViewerScreen.tsx` holds the root-level navigation object;
+  `ShareSheet` itself stays navigation-agnostic via an `onSendToUser`
+  callback prop, the same pattern as its existing `onClose`).
+- `src/state/DMContext.tsx` — mirrors `NotificationsContext.tsx` exactly:
+  shares the DM tab's own unread count (independent of Activity's) with a
+  matching amber badge on the DM tab icon, polling
+  `GET /api/v1/conversations/unread-count` every 20s.
+- `src/api/stories.ts`'s `getStoryOwnerUsername()` — the Phase 8 backend
+  addition (`GET /api/v1/stories/:id/owner`) used by both the DM
+  shared-Story bubble and, retroactively, `ActivityScreen.tsx`'s mention
+  notifications (see "Phase 7 specifically" above).
+
+### Phase 8 specifically
+
+- **Messaging is polled, not pushed.** An open conversation polls every
+  4s for new messages (tighter than Activity/DM's 20s badge polling,
+  since the user is actively looking at the screen) — there's no
+  push/websocket channel in this sandbox (see backend/README.md). A real
+  chat product would want a persistent connection; this is the honest
+  approximation available here, not a stub.
+- **A "Shared a Story" bubble that's no longer accessible just does
+  nothing when tapped**, rather than showing an error — the owner-lookup
+  call fails the same way `getStoryForViewer` would for any expired,
+  deleted, or since-privacy-changed Story, and silently no-opping felt
+  better than surfacing a confusing error for something the recipient
+  has no way to act on anyway.
+- **Group DMs aren't here** — see backend/README.md for why the schema
+  itself is 1:1-only for this pass, not just the UI.
+- **No typing indicator, read receipts beyond the unread dot, or message
+  deletion/editing.** The spec's DM sections don't call for the first two
+  as hard requirements the way the core send/receive/share loop is, and
+  message deletion wasn't in this pass's scope — a real, testable slice
+  (send, receive, share a Story, know what's unread) over a wider shallow
+  one.
 
 ### Phase 7 specifically
 
-- **A mention notification on a Story you don't own can't deep-link
-  straight to that Story.** For like/comment notifications the recipient
-  is always the Story's owner, so the viewer's own username is enough to
-  reopen it. A mention's recipient is just whoever got @-mentioned in a
-  comment — the Story underneath it could belong to anyone — and the
-  mobile client has no "look up a Story's owner by id" call yet (the
-  backend's own `notification.story` field only carries `{id, mediaId}`,
-  not an owner username). Rather than guess wrong, tapping a mention opens
-  the mentioning actor's profile instead; adding a real owner lookup is a
-  small, isolated follow-up whenever it's worth the endpoint.
+- **A mention notification on a Story you don't own couldn't deep-link
+  straight to that Story — fixed in Phase 8.** For like/comment
+  notifications the recipient is always the Story's owner, so the
+  viewer's own username was always enough to reopen it. A mention's
+  recipient is just whoever got @-mentioned in a comment, though — the
+  Story underneath it could belong to anyone — and there was no
+  "look up a Story's owner by id" call. Phase 8 added one
+  (`GET /api/v1/stories/:id/owner`, needed for the DM shared-Story bubble
+  anyway) and wired it into `ActivityScreen.tsx`'s mention handler; it
+  falls back to opening the actor's profile only if that lookup itself
+  fails (e.g. the Story has since expired).
 - **There's no screen for managing incoming follow requests yet.** The
   backend's `GET /api/v1/follow-requests` /
   `POST /api/v1/follow-requests/:id/accept|decline` have existed since

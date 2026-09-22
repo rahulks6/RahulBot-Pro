@@ -1,14 +1,15 @@
-# KATKEE backend — Phase 1 through Phase 7
+# KATKEE backend — Phase 1 through Phase 8
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
 people search, media upload/storage/retrieval, Story publishing with a
 genuine 24-hour lifecycle, likes/comments/shares, a real (heuristic,
 not ML — see below) recommendation system with analytics event collection
-and new-creator exploration, and now real notifications (likes, comments,
-follows, follow requests, and @mentions) — all backed by a real database
-and a test suite that exercises it end to end. No mocked data anywhere in
-this service.
+and new-creator exploration, real notifications (likes, comments, follows,
+follow requests, and @mentions), and now real 1:1 direct messages
+(including sharing a Story into a conversation) — all backed by a real
+database and a test suite that exercises it end to end. No mocked data
+anywhere in this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -194,6 +195,29 @@ real app's mention just doesn't link anyone. 100/100 tests passing (12
 new), plus manual `curl` verification of follow/like/mark-read/mark-all-read
 against a live server.
 
+Phase 8 (1:1 direct messages) uses a canonically-ordered pair schema
+(`conversations.user_a_id < user_b_id`, `UNIQUE (user_a_id, user_b_id)`)
+rather than a membership table — find-or-create a conversation is a single
+indexed lookup, not a join, and group DMs aren't in scope for this pass
+(nothing through Phase 8 needs them). Sharing a Story into a conversation
+(spec section 15's "Send to a Katkee user") reuses
+`engagement.service.shareStory` wholesale — the exact same
+view-access/`allowSharing` check and the exact same `story_shares`
+analytics row as the Share sheet's other two options, not a parallel
+implementation that could drift out of sync or skip the privacy check.
+Building this also closed a gap Phase 7 had explicitly documented rather
+than faked: a mention notification's Story can belong to anyone (unlike
+a like/comment, where the recipient is always the owner), and the mobile
+client had no way to resolve who that owner was. The fix is a small,
+reusable addition — `getStoryOwnerUsername()` / `GET
+/api/v1/stories/:id/owner`, gated by the same `getStoryForViewer` access
+rules as the Story itself — used by both the DM shared-Story bubble and
+(retroactively) the Activity tab's mention deep-link. 113/113 tests
+passing (13 new: 12 for conversations, 1 for the owner-lookup endpoint),
+plus manual `curl` verification of opening a conversation, sending a
+text message, sharing a Story into one, and resolving its owner, against
+a live server.
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -242,6 +266,13 @@ against a live server.
 | GET | `/api/v1/notifications/unread-count` | Bearer | → `{count}` |
 | POST | `/api/v1/notifications/read-all` | Bearer | Marks every unread notification for the caller read → 204 |
 | POST | `/api/v1/notifications/:id/read` | Bearer | Ownership-scoped (a non-recipient's call is a silent no-op) → 204; 404 for a malformed id |
+| GET | `/api/v1/stories/:id/owner` | Bearer | → `{username}`; same access rules as the Story itself |
+| POST | `/api/v1/users/:username/conversation` | Bearer | Find-or-create the 1:1 conversation with that user → `{conversation}`; 400 for yourself, 404 if either side blocked the other |
+| GET | `/api/v1/conversations` | Bearer | Paginated, most-recently-active first; each row has the other participant, last message preview, and unread flag |
+| GET | `/api/v1/conversations/unread-count` | Bearer | → `{count}` of conversations with unread activity |
+| GET | `/api/v1/conversations/:id/messages` | Bearer | Paginated, **newest first** (unlike comments) — see the schema notes below for why; participant-only |
+| POST | `/api/v1/conversations/:id/messages` | Bearer | `{body?, storyId?}` (at least one required) → `{message}`; a `storyId` reuses `shareStory`'s access/`allowSharing` check; re-checks blocking at send time, not just at conversation creation |
+| POST | `/api/v1/conversations/:id/read` | Bearer | Marks the conversation read for the caller → 204; sending a message auto-marks the sender read too |
 
 `not_interested` is one of `POST /api/v1/events`'s `eventType` values — it
 both logs the event and immediately excludes that creator from your
@@ -274,26 +305,38 @@ meaningful action, unlike a view or a like, so it's never deduplicated).
 lists that don't already have a dedicated table — likes/comments/shares
 are read directly from their own tables, not duplicated here) and
 `creator_not_interested` (the one real per-viewer hard-exclusion rule).
-Highlights and conversations are deliberately left to their own phases so
-these migrations stay reviewable. `0008`: `notifications` — one row per
+Highlights is deliberately left to its own phase so these migrations stay
+reviewable. `0008`: `notifications` — one row per
 like/comment/follow/follow_request/mention, with nullable FKs to whichever
 of `stories`/`story_comments`/`follow_requests` is relevant to that type
 (`CHECK (type IN (...))` keeps the type column closed), `read_at` for the
 unread state, and a partial index (`WHERE read_at IS NULL`) so the unread
 count/badge query stays cheap regardless of how large a user's full
-notification history grows.
+notification history grows. `0009`: `conversations` (canonically-ordered
+1:1 pairs, `user_a_id < user_b_id` enforced by a `CHECK`, so find-or-create
+is one indexed lookup rather than a membership-table join),
+`messages` (`body` and/or `shared_story_id` — `CHECK (body IS NOT NULL OR
+shared_story_id IS NOT NULL)` — with `shared_story_id` `ON DELETE SET
+NULL` so a "shared a Story" message outlives the Story's own deletion,
+the same way a real conversation survives an old message elsewhere being
+deleted), and `conversation_reads` (per-participant `last_read_at`, since
+a conversation has no single "unread" flag, only what each side has and
+hasn't seen).
 
-## What's NOT in Phase 1-7
+## What's NOT in Phase 1-8
 
-DMs (so Share's "send to a Katkee user" isn't here, and `follow_after_story`
-attribution is best-effort client-reported rather than cross-referenced
-against a conversation — see mobile/README.md), Highlights, video
+`follow_after_story` attribution is still best-effort client-reported
+rather than cross-referenced against a conversation (see mobile/README.md
+— DMs existing now doesn't automatically make that attribution real, it
+would need its own correlation logic). Group DMs, Highlights, video
 transcoding/thumbnails, and moderation (reports, a moderation queue) are
 later phases per the build plan. The recommendation system itself is real
 but explicitly a starting heuristic, not a trained model — see "Phase 6:
 the recommendation system is a real heuristic, not a model" above for why,
 and spec section 7 for why that's the intended starting point, not a
-shortcut. Notifications are delivered by polling (`GET
-/api/v1/notifications/unread-count`) — there's no push/websocket channel in
-this sandbox, so a real client has to poll or a later phase has to add one;
-see mobile/README.md for the polling interval this build settled on.
+shortcut. Both notifications and DMs are delivered by polling (`GET
+/api/v1/notifications/unread-count`, `GET
+/api/v1/conversations/unread-count`) — there's no push/websocket channel
+in this sandbox, so a real client has to poll or a later phase has to add
+one; see mobile/README.md for the polling intervals this build settled on
+(20s for both unread badges, 4s for an actively open conversation thread).

@@ -155,6 +155,29 @@ describe("viewing and audience rules", () => {
   });
 });
 
+describe("owner-username lookup", () => {
+  it("resolves a Story's owner username for anyone permitted to view it, using the same access rules as the Story itself", async () => {
+    const owner = await signupUser();
+    const follower = await signupUser();
+    const stranger = await signupUser();
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const story = await publishStory(owner.accessToken, mediaId, { audience: "followers" });
+    const storyId = story.body.story.id;
+
+    const asOwner = await client.get(`/api/v1/stories/${storyId}/owner`, authHeader(owner.accessToken));
+    assert.equal(asOwner.status, 200);
+    assert.equal(asOwner.body.username, owner.input.username);
+
+    const asStranger = await client.get(`/api/v1/stories/${storyId}/owner`, authHeader(stranger.accessToken));
+    assert.equal(asStranger.status, 403, "a non-follower is denied the same way viewing the Story itself is");
+
+    await client.post(`/api/v1/users/${owner.input.username}/follow`, undefined, authHeader(follower.accessToken));
+    const asFollower = await client.get(`/api/v1/stories/${storyId}/owner`, authHeader(follower.accessToken));
+    assert.equal(asFollower.status, 200);
+    assert.equal(asFollower.body.username, owner.input.username);
+  });
+});
+
 describe("media access via a published Story", () => {
   it("lets a permitted viewer fetch the underlying media file, byte-for-byte", async () => {
     const owner = await signupUser();

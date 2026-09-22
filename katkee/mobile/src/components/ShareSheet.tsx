@@ -11,22 +11,26 @@ interface Props {
   ownerUsername: string;
   isPublic: boolean;
   onClose: () => void;
+  /** Opens the DM "Send to…" picker (Phase 8) — the caller owns navigation since this component doesn't know its own nav context. */
+  onSendToUser: () => void;
 }
 
 /**
- * Share bottom sheet (spec section 15). "Send to Katkee user" needs DMs
- * (Phase 8) and isn't here yet. What is real: a native OS share sheet via
- * React Native's built-in `Share` API, and "Copy link" — offered only for
- * public Stories, never for followers-only ones, so sharing can't leak
- * private content (spec: "Sharing must NEVER bypass Story privacy"). Both
- * record the real `POST /api/v1/stories/:id/share` analytics event first.
+ * Share bottom sheet (spec section 15). Real: a native OS share sheet via
+ * React Native's built-in `Share` API, "Copy link" (offered only for
+ * public Stories, never followers-only ones, so sharing can't leak private
+ * content — spec: "Sharing must NEVER bypass Story privacy"), and now
+ * "Send to a Katkee user" (Phase 8), which opens the DM SendStory picker.
+ * All three record the real `POST /api/v1/stories/:id/share` analytics
+ * event — "Send to…" via `sendMessage`'s reuse of `engagement.service
+ * .shareStory` server-side, the other two directly here.
  *
  * The copied/shared link is a `katkee://` deep link. It will open the app
  * on a device that has Universal Links (iOS) / App Links (Android)
  * configured for this scheme — that native configuration doesn't exist
  * yet, so the link is correct but inert until it does.
  */
-export function ShareSheet({ visible, storyId, ownerUsername, isPublic, onClose }: Props): React.JSX.Element {
+export function ShareSheet({ visible, storyId, ownerUsername, isPublic, onClose, onSendToUser }: Props): React.JSX.Element {
   const { accessToken } = useAuth();
   const [busy, setBusy] = useState(false);
 
@@ -67,6 +71,19 @@ export function ShareSheet({ visible, storyId, ownerUsername, isPublic, onClose 
       <Pressable style={styles.backdrop} onPress={onClose} />
       <View style={styles.sheet}>
         <View style={styles.handle} />
+        <Pressable
+          style={styles.row}
+          disabled={busy}
+          onPress={() => {
+            onClose();
+            onSendToUser();
+          }}
+        >
+          {/* Analytics are recorded on actual send, not here — opening the
+              picker and backing out shouldn't log a share that never happened
+              (unlike Share via… / Copy link, which are one real action). */}
+          <Text style={typography.body}>Send to a Katkee user</Text>
+        </Pressable>
         <Pressable style={styles.row} disabled={busy} onPress={onNativeShare}>
           <Text style={typography.body}>Share via…</Text>
         </Pressable>

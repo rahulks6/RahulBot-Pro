@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { colors, radii, spacing, typography } from "../theme";
 import { useNotifications } from "../state/NotificationsContext";
+import { useDM } from "../state/DMContext";
 
 const TAB_LABELS: Record<string, string> = {
   Home: "Home",
@@ -19,7 +20,8 @@ const TAB_LABELS: Record<string, string> = {
  * immediately as the primary action, not a 7th equal tab.
  */
 export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps): React.JSX.Element {
-  const { unreadCount } = useNotifications();
+  const { unreadCount: unreadNotifications } = useNotifications();
+  const { unreadCount: unreadMessages } = useDM();
 
   return (
     <View style={styles.container}>
@@ -51,7 +53,8 @@ export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarPro
           );
         }
 
-        const showUnreadBadge = route.name === "Activity" && unreadCount > 0;
+        const badgeCount = route.name === "Activity" ? unreadNotifications : route.name === "DM" ? unreadMessages : 0;
+        const showUnreadBadge = badgeCount > 0;
 
         return (
           <Pressable
@@ -60,7 +63,7 @@ export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarPro
             accessibilityState={isFocused ? { selected: true } : {}}
             accessibilityLabel={
               showUnreadBadge
-                ? `${options.tabBarAccessibilityLabel ?? label}, ${unreadCount} unread`
+                ? `${options.tabBarAccessibilityLabel ?? label}, ${badgeCount} unread`
                 : (options.tabBarAccessibilityLabel ?? label)
             }
             onPress={onPress}
@@ -70,7 +73,7 @@ export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               <Text style={[typography.caption, isFocused && styles.labelFocused]}>{label}</Text>
               {showUnreadBadge ? (
                 <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadBadgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text>
+                  <Text style={styles.unreadBadgeText}>{badgeCount > 99 ? "99+" : badgeCount}</Text>
                 </View>
               ) : null}
             </View>

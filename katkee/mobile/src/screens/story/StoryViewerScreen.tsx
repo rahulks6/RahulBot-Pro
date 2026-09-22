@@ -443,6 +443,13 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
         ownerUsername={currentUsername ?? ""}
         isPublic={currentStory.audience === "public" && currentStory.allowSharing}
         onClose={() => setShareOpen(false)}
+        onSendToUser={() => {
+          setShareOpen(false);
+          navigation.navigate("Main", {
+            screen: "DM",
+            params: { screen: "SendStory", params: { storyId: currentStory.id, ownerUsername: currentUsername ?? "" } },
+          });
+        }}
       />
       <StoryMoreMenu
         visible={moreOpen}

@@ -64,6 +64,16 @@ export function getViewCount(storyId: string, accessToken: string): Promise<{ vi
   return apiGet(`/api/v1/stories/${storyId}/views`, accessToken);
 }
 
+/**
+ * A Story's owner username, for deep-linking into StoryViewer (which
+ * addresses creators by username) when only a storyId is on hand — a
+ * mention notification, a DM's shared Story. Denied the same way viewing
+ * the Story itself would be.
+ */
+export function getStoryOwnerUsername(storyId: string, accessToken: string): Promise<{ username: string }> {
+  return apiGet(`/api/v1/stories/${storyId}/owner`, accessToken);
+}
+
 export function mediaFileUrl(mediaId: string): string {
   // Consumed with an Authorization header by the viewer (Image/Video source supports a `headers` field).
   return `${API_BASE_URL}/api/v1/media/${mediaId}/file`;

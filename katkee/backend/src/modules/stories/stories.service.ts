@@ -202,3 +202,17 @@ export async function getViewCount(ownerId: string, storyId: string): Promise<nu
   if (!story || story.ownerId !== ownerId) throw new HttpError(404, "Story not found.");
   return storiesRepo.countViews(storyId);
 }
+
+/**
+ * A Story's owner *username* — mobile clients that only hold a storyId
+ * (a DM's shared_story_id, a notification's story reference) need this to
+ * deep-link into StoryViewer, which addresses creators by username, not
+ * id. Reuses getStoryForViewer's full access-check rule set rather than
+ * exposing owner identity to someone who couldn't otherwise see the Story.
+ */
+export async function getStoryOwnerUsername(storyId: string, viewerId: string): Promise<string> {
+  const story = await getStoryForViewer(storyId, viewerId);
+  const owner = await usersRepo.findUserById(story.ownerId);
+  if (!owner) throw new HttpError(404, "Story not found.");
+  return owner.username;
+}

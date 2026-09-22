@@ -14,6 +14,7 @@ import {
   markNotificationRead,
   type NotificationRecord,
 } from "../../api/notifications";
+import { getStoryOwnerUsername } from "../../api/stories";
 import { EmptyState } from "../../components/EmptyState";
 
 const PAGE_SIZE = 20;
@@ -54,10 +55,11 @@ function messageFor(notification: NotificationRecord): string {
 /**
  * Real notification list (spec section 31), grouped into Today/Earlier.
  * Tapping a like/comment/mention notification you own the Story for opens
- * that Story directly; a mention on someone else's Story and a follow /
- * follow_request open the actor's profile instead — the mobile client has
- * no "look up a Story's owner by id" call yet, so a mention on a Story you
- * don't own can't deep-link straight to it (see mobile/README.md).
+ * that Story directly; a mention resolves the Story's real owner via
+ * GET /api/v1/stories/:id/owner (Phase 8) since a mention's Story can
+ * belong to anyone, unlike like/comment. A follow / follow_request, or a
+ * mention whose owner lookup fails (e.g. the Story has since expired),
+ * opens the actor's profile instead.
  */
 export function ActivityScreen(): React.JSX.Element {
   const { accessToken, user } = useAuth();
@@ -143,6 +145,24 @@ export function ActivityScreen(): React.JSX.Element {
         initialStoryId: notification.story.id,
       });
       return;
+    }
+
+    if (notification.type === "mention" && notification.story && accessToken) {
+      // A mention's Story could belong to anyone, unlike like/comment —
+      // resolve the real owner via GET /api/v1/stories/:id/owner rather
+      // than guessing. Falls back to the actor's profile if that lookup
+      // fails (e.g. the Story has since expired for this viewer).
+      try {
+        const { username: ownerUsername } = await getStoryOwnerUsername(notification.story.id, accessToken);
+        navigation.navigate("StoryViewer", {
+          creators: [ownerUsername],
+          startIndex: 0,
+          initialStoryId: notification.story.id,
+        });
+        return;
+      } catch {
+        // fall through to opening the actor's profile below
+      }
     }
 
     if (notification.actor) {

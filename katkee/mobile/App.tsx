@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "./src/state/AuthContext";
 import { NotificationsProvider } from "./src/state/NotificationsContext";
+import { DMProvider } from "./src/state/DMContext";
 import { RootNavigator } from "./src/navigation/RootNavigator";
 
 export default function App(): React.JSX.Element {
@@ -15,7 +16,9 @@ export default function App(): React.JSX.Element {
         <StatusBar barStyle="light-content" />
         <AuthProvider>
           <NotificationsProvider>
-            <RootNavigator />
+            <DMProvider>
+              <RootNavigator />
+            </DMProvider>
           </NotificationsProvider>
         </AuthProvider>
       </SafeAreaProvider>

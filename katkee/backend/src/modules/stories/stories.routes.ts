@@ -50,6 +50,12 @@ export function registerStoriesRoutes(router: Router): void {
     sendJson(res, 200, { views: count });
   });
 
+  router.get("/api/v1/stories/:id/owner", async (req, res) => {
+    requireAuth(req);
+    const username = await storiesService.getStoryOwnerUsername(req.params.id as string, req.userId as string);
+    sendJson(res, 200, { username });
+  });
+
   router.get("/api/v1/users/:username/stories", async (req, res) => {
     requireAuth(req);
     const username = parseUsernameParam(req.params.username);
