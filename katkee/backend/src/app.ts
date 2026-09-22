@@ -14,6 +14,7 @@ import { registerRecommendationRoutes } from "./modules/recommendations/recommen
 import { registerNotificationsRoutes } from "./modules/notifications/notifications.routes";
 import { registerConversationsRoutes } from "./modules/conversations/conversations.routes";
 import { registerHighlightsRoutes } from "./modules/highlights/highlights.routes";
+import { registerModerationRoutes } from "./modules/moderation/moderation.routes";
 
 export function buildApp(): Server {
   const router = new Router();
@@ -34,6 +35,7 @@ export function buildApp(): Server {
   registerNotificationsRoutes(router);
   registerConversationsRoutes(router);
   registerHighlightsRoutes(router);
+  registerModerationRoutes(router);
 
   return createServer(router);
 }

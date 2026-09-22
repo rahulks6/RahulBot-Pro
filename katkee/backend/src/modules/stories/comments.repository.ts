@@ -97,3 +97,42 @@ export async function countCommentsByUserOnCreator(viewerId: string, creatorId: 
 export async function softDeleteComment(commentId: string): Promise<void> {
   await query(`UPDATE story_comments SET deleted_at = now() WHERE id = :'id'`, { id: commentId });
 }
+
+export interface CommentModerationView {
+  id: string;
+  storyId: string;
+  userId: string;
+  username: string;
+  displayName: string;
+  body: string;
+  createdAt: string;
+  deletedAt: string | null;
+}
+
+/**
+ * Unlike findCommentWithStoryOwner, deliberately doesn't filter out an
+ * already-deleted comment — moderation.service.ts's queue needs to show
+ * what a report was actually about even after the comment itself has
+ * since been removed (by its author, the Story's owner, or an earlier
+ * moderation action).
+ */
+export async function findCommentForModeration(commentId: string): Promise<CommentModerationView | null> {
+  const row = await queryOne(
+    `SELECT c.id, c.story_id, c.user_id, c.body, c.created_at, c.deleted_at, u.username, u.display_name
+     FROM story_comments c
+     JOIN users u ON u.id = c.user_id
+     WHERE c.id = :'id'`,
+    { id: commentId },
+  );
+  if (!row) return null;
+  return {
+    id: row.id as string,
+    storyId: row.story_id as string,
+    userId: row.user_id as string,
+    username: row.username as string,
+    displayName: row.display_name as string,
+    body: row.body as string,
+    createdAt: row.created_at as string,
+    deletedAt: row.deleted_at ?? null,
+  };
+}

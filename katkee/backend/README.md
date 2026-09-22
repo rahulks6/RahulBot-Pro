@@ -1,4 +1,4 @@
-# KATKEE backend — Phase 1 through Phase 9
+# KATKEE backend — Phase 1 through Phase 10
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
@@ -7,10 +7,12 @@ genuine 24-hour lifecycle, likes/comments/shares, a real (heuristic,
 not ML — see below) recommendation system with analytics event collection
 and new-creator exploration, real notifications (likes, comments, follows,
 follow requests, and @mentions), real 1:1 direct messages (including
-sharing a Story into a conversation), and now a real Archive + Highlights
+sharing a Story into a conversation), a real Archive + Highlights
 (named collections of a user's own past Stories that outlive the normal
-24h expiry) — all backed by a real database and a test suite that
-exercises it end to end. No mocked data anywhere in this service.
+24h expiry), and now real Moderation — user-filed Reports, a moderator
+queue, content removal, and account suspension that actually blocks
+login — all backed by a real database and a test suite that exercises it
+end to end. No mocked data anywhere in this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -260,6 +262,60 @@ endpoint, and Story-deletion cleanup), plus manual `curl` verification of
 the full create → list → detail → item-detail → archive flow against a
 live server.
 
+## Phase 10: Moderation, and finally wiring up `is_active`
+
+`users.is_active` has existed since migration 0001 and been checked at
+login since Phase 1 — but nothing could ever set it to `false` until this
+phase gave it a real caller. Building the suspend action surfaced a real
+security gap worth fixing rather than working around: `auth.service.ts`'s
+`refresh()` rotated a still-valid refresh token into a fresh access token
+without ever re-checking whether the user behind it was still active — so
+a suspended account with an unexpired refresh token could just keep
+refreshing forever, completely bypassing the suspension `login()` was
+supposed to enforce. Fixed by having `refresh()` re-fetch the user and
+reject if `!isActive`, and having `moderation.service.ts`'s `suspendUser`
+also revoke every refresh token the account currently holds
+(`refreshTokensRepo.revokeAllRefreshTokensForUser` — already existed,
+just never had a caller either). One gap remains and is deliberately not
+"fixed" by adding a DB round-trip to every authenticated request: a
+short-lived access token (`JWT_ACCESS_TTL_SECONDS`, default 900s) issued
+just *before* a suspension stays cryptographically valid for the rest of
+its own TTL, since `requireAuth` is a stateless JWT check by design (see
+the sandbox limitations above for why — no `pg` driver, no session
+store). A ≤15-minute window is a real, bounded, documented tradeoff, not
+an oversight.
+
+Reports are deliberately polymorphic at the application layer, not the
+database's: `reports.target_id` has no FK, because a report can point
+into `stories`, `story_comments`, or `users`, and nothing here validates
+"does this id exist in the right table" except `moderation.service.ts`'s
+own `assertReportableAndNotSelf` — the same tradeoff
+`recommendation_events` already made for its own optional
+story/creator references, just without even a typed FK this time since
+the target table varies per row. There's also deliberately no self-serve
+"become a moderator" endpoint — `users.is_moderator` is granted directly
+in the database (`UPDATE users SET is_moderator = true WHERE username =
+'...'`), the same way `test/moderation.test.ts` bootstraps it for tests.
+That's a real security decision, not a missing feature: a public
+escalation path would defeat the entire point of gating the queue.
+
+Removing reported content reuses the exact deletion paths Phase 4/5
+already built rather than duplicating them — `stories.service
+.moderatorDeleteStory` and `engagement.service.moderatorDeleteComment`
+are privileged siblings of `deleteStory`/`deleteComment` (no ownership
+check, everything else identical, including Highlight cleanup for a
+removed Story) so a moderator-removed Story or comment behaves exactly
+like a self-deleted one everywhere else in the app. 135/135 tests
+passing (12 new: filing reports across all three target types, self-report
+and nonexistent/already-deleted-target rejection, moderator-only gating
+on the queue and every moderation action, FIFO queue ordering with
+denormalized reporter/target info, dismiss vs. remove_content vs.
+suspend_user — including a real end-to-end check that suspension blocks
+both a fresh login *and* an outstanding refresh token — action/target-type
+mismatch rejection, and double-resolution rejection), plus manual `curl`
+verification of the full report → queue → suspend → login-denied flow
+against a live server.
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -322,6 +378,11 @@ live server.
 | PATCH | `/api/v1/highlights/:id` | Bearer, owner-only | `{title?, storyIds?}`; `storyIds`, if given, replaces the full ordered item set and can't be emptied (delete the Highlight instead) |
 | DELETE | `/api/v1/highlights/:id` | Bearer, owner-only | Deletes the Highlight; the Stories inside it remain in the owner's Archive |
 | GET | `/api/v1/highlights/:id/items/:storyId` | Bearer | Full Story detail (engagement counts included) for one member Story — the one endpoint that bypasses the normal 24h expiry, and only for a Story confirmed to actually be in this Highlight |
+| POST | `/api/v1/reports` | Bearer | `{targetType: "story"\|"comment"\|"user", targetId, reason, details?}` → `{report}`; 400 on a self-report, 404 if the target doesn't exist (or is already deleted) |
+| GET | `/api/v1/moderation/reports` | Bearer, moderator-only | `?status=pending\|dismissed\|actioned` (default `pending`), paginated, oldest first; each row denormalizes the reporter and the target (owner username for a Story, author + body for a comment, username + isActive for a user) |
+| POST | `/api/v1/moderation/reports/:id/resolve` | Bearer, moderator-only | `{action: "dismiss"\|"remove_content"\|"suspend_user", note?}` → `{report}`; `remove_content` only for story/comment reports, `suspend_user` only for user reports (400 on a mismatch), 409 if already resolved |
+| POST | `/api/v1/moderation/users/:username/suspend` | Bearer, moderator-only | Standalone suspension, independent of any report on file → 204 |
+| POST | `/api/v1/moderation/users/:username/unsuspend` | Bearer, moderator-only | Reverses a suspension → 204 |
 
 `not_interested` is one of `POST /api/v1/events`'s `eventType` values — it
 both logs the event and immediately excludes that creator from your
@@ -376,18 +437,31 @@ hasn't seen). `0010`: `highlights` (`title`, `CHECK` 1-30 chars) and
 the FK level, but in practice the application layer always gets there
 first (`stories.service.deleteStory` explicitly removes the item before
 a Story row would ever actually be hard-deleted, which this schema never
-does anyway — see the note in the migration itself).
+does anyway — see the note in the migration itself). `0011`: adds
+`users.is_moderator` (`DEFAULT false`, no public way to set it `true` —
+see "Phase 10" above) and `reports` (`target_type`/`reason`/`status`
+each closed by a `CHECK`, `target_id` deliberately un-FK'd since it's
+polymorphic across three tables — see "Phase 10" above for that
+tradeoff, and two indexes: one for the moderator queue's status+FIFO
+ordering, one for looking up every report against a given target).
 
-## What's NOT in Phase 1-9
+## What's NOT in Phase 1-10
 
 `follow_after_story` attribution is still best-effort client-reported
 rather than cross-referenced against a conversation (see mobile/README.md
 — DMs existing now doesn't automatically make that attribution real, it
-would need its own correlation logic). Group DMs, video
-transcoding/thumbnails, and moderation (reports, a moderation queue) are
-later phases per the build plan. A Highlight's cover is computed (its
-first item's media), not a separately uploadable/croppable image — see
-"Phase 9" above for why. The recommendation system itself is real
+would need its own correlation logic). Group DMs and video
+transcoding/thumbnails are later phases per the build plan. A Highlight's
+cover is computed (its first item's media), not a separately
+uploadable/croppable image — see "Phase 9" above for why. Moderation
+itself covers Reports, a moderator queue, content removal, and account
+suspension, but not a full trust-and-safety surface: no rate-limiting on
+filing reports, no report-aggregation ("this Story has 12 reports" is 12
+rows, not one with a count), no appeals flow, and no mobile UI for the
+moderator queue itself (it's a real, tested API with no admin screen
+built against it yet — a deliberately small, internal-only audience
+didn't justify a dedicated admin app in this pass). The recommendation
+system itself is real
 but explicitly a starting heuristic, not a trained model — see "Phase 6:
 the recommendation system is a real heuristic, not a model" above for why,
 and spec section 7 for why that's the intended starting point, not a

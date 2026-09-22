@@ -9,8 +9,11 @@ export interface UserRecord {
   bio: string;
   isPrivate: boolean;
   isActive: boolean;
+  isModerator: boolean;
   createdAt: string;
 }
+
+const SELECT_COLUMNS = "id, username, email, password_hash, display_name, bio, is_private, is_active, is_moderator, created_at";
 
 function mapRow(row: Record<string, string | null>): UserRecord {
   return {
@@ -22,6 +25,7 @@ function mapRow(row: Record<string, string | null>): UserRecord {
     bio: row.bio as string,
     isPrivate: row.is_private === "t",
     isActive: row.is_active === "t",
+    isModerator: row.is_moderator === "t",
     createdAt: row.created_at as string,
   };
 }
@@ -35,7 +39,7 @@ export async function createUser(input: {
   const row = await queryOne(
     `INSERT INTO users (username, email, password_hash, display_name)
      VALUES (:'username', :'email', :'password_hash', :'display_name')
-     RETURNING id, username, email, password_hash, display_name, bio, is_private, is_active, created_at`,
+     RETURNING ${SELECT_COLUMNS}`,
     {
       username: input.username,
       email: input.email,
@@ -49,7 +53,7 @@ export async function createUser(input: {
 
 export async function findUserByEmail(email: string): Promise<UserRecord | null> {
   const row = await queryOne(
-    `SELECT id, username, email, password_hash, display_name, bio, is_private, is_active, created_at
+    `SELECT ${SELECT_COLUMNS}
      FROM users
      WHERE email = :'email' AND deleted_at IS NULL`,
     { email },
@@ -59,7 +63,7 @@ export async function findUserByEmail(email: string): Promise<UserRecord | null>
 
 export async function findUserByUsername(username: string): Promise<UserRecord | null> {
   const row = await queryOne(
-    `SELECT id, username, email, password_hash, display_name, bio, is_private, is_active, created_at
+    `SELECT ${SELECT_COLUMNS}
      FROM users
      WHERE username = :'username' AND deleted_at IS NULL`,
     { username },
@@ -69,7 +73,7 @@ export async function findUserByUsername(username: string): Promise<UserRecord |
 
 export async function findUserById(id: string): Promise<UserRecord | null> {
   const row = await queryOne(
-    `SELECT id, username, email, password_hash, display_name, bio, is_private, is_active, created_at
+    `SELECT ${SELECT_COLUMNS}
      FROM users
      WHERE id = :'id' AND deleted_at IS NULL`,
     { id },
@@ -102,11 +106,16 @@ export async function setProfile(
     `UPDATE users
      SET display_name = :'display_name', bio = :'bio', is_private = :'is_private'
      WHERE id = :'id' AND deleted_at IS NULL
-     RETURNING id, username, email, password_hash, display_name, bio, is_private, is_active, created_at`,
+     RETURNING ${SELECT_COLUMNS}`,
     { id, display_name: values.displayName, bio: values.bio, is_private: values.isPrivate },
   );
   if (!row) throw new Error("Update did not return a row");
   return mapRow(row);
+}
+
+/** Moderator-only action (see moderation.service.ts) — login and token refresh both already check isActive, so this is the one lever that actually enforces a suspension. */
+export async function setActive(id: string, isActive: boolean): Promise<void> {
+  await query(`UPDATE users SET is_active = :'is_active' WHERE id = :'id'`, { id, is_active: isActive });
 }
 
 export interface UserSearchResult {

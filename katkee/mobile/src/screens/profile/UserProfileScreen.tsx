@@ -10,6 +10,7 @@ import { ApiError } from "../../api/client";
 import { getUserActiveStories } from "../../api/stories";
 import { openConversation } from "../../api/conversations";
 import { HighlightsRow } from "../../components/HighlightsRow";
+import { ReportSheet } from "../../components/ReportSheet";
 
 type Props = NativeStackScreenProps<SearchStackParamList, "UserProfile">;
 
@@ -33,6 +34,7 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [messagePending, setMessagePending] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -177,7 +179,14 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
         </View>
       ) : null}
 
+      {!profile.isSelf ? (
+        <Pressable style={styles.reportLink} onPress={() => setReportOpen(true)} hitSlop={8}>
+          <Text style={styles.reportLinkLabel}>Report this account</Text>
+        </Pressable>
+      ) : null}
+
       <HighlightsRow username={username} isOwner={profile.isSelf} />
+      <ReportSheet visible={reportOpen} targetType="user" targetId={profile.id} onClose={() => setReportOpen(false)} />
     </View>
   );
 }
@@ -226,4 +235,6 @@ const styles = StyleSheet.create({
   followButtonDisabled: { opacity: 0.6 },
   followLabel: { color: colors.onAccent, fontWeight: "700" },
   followLabelActive: { color: colors.textPrimary, fontWeight: "600" },
+  reportLink: { marginTop: spacing.md },
+  reportLinkLabel: { ...typography.caption, color: colors.textDisabled },
 });

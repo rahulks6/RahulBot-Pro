@@ -15,6 +15,7 @@ import { colors, radii, spacing, typography } from "../theme";
 import { useAuth } from "../state/AuthContext";
 import { deleteComment, listComments, postComment, type Comment } from "../api/engagement";
 import { ApiError } from "../api/client";
+import { ReportSheet } from "./ReportSheet";
 
 interface Props {
   visible: boolean;
@@ -40,6 +41,7 @@ export function CommentsSheet({ visible, storyId, storyOwnerId, commentsDisabled
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [reportingCommentId, setReportingCommentId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -87,12 +89,10 @@ export function CommentsSheet({ visible, storyId, storyOwnerId, commentsDisabled
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.sheet}
-      >
+    <>
+      <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.sheet}>
         <View style={styles.handle} />
         <Text style={[typography.bodyStrong, styles.title]}>Comments</Text>
 
@@ -122,6 +122,11 @@ export function CommentsSheet({ visible, storyId, storyOwnerId, commentsDisabled
                       <Text style={styles.deleteLabel}>Delete</Text>
                     </Pressable>
                   ) : null}
+                  {item.userId !== user?.id ? (
+                    <Pressable onPress={() => setReportingCommentId(item.id)} hitSlop={8}>
+                      <Text style={styles.reportLabel}>Report</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               );
             }}
@@ -147,8 +152,15 @@ export function CommentsSheet({ visible, storyId, storyOwnerId, commentsDisabled
             </Pressable>
           </View>
         )}
-      </KeyboardAvoidingView>
-    </Modal>
+        </KeyboardAvoidingView>
+      </Modal>
+      <ReportSheet
+        visible={reportingCommentId !== null}
+        targetType="comment"
+        targetId={reportingCommentId ?? ""}
+        onClose={() => setReportingCommentId(null)}
+      />
+    </>
   );
 }
 
@@ -178,6 +190,7 @@ const styles = StyleSheet.create({
   avatarInitial: { color: colors.textPrimary, fontSize: 12, fontWeight: "700" },
   rowBody: { flex: 1 },
   deleteLabel: { color: colors.danger, fontSize: 12 },
+  reportLabel: { color: colors.textDisabled, fontSize: 12, marginLeft: spacing.sm },
   error: { color: colors.danger, textAlign: "center", marginTop: spacing.xs },
   disabled: { textAlign: "center", marginTop: spacing.md },
   composer: {

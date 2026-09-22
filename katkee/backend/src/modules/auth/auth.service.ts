@@ -94,6 +94,18 @@ export async function refresh(refreshToken: string, userAgent: string | null): P
   const record = await refreshTokensRepo.findActiveRefreshToken(claims.jti, refreshToken);
   if (!record) throw new AuthError("Invalid or expired refresh token.", 401);
 
+  // Re-checked here, not just at login: a still-unexpired refresh token
+  // from before a moderator suspension must not be usable to mint a fresh
+  // access token — see moderation.service.ts's suspendUser, which revokes
+  // every refresh token a suspended user already holds for exactly this
+  // reason. (A still-live *access* token issued before the suspension
+  // stays valid for its own short TTL regardless — see backend/README.md's
+  // Phase 10 section for that bounded, documented gap.)
+  const user = await usersRepo.findUserById(record.userId);
+  if (!user || !user.isActive) {
+    throw new AuthError("Invalid or expired refresh token.", 401);
+  }
+
   // Rotate: the presented refresh token is single-use.
   const tokens = await issueTokenPair(record.userId, userAgent);
   await refreshTokensRepo.revokeRefreshToken(record.id, null);

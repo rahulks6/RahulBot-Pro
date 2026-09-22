@@ -67,6 +67,13 @@ export async function deleteComment(viewerId: string, commentId: string): Promis
   await commentsRepo.softDeleteComment(commentId);
 }
 
+/** Privileged: no ownership check. Only ever called from moderation.service.ts after a moderator resolves a report — see requireModerator there. */
+export async function moderatorDeleteComment(commentId: string): Promise<void> {
+  const comment = await commentsRepo.findCommentWithStoryOwner(commentId);
+  if (!comment) throw new HttpError(404, "Comment not found.");
+  await commentsRepo.softDeleteComment(commentId);
+}
+
 export async function shareStory(viewerId: string, storyId: string): Promise<void> {
   await getStoryForViewer(storyId, viewerId);
   const story = await storiesRepo.findStoryById(storyId);

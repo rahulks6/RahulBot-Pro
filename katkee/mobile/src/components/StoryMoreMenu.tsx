@@ -5,6 +5,7 @@ import { useAuth } from "../state/AuthContext";
 import { deleteStory, getViewCount } from "../api/stories";
 import { muteUser, blockUser } from "../api/users";
 import { recordEvent } from "../api/events";
+import { ReportSheet } from "./ReportSheet";
 
 interface Props {
   visible: boolean;
@@ -17,17 +18,15 @@ interface Props {
 }
 
 /**
- * More menu (spec section 16). Scoped to what's actually real: for your
- * own Story, delete or view its real view count; for someone else's,
- * Not Interested (Phase 6's real exclusion — see backend's
- * creator_not_interested table), Mute, and Block. "Report" is left out —
- * it needs a moderation queue that doesn't exist yet (Phase 11), and a
- * button that just silently does nothing would be exactly the fake
- * functionality this build has avoided elsewhere.
+ * More menu (spec section 16). For your own Story: delete, or view its
+ * real view count. For someone else's: Not Interested (Phase 6's real
+ * exclusion — see backend's creator_not_interested table), Mute, Block,
+ * and now Report (Phase 10's real moderation queue — see ReportSheet.tsx).
  */
 export function StoryMoreMenu({ visible, storyId, isOwnStory, otherUsername, otherUserId, onClose, onDeleted }: Props): React.JSX.Element {
   const { accessToken } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const onDelete = () => {
     Alert.alert("Delete this Story?", "This can't be undone.", [
@@ -116,36 +115,48 @@ export function StoryMoreMenu({ visible, storyId, isOwnStory, otherUsername, oth
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
-        <View style={styles.handle} />
-        {busy ? (
-          <ActivityIndicator color={colors.accent} style={{ marginVertical: spacing.lg }} />
-        ) : isOwnStory ? (
-          <>
-            <Pressable style={styles.row} onPress={onViewInsights}>
-              <Text style={typography.body}>View Insights</Text>
-            </Pressable>
-            <Pressable style={styles.row} onPress={onDelete}>
-              <Text style={[typography.body, styles.destructive]}>Delete</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <Pressable style={styles.row} onPress={onNotInterested}>
-              <Text style={typography.body}>Not Interested</Text>
-            </Pressable>
-            <Pressable style={styles.row} onPress={onMute}>
-              <Text style={typography.body}>Mute @{otherUsername}</Text>
-            </Pressable>
-            <Pressable style={styles.row} onPress={onBlock}>
-              <Text style={[typography.body, styles.destructive]}>Block @{otherUsername}</Text>
-            </Pressable>
-          </>
-        )}
-      </View>
-    </Modal>
+    <>
+      <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
+        <View style={styles.sheet}>
+          <View style={styles.handle} />
+          {busy ? (
+            <ActivityIndicator color={colors.accent} style={{ marginVertical: spacing.lg }} />
+          ) : isOwnStory ? (
+            <>
+              <Pressable style={styles.row} onPress={onViewInsights}>
+                <Text style={typography.body}>View Insights</Text>
+              </Pressable>
+              <Pressable style={styles.row} onPress={onDelete}>
+                <Text style={[typography.body, styles.destructive]}>Delete</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Pressable style={styles.row} onPress={onNotInterested}>
+                <Text style={typography.body}>Not Interested</Text>
+              </Pressable>
+              <Pressable style={styles.row} onPress={onMute}>
+                <Text style={typography.body}>Mute @{otherUsername}</Text>
+              </Pressable>
+              <Pressable style={styles.row} onPress={onBlock}>
+                <Text style={[typography.body, styles.destructive]}>Block @{otherUsername}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.row}
+                onPress={() => {
+                  onClose();
+                  setReportOpen(true);
+                }}
+              >
+                <Text style={[typography.body, styles.destructive]}>Report</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </Modal>
+      <ReportSheet visible={reportOpen} targetType="story" targetId={storyId} onClose={() => setReportOpen(false)} />
+    </>
   );
 }
 

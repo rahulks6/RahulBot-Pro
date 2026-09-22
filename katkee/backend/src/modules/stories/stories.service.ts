@@ -232,17 +232,28 @@ export async function recordView(storyId: string, viewerId: string): Promise<voi
   await storiesRepo.recordView(storyId, viewerId);
 }
 
+async function softDeleteStoryAndCleanUp(storyId: string): Promise<void> {
+  await storiesRepo.softDeleteStory(storyId);
+  // "Gone even to the owner afterward" (see deleteStory's own history) has
+  // to mean gone from every Highlight it was ever added to as well — a
+  // Highlight that's outlived its Story's normal expiry shouldn't be the
+  // one place a "deleted" Story keeps rendering.
+  await highlightsRepo.removeStoryFromAllHighlights(storyId);
+}
+
 export async function deleteStory(ownerId: string, storyId: string): Promise<void> {
   const story = await storiesRepo.findStoryById(storyId);
   if (!story || story.ownerId !== ownerId || story.deletedAt !== null) {
     throw new HttpError(404, "Story not found.");
   }
-  await storiesRepo.softDeleteStory(storyId);
-  // "Gone even to the owner afterward" (see this function's own history)
-  // has to mean gone from every Highlight it was ever added to as well —
-  // a Highlight that's outlived its Story's normal expiry shouldn't be
-  // the one place a "deleted" Story keeps rendering.
-  await highlightsRepo.removeStoryFromAllHighlights(storyId);
+  await softDeleteStoryAndCleanUp(storyId);
+}
+
+/** Privileged: no ownership check. Only ever called from moderation.service.ts after a moderator resolves a report — see requireModerator there. */
+export async function moderatorDeleteStory(storyId: string): Promise<void> {
+  const story = await storiesRepo.findStoryById(storyId);
+  if (!story || story.deletedAt !== null) throw new HttpError(404, "Story not found.");
+  await softDeleteStoryAndCleanUp(storyId);
 }
 
 /** Every non-deleted Story an owner has ever published — the private Archive (spec), not shown to anyone else. */

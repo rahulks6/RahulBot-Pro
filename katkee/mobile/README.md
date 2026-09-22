@@ -1,21 +1,22 @@
-# KATKEE mobile — Phase 1 through Phase 9
+# KATKEE mobile — Phase 1 through Phase 10
 
 Real, hand-written TypeScript source for the design system, navigation shell,
 authentication, search/follow, camera capture + the Story editor, publishing
 and viewing Stories, the full gesture set plus likes/comments/sharing, real
 analytics-event emission feeding the backend's recommendation system, a real
 Activity tab backed by the backend's notifications, a real DM inbox and
-conversation thread (including sharing a Story into a conversation), and
-now real Highlights — create/edit/view, picked from a real Archive of
-every Story you've ever published — wired to the actual backend API
-(`../backend`) — not generated boilerplate. It has **not** been built or
-run in this session; see the limitation below before trusting it further,
-and see "Phase 3 specifically" for why that phase carries more risk than
-1-2 (Phases 4-9 inherit the same camera/gesture risk, plus their own new
-ones — see each phase's own "specifically" section). A best-effort `tsc`
-pass (no real library types installed — see below) ran clean against
-every file touched through Phase 9, for what that's worth given its
-limits.
+conversation thread (including sharing a Story into a conversation), real
+Highlights — create/edit/view, picked from a real Archive of every Story
+you've ever published — and now a real Report flow (Story, comment, and
+account) feeding the backend's moderation queue, wired to the actual
+backend API (`../backend`) — not generated boilerplate. It has **not**
+been built or run in this session; see the limitation below before
+trusting it further, and see "Phase 3 specifically" for why that phase
+carries more risk than 1-2 (Phases 4-10 inherit the same camera/gesture
+risk, plus their own new ones — see each phase's own "specifically"
+section). A best-effort `tsc` pass (no real library types installed —
+see below) ran clean against every file touched through Phase 10, for
+what that's worth given its limits.
 
 ## What exists here
 
@@ -188,6 +189,35 @@ limits.
 - `UserProfileScreen.tsx` also gained a real **Message** button next to
   Follow, now that DMs exist (Phase 8) — it opens or reuses the 1:1
   conversation with that user and navigates straight into it.
+- `src/components/ReportSheet.tsx` — a shared reason-picker bottom sheet
+  (the 7 backend-defined reasons, an optional details field) for
+  reporting a Story, a comment, or a user account, posting a real
+  `POST /api/v1/reports` that lands in the Phase 10 backend's moderation
+  queue. React Native's built-in `Alert` can't reasonably list 7 options,
+  so this is a small Modal in the same style as `ShareSheet.tsx`, not a
+  new UI pattern.
+- `StoryMoreMenu.tsx` gained a real **Report** row for someone else's
+  Story (the placeholder note that used to be here — "needs a moderation
+  queue that doesn't exist" — is exactly what Phase 10 built).
+  `UserProfileScreen.tsx` gained a small **Report this account** link.
+  `CommentsSheet.tsx` gained a **Report** action per comment that isn't
+  your own, alongside the existing Delete.
+
+### Phase 10 specifically
+
+- **No mobile moderator queue.** The backend's
+  `GET /api/v1/moderation/reports` and resolve/suspend endpoints are
+  real and tested, but there's no admin screen in this app to drive them
+  — moderators are expected to be a tiny internal cohort, and building a
+  dedicated review UI for that audience didn't earn its place in this
+  pass over the user-facing Report flow itself. See backend/README.md's
+  Phase 10 section for the same call spelled out on that side.
+- **Reporting doesn't visibly change what you see afterward.** Filing a
+  report shows a "thanks, we'll review this" confirmation and nothing
+  else — it doesn't hide the reported content, mute the account, or
+  otherwise change your own feed (that's what Block/Mute are for, and
+  they're unaffected by this). A report is a signal to moderators, not a
+  personal filter.
 
 ### Phase 9 specifically
 
