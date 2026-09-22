@@ -8,6 +8,8 @@ import { useAuth } from "../../state/AuthContext";
 import { followUser, getProfile, unfollowUser, type ProfileView } from "../../api/users";
 import { ApiError } from "../../api/client";
 import { getUserActiveStories } from "../../api/stories";
+import { openConversation } from "../../api/conversations";
+import { HighlightsRow } from "../../components/HighlightsRow";
 
 type Props = NativeStackScreenProps<SearchStackParamList, "UserProfile">;
 
@@ -30,6 +32,7 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
+  const [messagePending, setMessagePending] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -61,6 +64,25 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
   const openStoryViewer = () => {
     if (!hasActiveStory) return;
     rootNavigation.navigate("StoryViewer", { creators: [username], startIndex: 0 });
+  };
+
+  const onMessagePress = async () => {
+    if (!accessToken || messagePending) return;
+    setMessagePending(true);
+    try {
+      const { conversation } = await openConversation(username, accessToken);
+      rootNavigation.navigate("Main", {
+        screen: "DM",
+        params: {
+          screen: "Conversation",
+          params: { conversationId: conversation.id, otherUsername: conversation.otherUser.username, otherDisplayName: conversation.otherUser.displayName },
+        },
+      });
+    } catch {
+      setError("Couldn't open that conversation — try again.");
+    } finally {
+      setMessagePending(false);
+    }
   };
 
   const onFollowPress = async () => {
@@ -127,24 +149,35 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
       </View>
 
       {!profile.isSelf ? (
-        <Pressable
-          style={[
-            styles.followButton,
-            followLabel !== "Follow" && styles.followButtonActive,
-            actionPending && styles.followButtonDisabled,
-          ]}
-          disabled={actionPending}
-          onPress={onFollowPress}
-        >
-          {actionPending ? (
-            <ActivityIndicator color={colors.onAccent} />
-          ) : (
-            <Text style={followLabel === "Follow" ? styles.followLabel : styles.followLabelActive}>
-              {followLabel}
-            </Text>
-          )}
-        </Pressable>
+        <View style={styles.actionRow}>
+          <Pressable
+            style={[
+              styles.followButton,
+              followLabel !== "Follow" && styles.followButtonActive,
+              actionPending && styles.followButtonDisabled,
+            ]}
+            disabled={actionPending}
+            onPress={onFollowPress}
+          >
+            {actionPending ? (
+              <ActivityIndicator color={colors.onAccent} />
+            ) : (
+              <Text style={followLabel === "Follow" ? styles.followLabel : styles.followLabelActive}>
+                {followLabel}
+              </Text>
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.followButton, styles.followButtonActive, messagePending && styles.followButtonDisabled]}
+            disabled={messagePending}
+            onPress={() => void onMessagePress()}
+          >
+            {messagePending ? <ActivityIndicator color={colors.textPrimary} /> : <Text style={styles.followLabelActive}>Message</Text>}
+          </Pressable>
+        </View>
       ) : null}
+
+      <HighlightsRow username={username} isOwner={profile.isSelf} />
     </View>
   );
 }
@@ -176,13 +209,13 @@ const styles = StyleSheet.create({
   bio: { marginTop: spacing.sm, textAlign: "center" },
   statsRow: { flexDirection: "row", gap: spacing.xl, marginTop: spacing.lg },
   stat: { alignItems: "center", gap: spacing.xs },
+  actionRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg, alignSelf: "stretch" },
   followButton: {
-    marginTop: spacing.lg,
+    flex: 1,
     backgroundColor: colors.accent,
     borderRadius: radii.md,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    minWidth: 140,
+    paddingHorizontal: spacing.md,
     alignItems: "center",
   },
   followButtonActive: {

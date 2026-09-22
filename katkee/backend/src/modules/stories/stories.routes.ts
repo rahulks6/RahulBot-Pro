@@ -1,6 +1,7 @@
 import type { Router } from "../../http/router";
 import { requireAuth } from "../../http/middleware/auth.middleware";
 import { sendJson } from "../../http/respond";
+import { parsePagination, parseQueryString } from "../../http/pagination";
 import { parseUsernameParam } from "../../shared/validation";
 import { parsePublishStoryInput } from "./dto";
 import * as storiesService from "./stories.service";
@@ -24,6 +25,14 @@ export function registerStoriesRoutes(router: Router): void {
     requireAuth(req);
     const stories = await storiesService.listMyActiveStories(req.userId as string);
     sendJson(res, 200, { stories });
+  });
+
+  // Registered alongside "mine/active" for the same "feed" reason above — never mistaken for a story id.
+  router.get("/api/v1/stories/mine/archive", async (req, res) => {
+    requireAuth(req);
+    const { limit, offset } = parsePagination(parseQueryString(req.url ?? ""));
+    const stories = await storiesService.listMyArchivedStories(req.userId as string, limit, offset);
+    sendJson(res, 200, { stories, limit, offset });
   });
 
   router.get("/api/v1/stories/:id", async (req, res) => {

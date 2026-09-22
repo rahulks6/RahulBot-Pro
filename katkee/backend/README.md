@@ -1,4 +1,4 @@
-# KATKEE backend — Phase 1 through Phase 8
+# KATKEE backend — Phase 1 through Phase 9
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
@@ -6,10 +6,11 @@ people search, media upload/storage/retrieval, Story publishing with a
 genuine 24-hour lifecycle, likes/comments/shares, a real (heuristic,
 not ML — see below) recommendation system with analytics event collection
 and new-creator exploration, real notifications (likes, comments, follows,
-follow requests, and @mentions), and now real 1:1 direct messages
-(including sharing a Story into a conversation) — all backed by a real
-database and a test suite that exercises it end to end. No mocked data
-anywhere in this service.
+follow requests, and @mentions), real 1:1 direct messages (including
+sharing a Story into a conversation), and now a real Archive + Highlights
+(named collections of a user's own past Stories that outlive the normal
+24h expiry) — all backed by a real database and a test suite that
+exercises it end to end. No mocked data anywhere in this service.
 
 ## Known sandbox limitation (read this first)
 
@@ -218,6 +219,47 @@ plus manual `curl` verification of opening a conversation, sending a
 text message, sharing a Story into one, and resolving its owner, against
 a live server.
 
+## Phase 9: Highlights genuinely outlive a Story's 24h expiry
+
+The whole point of a Highlight is that it keeps a Story visible after the
+rule that governs every other Story stops applying — so this phase
+couldn't just reuse `getStoryForViewer` as-is; it had to make the expiry
+check itself an explicit, narrow exception. `stories.service.ts`'s access
+logic was refactored into one shared `checkStoryAccess(storyId, viewerId,
+{ ignoreExpiry? })` core, with `getStoryForViewer`/`getStoryForHighlightViewer`
+as thin wrappers over it — block/private-account/audience rules apply
+identically either way; only expiry is conditional, and the Highlight
+variant is only ever reached after a caller has independently confirmed
+the Story is a real member of a Highlight (`highlights.repository
+.storyIsInAnyHighlight` / `isStoryInHighlight`), never as a blanket
+bypass. `canAccessMediaViaStory` got the same fallback, one level deeper —
+without it, a Highlight's cover image and item media would 404 for
+anyone but the owner the moment the underlying Story expired, which would
+have made the whole feature pointless for a non-owner viewer.
+
+Building this also finally exercised a forward reference left in
+migration 0005 back in Phase 4 ("Archive will need the history" — Stories
+are soft-deleted, never hard-deleted, specifically so this day would
+come): `GET /api/v1/stories/mine/archive` lists every non-deleted Story
+an owner has ever published, expired or not, and it's exactly what a
+Highlight's story picker is built from. Deleting a Story now also cleans
+it out of every Highlight it was ever added to
+(`highlights.repository.removeStoryFromAllHighlights`, called from
+`stories.service.deleteStory`) — "gone even to the owner afterward" (the
+Phase 4 deletion behavior) has to mean gone from Highlights too, not a
+loophole where a "deleted" Story keeps rendering forever inside one.
+
+A Highlight's cover is deliberately not a stored column — it's computed
+as its first item's Story media, so this pass doesn't need a separate
+cover-image upload/crop flow (this sandbox still has no image processing;
+see the media limitations above). 123/123 tests passing (10 new: create/
+rename/replace-items/delete, ownership and audience gating on both the
+Highlight list and detail, the expiry-bypass behavior end to end via a
+real 1-second-TTL Story, membership enforcement on the item-detail
+endpoint, and Story-deletion cleanup), plus manual `curl` verification of
+the full create → list → detail → item-detail → archive flow against a
+live server.
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -273,6 +315,13 @@ a live server.
 | GET | `/api/v1/conversations/:id/messages` | Bearer | Paginated, **newest first** (unlike comments) — see the schema notes below for why; participant-only |
 | POST | `/api/v1/conversations/:id/messages` | Bearer | `{body?, storyId?}` (at least one required) → `{message}`; a `storyId` reuses `shareStory`'s access/`allowSharing` check; re-checks blocking at send time, not just at conversation creation |
 | POST | `/api/v1/conversations/:id/read` | Bearer | Marks the conversation read for the caller → 204; sending a message auto-marks the sender read too |
+| GET | `/api/v1/stories/mine/archive` | Bearer | Paginated; every non-deleted Story you've ever published, expired or not |
+| POST | `/api/v1/highlights` | Bearer | `{title, storyIds}` (storyIds must be your own, non-deleted Stories) → `{highlight}` |
+| GET | `/api/v1/users/:username/highlights` | Bearer | List that user's Highlights; gated the same way their profile is (block/private-account) |
+| GET | `/api/v1/highlights/:id` | Bearer | Detail with items; a followers-only item is hidden from a non-follower even on an otherwise-public account |
+| PATCH | `/api/v1/highlights/:id` | Bearer, owner-only | `{title?, storyIds?}`; `storyIds`, if given, replaces the full ordered item set and can't be emptied (delete the Highlight instead) |
+| DELETE | `/api/v1/highlights/:id` | Bearer, owner-only | Deletes the Highlight; the Stories inside it remain in the owner's Archive |
+| GET | `/api/v1/highlights/:id/items/:storyId` | Bearer | Full Story detail (engagement counts included) for one member Story — the one endpoint that bypasses the normal 24h expiry, and only for a Story confirmed to actually be in this Highlight |
 
 `not_interested` is one of `POST /api/v1/events`'s `eventType` values — it
 both logs the event and immediately excludes that creator from your
@@ -321,16 +370,24 @@ NULL` so a "shared a Story" message outlives the Story's own deletion,
 the same way a real conversation survives an old message elsewhere being
 deleted), and `conversation_reads` (per-participant `last_read_at`, since
 a conversation has no single "unread" flag, only what each side has and
-hasn't seen).
+hasn't seen). `0010`: `highlights` (`title`, `CHECK` 1-30 chars) and
+`highlight_items` (`UNIQUE (highlight_id, story_id)`, an integer
+`position` for ordering) — `story_id` does carry `ON DELETE CASCADE` at
+the FK level, but in practice the application layer always gets there
+first (`stories.service.deleteStory` explicitly removes the item before
+a Story row would ever actually be hard-deleted, which this schema never
+does anyway — see the note in the migration itself).
 
-## What's NOT in Phase 1-8
+## What's NOT in Phase 1-9
 
 `follow_after_story` attribution is still best-effort client-reported
 rather than cross-referenced against a conversation (see mobile/README.md
 — DMs existing now doesn't automatically make that attribution real, it
-would need its own correlation logic). Group DMs, Highlights, video
+would need its own correlation logic). Group DMs, video
 transcoding/thumbnails, and moderation (reports, a moderation queue) are
-later phases per the build plan. The recommendation system itself is real
+later phases per the build plan. A Highlight's cover is computed (its
+first item's media), not a separately uploadable/croppable image — see
+"Phase 9" above for why. The recommendation system itself is real
 but explicitly a starting heuristic, not a trained model — see "Phase 6:
 the recommendation system is a real heuristic, not a model" above for why,
 and spec section 7 for why that's the intended starting point, not a

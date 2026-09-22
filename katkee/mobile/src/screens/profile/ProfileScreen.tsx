@@ -6,6 +6,7 @@ import { colors, radii, spacing, typography } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { getProfile } from "../../api/users";
 import { getMyActiveStories } from "../../api/stories";
+import { HighlightsRow } from "../../components/HighlightsRow";
 import type { RootStackParamList } from "../../navigation/types";
 
 /**
@@ -73,6 +74,8 @@ export function ProfileScreen(): React.JSX.Element {
           <Text style={typography.caption}>Following</Text>
         </View>
       </View>
+
+      <HighlightsRow username={user.username} isOwner />
 
       <Pressable style={styles.logoutButton} onPress={() => void logout()}>
         <Text style={styles.logoutLabel}>Log out</Text>

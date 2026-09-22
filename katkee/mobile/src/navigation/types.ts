@@ -50,4 +50,8 @@ export type RootStackParamList = {
    * when opened from there. `startIndex` is which one to open on.
    */
   StoryViewer: { creators: string[]; startIndex: number; initialStoryId?: string };
+  /** Sequential, view-only playback of one Highlight's items — see HighlightViewerScreen.tsx for why it's a separate, simpler viewer from StoryViewer. */
+  HighlightViewer: { highlightId: string; title: string };
+  /** Create when `highlightId` is omitted, edit (rename/replace items/delete) when it's given. Always the caller's own Highlight. */
+  HighlightEditor: { highlightId?: string };
 };

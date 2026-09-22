@@ -1,19 +1,21 @@
-# KATKEE mobile — Phase 1 through Phase 8
+# KATKEE mobile — Phase 1 through Phase 9
 
 Real, hand-written TypeScript source for the design system, navigation shell,
 authentication, search/follow, camera capture + the Story editor, publishing
 and viewing Stories, the full gesture set plus likes/comments/sharing, real
 analytics-event emission feeding the backend's recommendation system, a real
-Activity tab backed by the backend's notifications, and now a real DM inbox
-and conversation thread (including sharing a Story into a conversation),
-wired to the actual backend API (`../backend`) — not generated boilerplate.
-It has **not** been built or run in this session; see the limitation below
-before trusting it further, and see "Phase 3 specifically" for why that
-phase carries more risk than 1-2 (Phases 4-8 inherit the same
-camera/gesture risk, plus their own new ones — see each phase's own
-"specifically" section). A best-effort `tsc` pass (no real library types
-installed — see below) ran clean against every file touched through
-Phase 8, for what that's worth given its limits.
+Activity tab backed by the backend's notifications, a real DM inbox and
+conversation thread (including sharing a Story into a conversation), and
+now real Highlights — create/edit/view, picked from a real Archive of
+every Story you've ever published — wired to the actual backend API
+(`../backend`) — not generated boilerplate. It has **not** been built or
+run in this session; see the limitation below before trusting it further,
+and see "Phase 3 specifically" for why that phase carries more risk than
+1-2 (Phases 4-9 inherit the same camera/gesture risk, plus their own new
+ones — see each phase's own "specifically" section). A best-effort `tsc`
+pass (no real library types installed — see below) ran clean against
+every file touched through Phase 9, for what that's worth given its
+limits.
 
 ## What exists here
 
@@ -163,6 +165,50 @@ Phase 8, for what that's worth given its limits.
   addition (`GET /api/v1/stories/:id/owner`) used by both the DM
   shared-Story bubble and, retroactively, `ActivityScreen.tsx`'s mention
   notifications (see "Phase 7 specifically" above).
+- `src/components/HighlightsRow.tsx` — the row of Highlight bubbles under
+  a profile's bio (spec section 35), rendered on both `ProfileScreen.tsx`
+  (your own, with a leading "+ New" bubble) and `UserProfileScreen.tsx`
+  (theirs, gated the same way the backend gates it — a private account's
+  Highlights just don't load for a non-follower). A bubble's cover is a
+  real thumbnail (`Image` with an `Authorization` header, the same
+  pattern `StoryViewerScreen.tsx` already used), not a placeholder.
+- `src/screens/highlight/HighlightEditorScreen.tsx` — create (no
+  `highlightId`) or edit (rename/replace items/delete) a Highlight: a
+  title field and a tap-to-select grid built from
+  `GET /api/v1/stories/mine/archive` — every Story you've ever published,
+  expired or not, which is the entire reason an Archive listing exists
+  now (see backend/README.md's Phase 9 section). Selection order becomes
+  the Highlight's item order, shown as a numbered badge per selected
+  thumbnail.
+- `src/screens/highlight/HighlightViewerScreen.tsx` — sequential,
+  view-only playback of a Highlight's items, real media and a real
+  per-item progress bar, reached by tapping a bubble. Deliberately its
+  own, simpler screen rather than a mode on `StoryViewerScreen.tsx` — see
+  "Phase 9 specifically" for why.
+- `UserProfileScreen.tsx` also gained a real **Message** button next to
+  Follow, now that DMs exist (Phase 8) — it opens or reuses the 1:1
+  conversation with that user and navigates straight into it.
+
+### Phase 9 specifically
+
+- **Highlight playback is view-only — no like, comment, share, or view
+  recording.** `StoryViewerScreen.tsx`'s equivalents all go through the
+  *normal* per-Story endpoints (`getStoryDetail`, `recordStoryView`,
+  `likeStory`, …), every one of which enforces the 24h expiry a Highlight
+  exists specifically to outlive — reusing them here would have meant
+  threading an expiry-bypass through each one individually on the
+  backend. A Highlight is about persisting visibility, not full
+  interactive parity with a live Story, so this pass keeps
+  `HighlightViewerScreen.tsx` deliberately read-only; it's real, tested
+  playback, just a narrower feature than the live viewer.
+- **No drag-to-reorder in the editor.** Item order is just "the order you
+  tapped things in," shown live as numbered badges — real and
+  deterministic, but not a drag handle. Re-ordering an existing Highlight
+  today means deselecting and reselecting in the order you want.
+- **The Archive picker loads one page (50 Stories, the backend's page-size
+  cap) with no "load more."** A prolific account's older Stories past
+  that first page aren't reachable from the picker yet — a real gap, not
+  a silent one.
 
 ### Phase 8 specifically
 

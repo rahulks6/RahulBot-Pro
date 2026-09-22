@@ -8,6 +8,8 @@ import { useAuth } from "../state/AuthContext";
 import { AuthNavigator } from "./AuthNavigator";
 import { MainTabs } from "./MainTabs";
 import { StoryViewerScreen } from "../screens/story/StoryViewerScreen";
+import { HighlightViewerScreen } from "../screens/highlight/HighlightViewerScreen";
+import { HighlightEditorScreen } from "../screens/highlight/HighlightEditorScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -21,6 +23,18 @@ function SignedInNavigator(): React.JSX.Element {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Main" component={MainTabs} />
       <Stack.Screen name="StoryViewer" component={StoryViewerScreen} options={{ presentation: "fullScreenModal" }} />
+      <Stack.Screen name="HighlightViewer" component={HighlightViewerScreen} options={{ presentation: "fullScreenModal" }} />
+      <Stack.Screen
+        name="HighlightEditor"
+        component={HighlightEditorScreen}
+        options={({ route }) => ({
+          headerShown: true,
+          title: route.params.highlightId ? "Edit Highlight" : "New Highlight",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        })}
+      />
     </Stack.Navigator>
   );
 }

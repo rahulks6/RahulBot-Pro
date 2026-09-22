@@ -6,6 +6,7 @@ import * as socialRepo from "../social/social.repository";
 import * as storiesRepo from "./stories.repository";
 import * as likesRepo from "./likes.repository";
 import * as commentsRepo from "./comments.repository";
+import * as highlightsRepo from "../highlights/highlights.repository";
 import type { StoryRecord } from "./stories.repository";
 import type { PublishStoryInput } from "./dto";
 
@@ -71,13 +72,25 @@ export async function publishStory(
   return toPublicStory(story);
 }
 
-/** Owner can always fetch their own (even expired, as a foundation for Archive later) — anyone else needs an active, visible Story. */
-export async function getStoryForViewer(storyId: string, viewerId: string): Promise<PublicStory> {
+/**
+ * The shared access-check core. `ignoreExpiry` is the one deliberate
+ * exception — set only by the Highlight-scoped variants below, and only
+ * ever reached after a caller has separately confirmed the Story is
+ * actually a member of a Highlight (see highlights.service.ts and
+ * canAccessMediaViaStory below). Block/private-account/audience rules
+ * apply identically either way — a Highlight keeps a Story visible past
+ * its normal expiry, it never loosens who was allowed to see it.
+ */
+async function checkStoryAccess(
+  storyId: string,
+  viewerId: string,
+  options: { ignoreExpiry?: boolean } = {},
+): Promise<PublicStory> {
   const story = await storiesRepo.findStoryById(storyId);
   if (!story || story.deletedAt !== null) throw new HttpError(404, "Story not found.");
   if (story.ownerId === viewerId) return toPublicStory(story);
 
-  if (!isActive(story)) throw new HttpError(404, "Story not found.");
+  if (!options.ignoreExpiry && !isActive(story)) throw new HttpError(404, "Story not found.");
 
   const owner = await usersRepo.findUserById(story.ownerId);
   if (!owner) throw new HttpError(404, "Story not found.");
@@ -95,10 +108,29 @@ export async function getStoryForViewer(storyId: string, viewerId: string): Prom
   return toPublicStory(story);
 }
 
+/** Owner can always fetch their own (even expired, as the foundation Archive/Highlights use) — anyone else needs an active, visible Story. */
+export async function getStoryForViewer(storyId: string, viewerId: string): Promise<PublicStory> {
+  return checkStoryAccess(storyId, viewerId);
+}
+
+/** Same rules as getStoryForViewer, minus the expiry check — for a Story a caller has already confirmed is a Highlight member (see highlights.service.ts). */
+export async function getStoryForHighlightViewer(storyId: string, viewerId: string): Promise<PublicStory> {
+  return checkStoryAccess(storyId, viewerId, { ignoreExpiry: true });
+}
+
 export interface StoryDetail extends PublicStory {
   likeCount: number;
   commentCount: number;
   viewerHasLiked: boolean;
+}
+
+async function attachEngagementCounts(story: PublicStory, viewerId: string): Promise<StoryDetail> {
+  const [likeCount, commentCount, viewerHasLiked] = await Promise.all([
+    likesRepo.countLikes(story.id),
+    commentsRepo.countComments(story.id),
+    likesRepo.hasLiked(story.id, viewerId),
+  ]);
+  return { ...story, likeCount, commentCount, viewerHasLiked };
 }
 
 /**
@@ -109,12 +141,13 @@ export interface StoryDetail extends PublicStory {
  */
 export async function getStoryDetailForViewer(storyId: string, viewerId: string): Promise<StoryDetail> {
   const story = await getStoryForViewer(storyId, viewerId);
-  const [likeCount, commentCount, viewerHasLiked] = await Promise.all([
-    likesRepo.countLikes(storyId),
-    commentsRepo.countComments(storyId),
-    likesRepo.hasLiked(storyId, viewerId),
-  ]);
-  return { ...story, likeCount, commentCount, viewerHasLiked };
+  return attachEngagementCounts(story, viewerId);
+}
+
+/** The Highlight-scoped counterpart to getStoryDetailForViewer — see getStoryForHighlightViewer. */
+export async function getStoryDetailForHighlightViewer(storyId: string, viewerId: string): Promise<StoryDetail> {
+  const story = await getStoryForHighlightViewer(storyId, viewerId);
+  return attachEngagementCounts(story, viewerId);
 }
 
 /**
@@ -122,13 +155,23 @@ export async function getStoryDetailForViewer(storyId: string, viewerId: string)
  * media file that's been published as a Story — media itself stays
  * owner-only (see media.routes.ts) except through this one door, which
  * just reuses getStoryForViewer's full rule set (audience, blocks,
- * private-account gating, expiry) rather than re-implementing it.
+ * private-account gating, expiry) rather than re-implementing it. Falls
+ * back to the Highlight-scoped variant only for a Story actually confirmed
+ * to be a Highlight member — that's what lets a Highlight's cover/items
+ * keep rendering after the underlying Story would otherwise have expired.
  */
 export async function canAccessMediaViaStory(mediaId: string, viewerId: string): Promise<boolean> {
   const story = await storiesRepo.findStoryByMediaId(mediaId);
   if (!story) return false;
   try {
     await getStoryForViewer(story.id, viewerId);
+    return true;
+  } catch {
+    // fall through to the Highlight-scoped check below
+  }
+  if (!(await highlightsRepo.storyIsInAnyHighlight(story.id))) return false;
+  try {
+    await getStoryForHighlightViewer(story.id, viewerId);
     return true;
   } catch {
     return false;
@@ -195,6 +238,17 @@ export async function deleteStory(ownerId: string, storyId: string): Promise<voi
     throw new HttpError(404, "Story not found.");
   }
   await storiesRepo.softDeleteStory(storyId);
+  // "Gone even to the owner afterward" (see this function's own history)
+  // has to mean gone from every Highlight it was ever added to as well —
+  // a Highlight that's outlived its Story's normal expiry shouldn't be
+  // the one place a "deleted" Story keeps rendering.
+  await highlightsRepo.removeStoryFromAllHighlights(storyId);
+}
+
+/** Every non-deleted Story an owner has ever published — the private Archive (spec), not shown to anyone else. */
+export async function listMyArchivedStories(ownerId: string, limit: number, offset: number): Promise<PublicStory[]> {
+  const stories = await storiesRepo.listArchivedStoriesForOwner(ownerId, limit, offset);
+  return stories.map(toPublicStory);
 }
 
 export async function getViewCount(ownerId: string, storyId: string): Promise<number> {

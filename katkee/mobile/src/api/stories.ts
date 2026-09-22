@@ -52,6 +52,18 @@ export function getUserActiveStories(username: string, accessToken: string): Pro
   return apiGet(`/api/v1/users/${encodeURIComponent(username)}/stories`, accessToken);
 }
 
+/** Every Story you've ever published, expired or not — the private Archive a Highlight's story picker is built from. */
+export function getMyArchivedStories(
+  accessToken: string,
+  params: { limit?: number; offset?: number } = {},
+): Promise<{ stories: PublicStory[]; limit: number; offset: number }> {
+  const query = new URLSearchParams();
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return apiGet(`/api/v1/stories/mine/archive${qs ? `?${qs}` : ""}`, accessToken);
+}
+
 export function recordStoryView(storyId: string, accessToken: string): Promise<void> {
   return apiPost(`/api/v1/stories/${storyId}/view`, undefined, accessToken);
 }

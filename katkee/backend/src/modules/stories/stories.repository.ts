@@ -127,6 +127,25 @@ export async function listActiveStoryOwnersForViewer(
   return rows.map((row) => ({ ownerId: row.owner_id as string, latestStoryAt: row.latest_story_at as string }));
 }
 
+/**
+ * Every non-deleted Story an owner has ever published, expired or not,
+ * most recent first — the Archive that migration 0005's comment on
+ * `deleted_at` (never hard-deleting on expiry) was written for. Phase 9
+ * finally exercises it: Highlights are a curated, public subset of this
+ * same history.
+ */
+export async function listArchivedStoriesForOwner(ownerId: string, limit: number, offset: number): Promise<StoryRecord[]> {
+  const rows = await query(
+    `SELECT id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at
+     FROM stories
+     WHERE owner_id = :'owner_id' AND deleted_at IS NULL
+     ORDER BY created_at DESC
+     LIMIT :'limit' OFFSET :'offset'`,
+    { owner_id: ownerId, limit, offset },
+  );
+  return rows.map(mapRow);
+}
+
 export async function recordView(storyId: string, viewerId: string): Promise<void> {
   await query(
     `INSERT INTO story_views (story_id, viewer_id) VALUES (:'story_id', :'viewer_id')
