@@ -14,6 +14,8 @@ interface AuthContextValue extends AuthState {
   signup: (input: authApi.SignupPayload) => Promise<void>;
   login: (input: authApi.LoginPayload) => Promise<void>;
   logout: () => Promise<void>;
+  /** Real, irreversible account deletion (password-confirmed) — throws ApiError (e.g. wrong password) on failure, otherwise ends signed out. */
+  deleteAccount: (password: string) => Promise<void>;
   error: string | null;
   fieldErrors: Record<string, string> | undefined;
   clearError: () => void;
@@ -111,14 +113,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     setState({ status: "signedOut", user: null, accessToken: null });
   }, [refreshToken]);
 
+  const deleteAccount = useCallback(
+    async (password: string) => {
+      if (!state.accessToken) return;
+      // Not wrapped in try/catch — a wrong password (or any other failure)
+      // must propagate to the caller so the screen can show it, unlike
+      // logout()'s best-effort revocation, since this is the one action
+      // here that's genuinely irreversible.
+      await authApi.deleteMyAccount(password, state.accessToken);
+      await clearTokens();
+      setRefreshToken(null);
+      setState({ status: "signedOut", user: null, accessToken: null });
+    },
+    [state.accessToken],
+  );
+
   const clearError = useCallback(() => {
     setError(null);
     setFieldErrors(undefined);
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, signup, login, logout, error, fieldErrors, clearError }),
-    [state, signup, login, logout, error, fieldErrors, clearError],
+    () => ({ ...state, signup, login, logout, deleteAccount, error, fieldErrors, clearError }),
+    [state, signup, login, logout, deleteAccount, error, fieldErrors, clearError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

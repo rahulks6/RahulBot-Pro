@@ -118,6 +118,19 @@ export async function setActive(id: string, isActive: boolean): Promise<void> {
   await query(`UPDATE users SET is_active = :'is_active' WHERE id = :'id'`, { id, is_active: isActive });
 }
 
+/**
+ * Self-service account deletion (see profiles.service.deleteMyAccount).
+ * Every read in this file already filters `deleted_at IS NULL`, so this
+ * alone makes the account unfindable by username/email/id (login,
+ * lookups, search) immediately — the same mechanism Phase 4's soft
+ * Story-delete and Phase 10's moderator suspension both already rely on.
+ * It also frees the username/email for reuse, the same way any other
+ * soft-deleted row here already does.
+ */
+export async function softDeleteUser(id: string): Promise<void> {
+  await query(`UPDATE users SET deleted_at = now() WHERE id = :'id'`, { id });
+}
+
 export interface UserSearchResult {
   id: string;
   username: string;

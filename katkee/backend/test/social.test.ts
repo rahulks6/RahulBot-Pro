@@ -4,14 +4,17 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { buildApp } from "../src/app";
 import { authHeader, makeClient, uniqueUser } from "./helpers";
+import { buildTestPng } from "./fixtures";
 
 let client: ReturnType<typeof makeClient>;
+let baseUrl: string;
 const server = buildApp();
 
 before(async () => {
   await new Promise<void>((resolve) => server.listen(0, resolve));
   const address = server.address() as AddressInfo;
-  client = makeClient(`http://127.0.0.1:${address.port}`);
+  baseUrl = `http://127.0.0.1:${address.port}`;
+  client = makeClient(baseUrl);
 });
 
 after(async () => {
@@ -56,6 +59,70 @@ describe("profile", () => {
     assert.equal(second.status, 200);
     assert.equal(second.body.user.displayName, "New Name");
     assert.equal(second.body.user.bio, "hello world", "bio must survive an update that didn't touch it");
+  });
+});
+
+describe("account deletion", () => {
+  it("requires a password in the request body at all", async () => {
+    const alice = await signupUser();
+    const res = await client.delete("/api/v1/users/me", authHeader(alice.accessToken));
+    assert.equal(res.status, 422);
+  });
+
+  it("rejects the wrong password without deleting anything", async () => {
+    const alice = await signupUser();
+    const wrongPassword = await client.deleteWithBody("/api/v1/users/me", { password: "not-the-real-password" }, authHeader(alice.accessToken));
+    assert.equal(wrongPassword.status, 401);
+
+    const stillThere = await client.get(`/api/v1/users/${alice.input.username}`, authHeader(alice.accessToken));
+    assert.equal(stillThere.status, 200, "a failed deletion attempt must not touch the account");
+  });
+
+  it("deletes the account for real: hides the profile, blocks login, invalidates the outstanding refresh token, and frees the username/email for reuse", async () => {
+    const input = uniqueUser();
+    const signup = await client.post("/api/v1/auth/signup", input);
+    const accessToken = signup.body.tokens.accessToken as string;
+    const refreshToken = signup.body.tokens.refreshToken as string;
+
+    const deleteRes = await client.deleteWithBody("/api/v1/users/me", { password: input.password }, authHeader(accessToken));
+    assert.equal(deleteRes.status, 204);
+
+    const profileAfter = await client.get(`/api/v1/users/${input.username}`, authHeader((await signupUser()).accessToken));
+    assert.equal(profileAfter.status, 404, "a deleted account's profile must be unreachable, the same as if it never existed");
+
+    const loginAfter = await client.post("/api/v1/auth/login", { email: input.email, password: input.password });
+    assert.equal(loginAfter.status, 401, "a deleted account must not be able to log in");
+
+    const refreshAfter = await client.post("/api/v1/auth/refresh", { refreshToken });
+    assert.equal(refreshAfter.status, 401, "an outstanding refresh token must stop working immediately, the same as a Phase 10 suspension");
+
+    const reSignup = await client.post("/api/v1/auth/signup", input);
+    assert.equal(reSignup.status, 201, "deleting an account must free its username and email for reuse");
+  });
+
+  it("soft-deletes the account's own active Stories as part of deletion", async () => {
+    const input = uniqueUser();
+    const signup = await client.post("/api/v1/auth/signup", input);
+    const accessToken = signup.body.tokens.accessToken as string;
+
+    const uploadRes = await fetch(`${baseUrl}/api/v1/media/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "image/png", ...authHeader(accessToken) },
+      body: buildTestPng(4, 4),
+    });
+    const mediaId = ((await uploadRes.json()) as { media: { id: string } }).media.id;
+    const story = await client.post(
+      "/api/v1/stories",
+      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true },
+      authHeader(accessToken),
+    );
+    const storyId = story.body.story.id as string;
+
+    await client.deleteWithBody("/api/v1/users/me", { password: input.password }, authHeader(accessToken));
+
+    const someoneElse = await signupUser();
+    const storyAfter = await client.get(`/api/v1/stories/${storyId}`, authHeader(someoneElse.accessToken));
+    assert.equal(storyAfter.status, 404, "a deleted account's Stories must stop appearing, the same as any other deletion");
   });
 });
 

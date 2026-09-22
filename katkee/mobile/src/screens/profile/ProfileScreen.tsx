@@ -7,6 +7,7 @@ import { useAuth } from "../../state/AuthContext";
 import { getProfile } from "../../api/users";
 import { getMyActiveStories } from "../../api/stories";
 import { HighlightsRow } from "../../components/HighlightsRow";
+import { DeleteAccountSheet } from "../../components/DeleteAccountSheet";
 import type { RootStackParamList } from "../../navigation/types";
 
 /**
@@ -20,6 +21,7 @@ export function ProfileScreen(): React.JSX.Element {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [counts, setCounts] = useState<{ followerCount: number; followingCount: number } | null>(null);
   const [hasActiveStory, setHasActiveStory] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!user || !accessToken) return;
@@ -80,6 +82,12 @@ export function ProfileScreen(): React.JSX.Element {
       <Pressable style={styles.logoutButton} onPress={() => void logout()}>
         <Text style={styles.logoutLabel}>Log out</Text>
       </Pressable>
+
+      <Pressable style={styles.deleteAccountLink} onPress={() => setDeleteOpen(true)}>
+        <Text style={styles.deleteAccountLabel}>Delete account</Text>
+      </Pressable>
+
+      <DeleteAccountSheet visible={deleteOpen} onClose={() => setDeleteOpen(false)} />
     </View>
   );
 }
@@ -131,4 +139,6 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: "600",
   },
+  deleteAccountLink: { marginTop: spacing.md },
+  deleteAccountLabel: { ...typography.caption, color: colors.textDisabled },
 });

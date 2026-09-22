@@ -1,8 +1,8 @@
 {
   "name": "@katkee/mobile",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "KATKEE mobile app (Phase 1-3: design system, navigation, auth, search/follow, camera + Story editor)",
+  "description": "KATKEE — Story-first social network. React Native app (Phase 1-11: full feature set through moderation + production hardening — see README.md).",
   "scripts": {
     "start": "react-native start",
     "android": "react-native run-android",

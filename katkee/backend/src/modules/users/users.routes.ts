@@ -3,7 +3,7 @@ import { requireAuth } from "../../http/middleware/auth.middleware";
 import { sendJson } from "../../http/respond";
 import { parsePagination, parseQueryString } from "../../http/pagination";
 import { parseUsernameParam } from "../../shared/validation";
-import { parseUpdateProfileInput } from "./dto";
+import { parseDeleteAccountInput, parseUpdateProfileInput } from "./dto";
 import * as profilesService from "./profiles.service";
 
 export function registerUserRoutes(router: Router): void {
@@ -28,6 +28,13 @@ export function registerUserRoutes(router: Router): void {
         isPrivate: user.isPrivate,
       },
     });
+  });
+
+  router.delete("/api/v1/users/me", async (req, res) => {
+    requireAuth(req);
+    const { password } = parseDeleteAccountInput(req.body);
+    await profilesService.deleteMyAccount(req.userId as string, password);
+    sendJson(res, 204, undefined);
   });
 
   router.get("/api/v1/users/:username/followers", async (req, res) => {

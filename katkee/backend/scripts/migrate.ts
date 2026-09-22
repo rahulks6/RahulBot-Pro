@@ -14,7 +14,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { config } from "../src/config/env";
 
-const MIGRATIONS_DIR = path.resolve(__dirname, "..", "migrations");
+// Resolved from cwd (this package's root), not __dirname — matching
+// config/env.ts's and media/storage.ts's own reasoning: __dirname points
+// into dist/scripts/ once compiled, and migrations/*.sql is never copied
+// there (tsc only compiles .ts files), so an __dirname-relative path
+// silently broke `npm run migrate:prod` the first time anyone actually
+// ran the compiled build instead of ts-node.
+const MIGRATIONS_DIR = path.resolve(process.cwd(), "migrations");
 
 function psqlExec(sql: string): string {
   return execFileSync(

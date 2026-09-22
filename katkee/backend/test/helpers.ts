@@ -19,6 +19,13 @@ export function makeClient(baseUrl: string) {
     post: (path: string, body?: unknown, headers?: Record<string, string>) => request("POST", path, body, headers),
     patch: (path: string, body?: unknown, headers?: Record<string, string>) => request("PATCH", path, body, headers),
     delete: (path: string, headers?: Record<string, string>) => request("DELETE", path, undefined, headers),
+    // Separate from `delete` (not an overload of it) specifically to avoid
+    // ambiguity with `delete`'s existing (path, headers) shape used at 16
+    // call sites — reusing that signature for (path, body, headers) would
+    // have silently broken every one of them by sending `authHeader(...)`
+    // as a JSON body instead of as headers.
+    deleteWithBody: (path: string, body: unknown, headers?: Record<string, string>) =>
+      request("DELETE", path, body, headers),
   };
 }
 

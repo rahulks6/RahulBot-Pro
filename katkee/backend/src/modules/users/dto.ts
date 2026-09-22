@@ -43,3 +43,10 @@ export function parseSearchQuery(q: string | undefined): string {
   }
   return term;
 }
+
+export function parseDeleteAccountInput(body: unknown): { password: string } {
+  const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+  const password = typeof b.password === "string" ? b.password : "";
+  if (!password) throw new ValidationError({ password: "password is required to confirm account deletion." });
+  return { password };
+}

@@ -1,4 +1,4 @@
-# KATKEE mobile — Phase 1 through Phase 11
+# KATKEE mobile — Phase 1 through Phase 12
 
 Real, hand-written TypeScript source for the design system, navigation shell,
 authentication, search/follow, camera capture + the Story editor, publishing
@@ -7,18 +7,23 @@ analytics-event emission feeding the backend's recommendation system, a real
 Activity tab backed by the backend's notifications, a real DM inbox and
 conversation thread (including sharing a Story into a conversation), real
 Highlights — create/edit/view, picked from a real Archive of every Story
-you've ever published — and a real Report flow (Story, comment, and
-account) feeding the backend's moderation queue, wired to the actual
-backend API (`../backend`) — not generated boilerplate. It has **not**
-been built or run in this session; see the limitation below before
-trusting it further, and see "Phase 3 specifically" for why that phase
-carries more risk than 1-2 (Phases 4-10 inherit the same camera/gesture
-risk, plus their own new ones — see each phase's own "specifically"
-section). A best-effort `tsc` pass (no real library types installed —
-see below) ran clean against every file touched through Phase 10 (Phase
-11 — the backend's production hardening — needed no mobile changes at
-all; see "Phase 11 specifically" below for why), for what that's worth
-given its limits.
+you've ever published — a real Report flow (Story, comment, and
+account) feeding the backend's moderation queue, and now everything
+needed to actually ship this to the App Store and Play Store — real
+account deletion, an environment config that points at a real deployed
+backend instead of `localhost`, a crash boundary, and a hook for real
+crash reporting — wired to the actual backend API (`../backend`) — not
+generated boilerplate. It has **not** been built or run in this session;
+see the limitation below before trusting it further, and see "Phase 3
+specifically" for why that phase carries more risk than 1-2 (Phases 4-10
+inherit the same camera/gesture risk, plus their own new ones — see each
+phase's own "specifically" section). A best-effort `tsc` pass (no real
+library types installed — see below) ran clean against every file
+touched through Phase 12 (Phase 11 — the backend's production hardening —
+needed no mobile changes at all; see "Phase 11 specifically" below for
+why), for what that's worth given its limits. See `../DEPLOYMENT.md` for
+the actual build-and-submit runbook and `../STORE_LISTING.md` for what
+both stores require in the listing itself.
 
 ## What exists here
 
@@ -204,6 +209,43 @@ given its limits.
   `UserProfileScreen.tsx` gained a small **Report this account** link.
   `CommentsSheet.tsx` gained a **Report** action per comment that isn't
   your own, alongside the existing Delete.
+- `src/config/env.ts` — a real dev/production split for the backend URL,
+  selected automatically by React Native's own `__DEV__` global (true in
+  a Metro/debug build, false in a release build) — no extra native module
+  needed just to pick a URL. `api/client.ts`'s `API_BASE_URL` now reads
+  from this instead of a hardcoded `localhost:4000`. Set
+  `production.apiBaseUrl` to your real deployed backend's HTTPS domain
+  (see `../DEPLOYMENT.md`) before making a release build.
+- `src/components/ErrorBoundary.tsx` — a top-level crash boundary
+  (wraps everything in `App.tsx`, outside even `AuthProvider`) so an
+  unexpected render error shows a real, recoverable screen instead of a
+  blank one. Reports through `src/crashReporting.ts`, which is inert
+  (just `console.error`s) until you wire in a real service — that file's
+  own comment is the exact `npm install`/wizard sequence for Sentry, the
+  standard choice for React Native.
+- `src/components/DeleteAccountSheet.tsx` — real, password-confirmed,
+  in-app account deletion, reachable from `ProfileScreen.tsx`. This isn't
+  optional polish: App Store review guideline 5.1.1(v) requires an
+  in-app deletion path for any app that supports account creation, and a
+  submission is rejected outright without one. Calls the Phase 12 backend
+  endpoint through a new `AuthContext.deleteAccount()`, which clears
+  local tokens and returns to signed-out on success — the same ending
+  state as `logout()`, reached by a genuinely different, irreversible
+  action.
+
+### Phase 12 specifically
+
+- **No new native modules, no ios/android folders yet.** Everything
+  Phase 12 needed was achievable in plain TypeScript/React Native — see
+  `../DEPLOYMENT.md` for the real bootstrap step (`npx
+  @react-native-community/cli@latest init`) that finally creates those,
+  on your own machine, when you're ready to build for real.
+- **Crash reporting is a real integration point, not a real crash
+  reporter.** `crashReporting.ts` is inert until you actually run `npm
+  install @sentry/react-native` (or swap in Bugsnag/Crashlytics) — see
+  that file's own comment for the exact steps. Shipping a hardcoded
+  Sentry DSN (or any real credential) into this repo would be a real
+  security mistake, not a shortcut worth taking to look more "done."
 
 ### Phase 11 specifically
 

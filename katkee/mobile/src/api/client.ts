@@ -6,7 +6,9 @@
  * mirrored here by hand until Phase 1's tooling grows a shared types
  * package.
  */
-export const API_BASE_URL = "http://localhost:4000";
+import { appEnv } from "../config/env";
+
+export const API_BASE_URL = appEnv.apiBaseUrl;
 
 export interface PublicUser {
   id: string;
@@ -84,5 +86,17 @@ export function apiDelete<T>(path: string, accessToken?: string): Promise<T> {
   return request<T>(path, {
     method: "DELETE",
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+}
+
+// A separate function, not an overload of apiDelete — apiDelete's 2nd
+// param is accessToken at 5 existing call sites; reusing that slot for a
+// body here would silently break all of them (the access token would be
+// JSON-stringified as a request body instead of sent as a header).
+export function apiDeleteWithBody<T>(path: string, body: unknown, accessToken?: string): Promise<T> {
+  return request<T>(path, {
+    method: "DELETE",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 }

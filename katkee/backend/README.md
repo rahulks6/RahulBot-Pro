@@ -1,4 +1,4 @@
-# KATKEE backend — Phase 1 through Phase 11
+# KATKEE backend — Phase 1 through Phase 12
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
@@ -10,10 +10,13 @@ follow requests, and @mentions), real 1:1 direct messages (including
 sharing a Story into a conversation), a real Archive + Highlights
 (named collections of a user's own past Stories that outlive the normal
 24h expiry), real Moderation (user-filed Reports, a moderator queue,
-content removal, and account suspension that actually blocks login), and
-now real production hardening — rate limiting, structured request
-logging, a liveness check that actually pings the database, and startup
-config validation — all backed by a real database and a test suite that
+content removal, and account suspension that actually blocks login),
+real production hardening (rate limiting, structured request logging, a
+liveness check that actually pings the database, and startup config
+validation), and now real in-app account deletion plus everything needed
+to actually deploy this to a live server and submit it to the App Store
+and Play Store (see `../DEPLOYMENT.md` and `../STORE_LISTING.md`) — all
+backed by a real database and a test suite that
 exercises it end to end. No mocked data anywhere in this service.
 
 ## Known sandbox limitation (read this first)
@@ -93,6 +96,11 @@ Generate real JWT secrets rather than using the placeholders:
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
+For an actual production deployment (a real server, real HTTPS, a
+container instead of `ts-node`), see `Dockerfile`, `docker-compose.prod.yml`,
+`Caddyfile`, and `../DEPLOYMENT.md` — the full runbook, in order, through
+submitting the mobile app to both stores.
+
 ## Scripts
 
 | Command | What it does |
@@ -100,7 +108,8 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 | `npm run dev` | Runs the API with ts-node (no build step) |
 | `npm run build` / `npm start` | Compiles to `dist/` and runs the compiled server |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run migrate` | Applies any `migrations/*.sql` not yet recorded in `schema_migrations` |
+| `npm run migrate` | Applies any `migrations/*.sql` not yet recorded in `schema_migrations` (via `ts-node`, for local dev) |
+| `npm run migrate:prod` | Same, but runs the compiled `dist/scripts/migrate.js` — what a deployed container actually runs, since it has no `ts-node` |
 | `npm test` | Compiles, then runs `test/*.test.ts` against `PGDATABASE=katkee_test` with Node's built-in test runner — no test framework dependency needed |
 
 All of the above were actually run against a live local Postgres instance
@@ -377,6 +386,77 @@ stdout for both successful and rate-limited requests, and 10 real signups
 succeeding followed by the 11th and 12th genuinely receiving 429 with a
 `Retry-After`-style message.
 
+## Phase 12: real deployment — account deletion, Docker, and two real bugs
+
+Preparing to actually deploy this (see `../DEPLOYMENT.md` and
+`../STORE_LISTING.md`) surfaced two real, previously-undiscovered
+production-path bugs — every prior phase's testing went through
+`npm run dev` (ts-node, source directly) or `npm test` (which runs
+`dist/test/*.js` directly), and neither ever exercised the actual
+"compile once, run the compiled output" path a real deployment uses:
+
+- **`npm start` was broken.** `package.json` pointed it at
+  `dist/index.js`; the real compiled entry point (given
+  `tsconfig.json`'s `rootDir: "."`) is `dist/src/index.js`. Running
+  `npm run build && npm start` crashed on a module-not-found error every
+  single time — confirmed by actually running it, not inferred. Fixed.
+- **The compiled migration runner was broken the same way.**
+  `scripts/migrate.ts` resolved `MIGRATIONS_DIR` from `__dirname`, which
+  points into `dist/scripts/` once compiled — and `migrations/*.sql` is
+  never copied there (`tsc` only compiles `.ts` files). `npm run
+  migrate:prod` (the new script this phase added specifically for a
+  container that has no `ts-node`) failed with `ENOENT` until fixed to
+  resolve from `process.cwd()` instead — the same reasoning
+  `config/env.ts` and `media/storage.ts` already documented for exactly
+  this class of bug, just never applied here. Both fixes were verified
+  by actually running the compiled build against a live database, not
+  just read for plausibility.
+
+**Real, in-app account deletion** (`DELETE /api/v1/users/me`,
+password-confirmed) exists now because App Store review guideline
+5.1.1(v) requires it for any app that supports account creation — this
+isn't optional polish, a submission is rejected outright without it.
+`profiles.service.deleteMyAccount` soft-deletes the account's own active
+Stories first (reusing Phase 10's `moderatorDeleteStory`, Highlight
+cleanup included), then the account itself, then revokes every refresh
+token it holds — reusing the exact same `deleted_at`-filtering and
+`revokeAllRefreshTokensForUser` machinery Phase 4's Story deletion and
+Phase 10's suspension already built, rather than inventing a third way to
+make something disappear. What's deliberately *not* scrubbed — comments
+left on other people's Stories, DM history — is a documented scope
+decision (see the function's own comment and `../legal/PRIVACY_POLICY.md`),
+not an oversight.
+
+Building this surfaced one more real gap: `server.ts` only read a request
+body for POST/PUT/PATCH — DELETE was never included, even though HTTP
+(RFC 7231) doesn't forbid a body on DELETE and this endpoint's password
+confirmation needs one. Fixed by adding DELETE to the body-reading list;
+every existing DELETE route sends no body at all, so this is additive,
+not a behavior change for any of them (verified: all pre-existing DELETE
+tests still pass unmodified).
+
+**Real deployment artifacts**: `Dockerfile` (two-stage — the backend has
+zero runtime npm dependencies, so the final image only needs Node, the
+compiled `dist/`, and the `psql` CLI db/psql.ts shells out to),
+`docker-compose.prod.yml` (Postgres + backend + Caddy for automatic,
+auto-renewing HTTPS — required, not optional, since iOS blocks plain
+HTTP by default), and a `Caddyfile`. None of these have been built or run
+inside an actual container in this sandbox — no Docker daemon is
+available to me here (confirmed by trying) — so they're written against
+standard, well-documented Compose/Dockerfile patterns and this backend's
+own real npm scripts rather than tested end-to-end; run `docker compose
+-f docker-compose.prod.yml config` yourself first, the same "verify
+before trusting further" standard every untestable piece of this project
+has been held to.
+
+145/145 tests passing (4 new: wrong-password rejection, a full real
+deletion verified end-to-end — profile gone, login blocked, the
+outstanding refresh token invalidated, the username/email freed for
+reuse by a fresh signup — and active-Story cleanup). Manually
+smoke-tested against a live server: wrong password → 401 with nothing
+touched, correct password → 204, then profile/login/refresh all
+confirmed genuinely blocked afterward.
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -389,6 +469,7 @@ succeeding followed by the 11th and 12th genuinely receiving 429 with a
 | GET | `/api/v1/auth/me` | Bearer access token | → `{user}` |
 | GET | `/api/v1/users/:username` | Bearer | Public profile + viewer relationship flags; 404 if either side blocked the other |
 | PATCH | `/api/v1/users/me` | Bearer | `{displayName?, bio?, isPrivate?}` → `{user}`; untouched fields are preserved |
+| DELETE | `/api/v1/users/me` | Bearer | `{password}` → 204; permanently deletes the account (password-confirmed, irreversible) — see "Phase 12" above |
 | GET | `/api/v1/users/:username/followers` | Bearer | Paginated (`?limit&offset`); 403 if the account is private and you don't follow it |
 | GET | `/api/v1/users/:username/following` | Bearer | Same gating as followers |
 | POST | `/api/v1/users/:username/follow` | Bearer | → `{status: "following"}` immediately, or `{status: "requested"}` for a private account |
@@ -506,7 +587,7 @@ polymorphic across three tables — see "Phase 10" above for that
 tradeoff, and two indexes: one for the moderator queue's status+FIFO
 ordering, one for looking up every report against a given target).
 
-## What's NOT in Phase 1-11
+## What's NOT in Phase 1-12
 
 `follow_after_story` attribution is still best-effort client-reported
 rather than cross-referenced against a conversation (see mobile/README.md
@@ -523,15 +604,17 @@ else), not a dedicated stricter budget of its own; no report-aggregation
 appeals flow; and no mobile UI for the moderator queue itself (it's a
 real, tested API with no admin screen built against it yet — a
 deliberately small, internal-only audience didn't justify a dedicated
-admin app in this pass). Phase 11's hardening is real but bounded to what
-a single-process sandbox deployment can actually offer: rate limiting is
-in-memory and per-process (see "Phase 11" above — it won't coordinate
-across multiple server instances behind a load balancer, and resets on
-every restart), there's no TLS termination configured (that's normally a
-reverse proxy's job, not this application's), no automated database
-backup/restore strategy, and no APM/metrics/alerting beyond the
-structured request-log lines — a real production deployment layers those
-on top of, not instead of, what's here. The recommendation
+admin app in this pass). Account deletion (Phase 12) deliberately doesn't
+scrub comments left on other people's Stories or DM history — see that
+section above and `../legal/PRIVACY_POLICY.md` for why. Rate limiting is
+in-memory and per-process (Phase 11 — it won't coordinate across multiple
+server instances behind a load balancer, and resets on every restart);
+`docker-compose.prod.yml` (Phase 12) does configure real TLS termination
+via Caddy, but it's untested in this sandbox (no Docker daemon available
+here) and there's still no automated database backup/restore strategy and
+no APM/metrics/alerting beyond the structured request-log lines — see
+`../DEPLOYMENT.md` for what a real deployment still needs to layer on top
+of what's here. The recommendation
 system itself is real
 but explicitly a starting heuristic, not a trained model — see "Phase 6:
 the recommendation system is a real heuristic, not a model" above for why,

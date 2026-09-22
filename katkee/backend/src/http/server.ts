@@ -95,7 +95,12 @@ export function createServer(router: Router): http.Server {
           return;
         }
 
-        const isBodyMethod = ["POST", "PUT", "PATCH"].includes((req.method ?? "").toUpperCase());
+        // DELETE is included too — HTTP (RFC 7231) doesn't forbid a body on
+        // DELETE, and account deletion's password confirmation needs one.
+        // Every existing DELETE route sends no body at all, so readBody()
+        // just resolves those to undefined exactly as before — this is
+        // additive, not a behavior change for them.
+        const isBodyMethod = ["POST", "PUT", "PATCH", "DELETE"].includes((req.method ?? "").toUpperCase());
         const body = isBodyMethod && !match.options.rawBody ? await readBody(req) : undefined;
 
         const katkeeReq = req as KatkeeRequest;

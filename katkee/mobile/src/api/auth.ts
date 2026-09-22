@@ -1,4 +1,4 @@
-import { apiGet, apiPost, type PublicUser, type TokenPair } from "./client";
+import { apiDeleteWithBody, apiGet, apiPost, type PublicUser, type TokenPair } from "./client";
 
 export interface SignupPayload {
   username: string;
@@ -35,4 +35,9 @@ export function logout(refreshToken: string): Promise<void> {
 
 export function fetchMe(accessToken: string): Promise<{ user: PublicUser }> {
   return apiGet<{ user: PublicUser }>("/api/v1/auth/me", accessToken);
+}
+
+/** Real, in-app account deletion (Phase 12 — App Store guideline 5.1.1(v) requires this exist). Password-confirmed since it's irreversible. */
+export function deleteMyAccount(password: string, accessToken: string): Promise<void> {
+  return apiDeleteWithBody<void>("/api/v1/users/me", { password }, accessToken);
 }

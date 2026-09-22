@@ -1,8 +1,8 @@
 {
   "name": "@katkee/backend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "KATKEE backend API (Phase 1: foundation, database, authentication)",
+  "description": "KATKEE backend API — Story-first social network (Phase 1-11: full feature set through moderation + production hardening — see README.md).",
   "type": "commonjs",
   "engines": {
     "node": ">=20"
@@ -10,9 +10,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/index.js",
+    "start": "node dist/src/index.js",
     "dev": "ts-node --transpile-only src/index.ts",
     "migrate": "ts-node --transpile-only scripts/migrate.ts",
+    "migrate:prod": "node dist/scripts/migrate.js",
     "pretest": "ts-node --transpile-only scripts/reset-test-db.ts",
     "test": "tsc -p tsconfig.json && node --test dist/test/*.test.js"
   },
