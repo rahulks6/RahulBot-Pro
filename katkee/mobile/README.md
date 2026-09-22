@@ -1,16 +1,17 @@
-# KATKEE mobile — Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5
+# KATKEE mobile — Phase 1 through Phase 6
 
 Real, hand-written TypeScript source for the design system, navigation shell,
 authentication, search/follow, camera capture + the Story editor, publishing
-and viewing Stories, and now the full gesture set plus likes/comments/
-sharing, wired to the actual backend API (`../backend`) — not generated
+and viewing Stories, the full gesture set plus likes/comments/sharing, and
+now real analytics-event emission feeding the backend's recommendation
+system, wired to the actual backend API (`../backend`) — not generated
 boilerplate. It has **not** been built or run in this session; see the
 limitation below before trusting it further, and see "Phase 3 specifically"
-for why that phase carries more risk than 1-2 (Phase 4 and 5 inherit the
-same camera/gesture risk, plus their own new ones — see "Phase 4
-specifically" and "Phase 5 specifically"). A best-effort `tsc` pass (no
-real library types installed — see below) ran clean against every Phase 5
-file, for what that's worth given its limits.
+for why that phase carries more risk than 1-2 (Phases 4-6 inherit the same
+camera/gesture risk, plus their own new ones — see each phase's own
+"specifically" section). A best-effort `tsc` pass (no real library types
+installed — see below) ran clean against every file touched through
+Phase 6, for what that's worth given its limits.
 
 ## What exists here
 
@@ -72,9 +73,9 @@ file, for what that's worth given its limits.
   tray of followed creators at the top of Home, which now opens the
   viewer with that whole tray as the swipe order (not just one person).
 - `src/screens/home/HomeScreen.tsx` — no longer only an empty state: it
-  fetches `GET /api/v1/stories/feed/following` and shows a real tray of
-  people you follow who currently have an active Story. It's still
-  follow-graph order, not a recommendation-ranked feed — that's Phase 6.
+  fetches `GET /api/v1/stories/feed/home` (Phase 6's ranked endpoint, not
+  just the follow graph) and shows a real tray ordered by the backend's
+  actual score, with a "Discover" badge on entries you don't yet follow.
 - `RootNavigator.tsx` wraps the tab navigator in a root-level stack so
   `StoryViewer` is reachable from any tab (Profile, Search, Home) without
   each tab's own stack needing to know about it.
@@ -87,12 +88,26 @@ file, for what that's worth given its limits.
   section 15: "Sharing must NEVER bypass Story privacy") — see "Phase 5
   specifically" for what the copied link actually is.
 - `src/components/StoryMoreMenu.tsx` — View Insights (real view count) and
-  Delete for your own Story; Mute/Block (Phase 2 endpoints) for someone
-  else's. "Not Interested" and "Report" are left out on purpose — see
-  "Phase 5 specifically".
+  Delete for your own Story; Not Interested (Phase 6 — actually excludes
+  that creator from your `feed/home`, not just a UI acknowledgment),
+  Mute, and Block for someone else's. "Report" is still left out — it
+  needs a moderation queue that doesn't exist (Phase 11).
 - The right-side action rail (Heart with live count, Comment with live
   count, Share, More) on the Story viewer is real, not decorative — spec
   section 5.
+- `src/api/events.ts` + real emission throughout `StoryViewerScreen.tsx`:
+  `creator_impression`/`creator_sequence_started` on arriving at a
+  creator, `story_impression` per Story shown, `watch_duration` +
+  `qualified_view` (≥2s, per spec section 13) computed from real elapsed
+  time on leaving a Story, `story_complete` only on a natural
+  progress-bar finish (vs. `story_next`/`story_previous` for a tap and
+  `creator_swipe_next`/`creator_swipe_previous` for a swipe — genuinely
+  distinguished, not the same event relabeled), `creator_sequence_
+  continued`/`creator_sequence_completed`, `quick_creator_skip` (spec
+  section 8's negative signal — leaving a creator within 1.5s of
+  arriving), and `comment_open`. `profile_visit` needs no client
+  emission at all — the backend records it server-side, more reliably
+  than trusting the client (see `backend/README.md`).
 
 ### Phase 4 specifically
 
@@ -159,6 +174,31 @@ Two things are honestly scoped down rather than faked:
 - **The editor's action was "Upload," not "Share Story," in this phase.**
   Phase 4 added real publishing underneath it — see below — so the button
   now says "Share Story" and actually is one.
+
+### Phase 6 specifically
+
+- **`follow_after_story` isn't emitted at all.** It would need correlating
+  "the viewer just followed someone" (which happens in
+  `UserProfileScreen.tsx`, a completely different screen) with "they were
+  recently viewing that creator's Story" — real attribution logic that
+  doesn't exist yet, and guessing at it felt worse than leaving the event
+  out. `repeat_creator_visit` similarly isn't client-emitted — the
+  backend already derives it correctly from real `story_impression`
+  timestamps spread across days (see `backend/README.md`), so a
+  redundant client event would just be double-bookkeeping.
+- **`story_replay` isn't emitted.** There's no "go back to the start of a
+  Story you've already finished" affordance in this viewer (tapping left
+  only moves to the previous Story in the sequence, never re-plays the
+  current one from 0) — nothing to attach the event to yet.
+- **The Home tray is still a horizontal row you tap into, not the
+  spec's full-bleed auto-advancing vertical feed.** Phase 6 changed what
+  populates and orders that tray (real ranking, real discovery) but
+  didn't change its layout — see "Phase 4 specifically" above for the
+  same simplification applied to cross-creator navigation.
+- **Every event call is fire-and-forget** (`recordEvent(...).catch(() =>
+  undefined)`) — a dropped analytics call degrades ranking quality over
+  time, never the viewing experience in the moment. That's a deliberate
+  tradeoff, not an oversight.
 
 ## Known sandbox limitation (read this first)
 

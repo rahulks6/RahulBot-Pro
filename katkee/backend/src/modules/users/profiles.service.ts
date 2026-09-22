@@ -1,6 +1,7 @@
 import { HttpError } from "../../http/errors";
 import * as usersRepo from "../users/users.repository";
 import * as socialRepo from "../social/social.repository";
+import * as eventsRepo from "../recommendations/events.repository";
 
 export interface ProfileView {
   id: string;
@@ -27,6 +28,10 @@ export async function getProfileByUsername(username: string, viewerId: string): 
   if (target.id !== viewerId) {
     const blocked = await socialRepo.anyBlockBetween(viewerId, target.id);
     if (blocked) throw new HttpError(404, "User not found.");
+    // Real profile_visit signal for recommendation scoring (spec section
+    // 7/12) — emitted here, server-side, rather than trusted from the
+    // client, since this is exactly where a genuine profile view happens.
+    await eventsRepo.insertEvent({ viewerId, eventType: "profile_visit", creatorId: target.id });
   }
 
   const [relationship, counts] = await Promise.all([

@@ -1,11 +1,13 @@
-# KATKEE backend — Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5
+# KATKEE backend — Phase 1 through Phase 6
 
 Real, running foundation: Postgres schema, authentication, profiles, the
 follow system (including private-account follow requests), blocking, muting,
 people search, media upload/storage/retrieval, Story publishing with a
-genuine 24-hour lifecycle, and now likes/comments/shares — all backed by a
-real database and a test suite that exercises it end to end. No mocked
-data anywhere in this service.
+genuine 24-hour lifecycle, likes/comments/shares, and now a real (heuristic,
+not ML — see below) recommendation system with analytics event collection
+and new-creator exploration — all backed by a real database and a test
+suite that exercises it end to end. No mocked data anywhere in this
+service.
 
 ## Known sandbox limitation (read this first)
 
@@ -38,6 +40,34 @@ once npm access is available, replace `psql.ts` with the `pg` driver first
 (connection pooling, real multi-statement transactions), then optionally
 the others. Nothing here is a mock: it runs, it's tested, and it talks to a
 real Postgres database.
+
+## Phase 6: the recommendation system is a real heuristic, not a model
+
+There is no training data — the platform is brand new — so
+`src/modules/recommendations/scoring.ts` is deliberately **not** a trained
+model or an ML dependency (none is installed here anyway). It's a
+deterministic, documented, unit-tested formula over real counted signals:
+Bayesian-smoothed engagement rates, a freshness decay, a new-creator
+exploration multiplier, and a weighted affinity sum using the exact
+starting percentages spec section 7 proposes (10% qualified watch, 10%
+completion, 10% sequence continuation, 10% profile visit, 20% follow, 20%
+meaningful reply, 20% repeat-day visit). Every input is a real row —
+follows, comments, or a `recommendation_events` row a client genuinely
+posted and the server validated — never a placeholder. Spec section 7
+calls this out explicitly: "configurable starting weights, NOT hard-coded
+permanent truth" — replacing `scoring.ts`'s formula with an actual trained
+model later is expected, and doesn't require touching anything that calls
+it (`recommendation.service.ts` only depends on `scoring.ts`'s function
+signatures).
+
+`GET /api/v1/stories/feed/home` scores every eligible candidate (up to
+~250 — see `recommendation.repository.ts`) on every request; there's no
+caching or precomputation. That's a real, known cost, not hidden: the test
+suite's own `feed/home` calls got measurably slower over the course of
+this session as more test data accumulated in the shared test database
+(the same `pretest` reset from Phase 5 keeps it bounded per run). Fine at
+today's scale; a real product would precompute/cache candidate scores
+rather than scoring the whole eligible set synchronously per request.
 
 ## Setup
 
@@ -124,6 +154,21 @@ never resetting test data. Fixed with a `pretest` npm script
 (`scripts/reset-test-db.ts`) that truncates the test database before every
 run. 59/59 tests pass (10 new).
 
+Phase 6 was verified two ways: `test/scoring.test.ts` unit-tests the pure
+scoring math directly (smoothing pulls toward the prior, freshness decays
+monotonically toward a floor, exploration fades to 1.0, a follower
+outscores an otherwise-identical stranger, a repeat visitor outscores a
+one-time one) — fast, no database needed. `test/recommendations.test.ts`
+then exercises the real endpoints end to end: event validation per type,
+a story-scoped event rejected for a Story the poster can't see (reusing
+Story access rules), Not Interested actually removing a creator from that
+one viewer's feed (and confirming it does *not* affect another viewer),
+a public creator surfaced without being followed, and a followed creator
+outranking an equivalent unfollowed one. Manual `curl` testing also
+confirmed this live: following a previously-last-ranked creator
+mid-session immediately moved them to first place. 88/88 tests passing
+(29 new).
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -159,13 +204,19 @@ run. 59/59 tests pass (10 new).
 | POST | `/api/v1/stories/:id/view` | Bearer | Records a view once per viewer; the owner's own view never counts |
 | GET | `/api/v1/stories/:id/views` | Bearer, owner-only | View count |
 | GET | `/api/v1/stories/mine/active` | Bearer | Your own non-expired Stories, oldest first |
-| GET | `/api/v1/stories/feed/following` | Bearer | Owners you follow (+ yourself) with an active Story, most-recent-first — real, but plain follow-graph order, not a ranked recommendation (that's Phase 6) |
+| GET | `/api/v1/stories/feed/following` | Bearer | Owners you follow (+ yourself) with an active Story, most-recent-first — real, but plain follow-graph order, not ranked |
 | GET | `/api/v1/users/:username/stories` | Bearer | That user's active Stories visible to you |
 | POST\/DELETE | `/api/v1/stories/:id/like` | Bearer | Idempotent; needs the same view access as the Story itself |
 | POST | `/api/v1/stories/:id/comments` | Bearer | `{body}` (1-500 chars) → `{comment}`; respects the Story's `allowComments` (`everyone`\/`followers`\/`disabled`) — the owner can always comment on their own |
 | GET | `/api/v1/stories/:id/comments` | Bearer | Paginated, oldest first; only needs Story view access, not comment-post permission |
 | DELETE | `/api/v1/comments/:id` | Bearer | The comment's author, or the Story's owner (moderation), can delete it |
 | POST | `/api/v1/stories/:id/share` | Bearer | Records a share event; 403 if the Story's `allowSharing` is false |
+| GET | `/api/v1/stories/feed/home` | Bearer | Phase 6: followed + discovered public creators with an active Story, ranked by `scoring.ts`'s heuristic; your own Stories always lead, unscored |
+| POST | `/api/v1/events` | Bearer | `{eventType, creatorId?, storyId?, valueMs?}` → 204; validates required fields per type and that any `storyId`/`creatorId` is real and visible to you — see `events.dto.ts` for the full type list |
+
+`not_interested` is one of `POST /api/v1/events`'s `eventType` values — it
+both logs the event and immediately excludes that creator from your
+`feed/home` results (there's no separate endpoint for it).
 
 Errors are JSON: `{"error": "validation_error", "fields": {...}}` (422),
 `{"error": "auth_error", "message": "..."}` (401/409), or
@@ -190,14 +241,21 @@ are never hard-deleted on expiry (soft `deleted_at` only), since Archive
 per-viewer state, like `story_views`), `story_comments` (soft-deletable),
 `story_shares` (append-only analytics log — repeated sharing is a real,
 meaningful action, unlike a view or a like, so it's never deduplicated).
+`0007`: `recommendation_events` (the analytics events spec section 12
+lists that don't already have a dedicated table — likes/comments/shares
+are read directly from their own tables, not duplicated here) and
+`creator_not_interested` (the one real per-viewer hard-exclusion rule).
 Highlights, conversations, and notifications are deliberately left to
 their own phases so these migrations stay reviewable.
 
-## What's NOT in Phase 1-5
+## What's NOT in Phase 1-6
 
-Recommendations/discovery beyond your own following graph (Phase 6), DMs
-(so Share's "send to a Katkee user" isn't here — see mobile/README.md),
-Highlights, video transcoding/thumbnails, and moderation are later phases
-per the build plan — this is intentionally just foundation + auth + social
-graph + media + Stories + engagement, done for real rather than a wide
-shallow pass across everything.
+DMs (so Share's "send to a Katkee user" isn't here, and `follow_after_story`
+attribution is best-effort client-reported rather than cross-referenced
+against a conversation — see mobile/README.md), Highlights, video
+transcoding/thumbnails, and moderation (reports, a moderation queue) are
+later phases per the build plan. The recommendation system itself is real
+but explicitly a starting heuristic, not a trained model — see "Phase 6:
+the recommendation system is a real heuristic, not a model" above for why,
+and spec section 7 for why that's the intended starting point, not a
+shortcut.

@@ -4,28 +4,30 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors, radii, spacing, typography } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
-import { getFollowingFeed, type FeedEntry } from "../../api/stories";
+import { getRankedHomeFeed, type RankedFeedEntry } from "../../api/stories";
 import { EmptyState } from "../../components/EmptyState";
 import type { RootStackParamList } from "../../navigation/types";
 
 /**
- * The full swipeable, gesture-driven Story feed (spec sections 4-6) is
- * Phase 5's "full Home gesture system" — it needs a ranked mix of
- * following + recommended creators that doesn't exist until Phase 6
- * either. What's real here now: the actual list of people you follow (+
- * yourself) who have an active Story, fetched from Phase 4's backend,
- * shown as a tappable row that opens the real Story viewer. No mock
- * creators, no fake feed.
+ * The full swipeable, gesture-driven Story feed (spec sections 4-6) needs
+ * cross-creator swipe navigation (built into StoryViewerScreen — Phase 5)
+ * and a ranked mix of following + discovered creators (Phase 6's backend
+ * scoring — spec sections 7-11). Both are real now: this tray is ordered
+ * by `GET /api/v1/stories/feed/home`'s actual score, not just follow-graph
+ * order, and includes public creators you don't yet follow. The layout
+ * itself (a horizontal tray you tap into, rather than one full-bleed
+ * auto-advancing card) is still a simplification of the spec's vertical
+ * full-screen Home — see mobile/README.md for why.
  */
 export function HomeScreen(): React.JSX.Element {
   const { accessToken } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [feed, setFeed] = useState<FeedEntry[] | null>(null);
+  const [feed, setFeed] = useState<RankedFeedEntry[] | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const { feed: fetched } = await getFollowingFeed(accessToken);
+      const { feed: fetched } = await getRankedHomeFeed(accessToken);
       setFeed(fetched);
     } catch {
       setFeed([]);
@@ -54,7 +56,7 @@ export function HomeScreen(): React.JSX.Element {
     return (
       <EmptyState
         title="No active Stories yet"
-        message="Once people you follow post, their Stories will appear here."
+        message="Once people you follow — or people Katkee thinks you'd like — post, their Stories will appear here."
       />
     );
   }
@@ -83,13 +85,12 @@ export function HomeScreen(): React.JSX.Element {
             <Text style={styles.trayLabel} numberOfLines={1}>
               @{item.owner.username}
             </Text>
+            {!item.isFollowing ? <Text style={styles.discoverBadge}>Discover</Text> : null}
           </Pressable>
         )}
       />
       <View style={styles.placeholderBody}>
-        <Text style={[typography.body, styles.placeholderText]}>
-          Tap a person above to view their Stories. The full ranked Home feed lands in a later phase.
-        </Text>
+        <Text style={[typography.body, styles.placeholderText]}>Tap a person above to view their Stories.</Text>
       </View>
     </View>
   );
@@ -111,6 +112,7 @@ const styles = StyleSheet.create({
   },
   ringInitial: { color: colors.textPrimary, fontWeight: "700", fontSize: 20 },
   trayLabel: { color: colors.textSecondary, fontSize: 11 },
+  discoverBadge: { color: colors.accent, fontSize: 9, fontWeight: "700" },
   placeholderBody: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.xl },
   placeholderText: { textAlign: "center", color: colors.textSecondary },
 });

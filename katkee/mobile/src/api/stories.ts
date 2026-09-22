@@ -18,6 +18,11 @@ export interface FeedEntry {
   stories: PublicStory[];
 }
 
+export interface RankedFeedEntry extends FeedEntry {
+  isFollowing: boolean;
+  score: number;
+}
+
 export interface PublishStoryInput {
   mediaId: string;
   caption?: string;
@@ -32,6 +37,11 @@ export function publishStory(input: PublishStoryInput, accessToken: string): Pro
 
 export function getFollowingFeed(accessToken: string): Promise<{ feed: FeedEntry[] }> {
   return apiGet("/api/v1/stories/feed/following", accessToken);
+}
+
+/** Phase 6: followed creators + real discovery of public creators you don't yet follow, ranked by the backend's scoring heuristic. */
+export function getRankedHomeFeed(accessToken: string): Promise<{ feed: RankedFeedEntry[] }> {
+  return apiGet("/api/v1/stories/feed/home", accessToken);
 }
 
 export function getMyActiveStories(accessToken: string): Promise<{ stories: PublicStory[] }> {

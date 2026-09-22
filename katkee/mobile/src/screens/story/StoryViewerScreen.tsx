@@ -8,6 +8,7 @@ import { useAuth } from "../../state/AuthContext";
 import { getMyActiveStories, getUserActiveStories, mediaFileUrl, recordStoryView, type PublicStory } from "../../api/stories";
 import { getMedia } from "../../api/media";
 import { getStoryDetail, likeStory, unlikeStory, type StoryDetail } from "../../api/engagement";
+import { recordEvent } from "../../api/events";
 import { EmptyState } from "../../components/EmptyState";
 import { CommentsSheet } from "../../components/CommentsSheet";
 import { ShareSheet } from "../../components/ShareSheet";
@@ -20,6 +21,8 @@ const HOLD_DELAY_MS = 250;
 const SWIPE_CLOSE_THRESHOLD = 100;
 const TAP_MOVE_THRESHOLD = 10;
 const DOUBLE_TAP_WINDOW_MS = 250;
+const QUALIFIED_VIEW_MS = 2000; // spec section 13: "2-second view = tiny positive"
+const QUICK_SKIP_MS = 1500; // spec section 8: leaving a creator this fast is a real negative signal
 
 /**
  * Full-screen Story viewer with the complete gesture set (spec section
@@ -50,6 +53,8 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
 
   const progress = useRef(new Animated.Value(0)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const storyShownAtRef = useRef<number>(Date.now());
+  const creatorArrivedAtRef = useRef<number>(Date.now());
 
   const currentUsername = creators[creatorIndex];
   const currentStories = currentUsername ? storiesByCreator[currentUsername] : undefined;
@@ -57,6 +62,16 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
   const currentStory = currentStories?.[currentStoryIndex] ?? null;
 
   const sheetOpen = commentsOpen || shareOpen || moreOpen;
+
+  // Every analytics call is fire-and-forget on purpose (spec section 12: real,
+  // server-validated events — but a dropped one must never interrupt viewing).
+  const emit = useCallback(
+    (eventType: Parameters<typeof recordEvent>[0]["eventType"], extra: { creatorId?: string; storyId?: string; valueMs?: number } = {}) => {
+      if (!accessToken) return;
+      void recordEvent({ eventType, ...extra }, accessToken).catch(() => undefined);
+    },
+    [accessToken],
+  );
 
   // Fetch (and cache) a creator's active Stories the first time we reach them.
   useEffect(() => {
@@ -88,6 +103,20 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUsername, accessToken]);
 
+  // Fires once per arrival at a creator (including a return visit after
+  // swiping away and back — `currentStories` is a different array
+  // reference each time storiesByCreator's key selection changes).
+  useEffect(() => {
+    if (!currentStories || currentStories.length === 0) return;
+    creatorArrivedAtRef.current = Date.now();
+    const ownerId = currentStories[0]?.ownerId;
+    if (ownerId) {
+      emit("creator_impression", { creatorId: ownerId });
+      emit("creator_sequence_started", { creatorId: ownerId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStories]);
+
   // Fetch full engagement detail + media kind for whichever story is now current, and record the view.
   useEffect(() => {
     setDetail(null);
@@ -109,40 +138,66 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
       }
     })();
     void recordStoryView(currentStory.id, accessToken).catch(() => undefined);
+    emit("story_impression", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+    storyShownAtRef.current = Date.now();
+
+    // On leaving this Story (a real navigation away, or the component
+    // unmounting), report how long it was actually on screen.
     return () => {
       cancelled = true;
+      const elapsed = Date.now() - storyShownAtRef.current;
+      emit("watch_duration", { storyId: currentStory.id, valueMs: Math.min(elapsed, 30 * 60 * 1000) });
+      if (elapsed >= QUALIFIED_VIEW_MS) {
+        emit("qualified_view", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStory, accessToken]);
 
+  // spec section 8: leaving a creator within QUICK_SKIP_MS of arriving is a real negative signal.
+  const maybeEmitQuickSkip = useCallback(() => {
+    if (!currentStory) return;
+    if (Date.now() - creatorArrivedAtRef.current < QUICK_SKIP_MS) {
+      emit("quick_creator_skip", { creatorId: currentStory.ownerId });
+    }
+  }, [currentStory, emit]);
+
   const goNextCreator = useCallback(() => {
+    maybeEmitQuickSkip();
     if (creatorIndex >= creators.length - 1) {
       navigation.goBack();
       return;
     }
     setCreatorIndex((i) => i + 1);
-  }, [creatorIndex, creators.length, navigation]);
+  }, [creatorIndex, creators.length, navigation, maybeEmitQuickSkip]);
 
   const goPreviousCreator = useCallback(() => {
+    maybeEmitQuickSkip();
     if (creatorIndex <= 0) {
       navigation.goBack();
       return;
     }
     setCreatorIndex((i) => i - 1);
-  }, [creatorIndex, navigation]);
+  }, [creatorIndex, navigation, maybeEmitQuickSkip]);
 
   const goNextStory = useCallback(() => {
     if (!currentUsername || !currentStories) return;
     if (currentStoryIndex >= currentStories.length - 1) {
+      if (currentStory) emit("creator_sequence_completed", { creatorId: currentStory.ownerId });
       goNextCreator(); // spec section 4: a right tap past the last Story moves to the next creator
       return;
     }
+    if (currentStory) emit("creator_sequence_continued", { creatorId: currentStory.ownerId });
     setStoryIndexByCreator((prev) => ({ ...prev, [currentUsername]: currentStoryIndex + 1 }));
-  }, [currentUsername, currentStories, currentStoryIndex, goNextCreator]);
+  }, [currentUsername, currentStories, currentStoryIndex, currentStory, goNextCreator, emit]);
 
   const goPreviousStory = useCallback(() => {
     if (!currentUsername) return;
+    if (currentStory && currentStoryIndex > 0) {
+      emit("creator_sequence_continued", { creatorId: currentStory.ownerId });
+    }
     setStoryIndexByCreator((prev) => ({ ...prev, [currentUsername]: Math.max(0, currentStoryIndex - 1) }));
-  }, [currentUsername, currentStoryIndex]);
+  }, [currentUsername, currentStoryIndex, currentStory, emit]);
 
   // Auto-advance progress bar.
   useEffect(() => {
@@ -155,7 +210,10 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
     const anim = Animated.timing(progress, { toValue: 1, duration: durationMs, useNativeDriver: false });
     animationRef.current = anim;
     anim.start(({ finished }) => {
-      if (finished) goNextStory();
+      if (finished) {
+        if (currentStory) emit("story_complete", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+        goNextStory();
+      }
     });
     return () => anim.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,10 +283,12 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
         const dy = evt.nativeEvent.pageY - startY;
 
         if (dy > SWIPE_CLOSE_THRESHOLD && Math.abs(dx) < SWIPE_CLOSE_THRESHOLD) {
+          if (currentStory) emit("creator_swipe_previous", { creatorId: currentStory.ownerId });
           goPreviousCreator();
           return;
         }
         if (dy < -SWIPE_CLOSE_THRESHOLD && Math.abs(dx) < SWIPE_CLOSE_THRESHOLD) {
+          if (currentStory) emit("creator_swipe_next", { creatorId: currentStory.ownerId });
           goNextCreator();
           return;
         }
@@ -248,8 +308,14 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
         const tapX = evt.nativeEvent.pageX;
         pendingTapTimer = setTimeout(() => {
           pendingTapTimer = null;
-          if (tapX < screenWidth / 2) goPreviousStory();
-          else goNextStory();
+          if (!currentStory) return;
+          if (tapX < screenWidth / 2) {
+            emit("story_previous", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+            goPreviousStory();
+          } else {
+            emit("story_next", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+            goNextStory();
+          }
         }, DOUBLE_TAP_WINDOW_MS);
       },
       onPanResponderTerminate: () => {
@@ -258,7 +324,7 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goNextStory, goPreviousStory, goNextCreator, goPreviousCreator, ensureLiked]);
+  }, [goNextStory, goPreviousStory, goNextCreator, goPreviousCreator, ensureLiked, currentStory, emit]);
 
   if (loadError) {
     return <EmptyState title="Story unavailable" message={loadError} />;
@@ -284,7 +350,10 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
           resizeMode="cover"
           paused={paused || sheetOpen}
           onLoad={(meta) => setVideoDurationMs(Math.max(meta.duration * 1000, 1000))}
-          onEnd={goNextStory}
+          onEnd={() => {
+            emit("story_complete", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+            goNextStory();
+          }}
         />
       ) : mediaKind === "photo" ? (
         <Image source={{ uri: mediaUrl, headers: authHeaders }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -322,7 +391,14 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
           <Text style={[styles.actionIcon, detail?.viewerHasLiked && styles.actionIconLiked]}>♥</Text>
           <Text style={styles.actionCount}>{detail?.likeCount ?? "—"}</Text>
         </Pressable>
-        <Pressable onPress={() => setCommentsOpen(true)} hitSlop={10} style={styles.actionButton}>
+        <Pressable
+          onPress={() => {
+            emit("comment_open", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+            setCommentsOpen(true);
+          }}
+          hitSlop={10}
+          style={styles.actionButton}
+        >
           <Text style={styles.actionIcon}>◯</Text>
           <Text style={styles.actionCount}>{detail?.commentCount ?? "—"}</Text>
         </Pressable>
@@ -373,6 +449,7 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
         storyId={currentStory.id}
         isOwnStory={isOwnStory}
         otherUsername={isOwnStory ? null : (currentUsername ?? null)}
+        otherUserId={isOwnStory ? null : currentStory.ownerId}
         onClose={() => setMoreOpen(false)}
         onDeleted={() => {
           setMoreOpen(false);

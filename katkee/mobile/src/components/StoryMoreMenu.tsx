@@ -4,26 +4,28 @@ import { colors, radii, spacing, typography } from "../theme";
 import { useAuth } from "../state/AuthContext";
 import { deleteStory, getViewCount } from "../api/stories";
 import { muteUser, blockUser } from "../api/users";
+import { recordEvent } from "../api/events";
 
 interface Props {
   visible: boolean;
   storyId: string;
   isOwnStory: boolean;
   otherUsername: string | null;
+  otherUserId: string | null;
   onClose: () => void;
   onDeleted: () => void;
 }
 
 /**
- * More menu (spec section 16). Scoped to what's actually real right now:
- * for your own Story, delete or view its real view count; for someone
- * else's, Mute/Block using the Phase 2 endpoints. "Not Interested" and
- * "Report" are left out — they feed the recommendation system (Phase 6)
- * and moderation (Phase 11), neither of which exists yet, and a button
- * that just silently does nothing would be exactly the fake functionality
- * this build has avoided elsewhere.
+ * More menu (spec section 16). Scoped to what's actually real: for your
+ * own Story, delete or view its real view count; for someone else's,
+ * Not Interested (Phase 6's real exclusion — see backend's
+ * creator_not_interested table), Mute, and Block. "Report" is left out —
+ * it needs a moderation queue that doesn't exist yet (Phase 11), and a
+ * button that just silently does nothing would be exactly the fake
+ * functionality this build has avoided elsewhere.
  */
-export function StoryMoreMenu({ visible, storyId, isOwnStory, otherUsername, onClose, onDeleted }: Props): React.JSX.Element {
+export function StoryMoreMenu({ visible, storyId, isOwnStory, otherUsername, otherUserId, onClose, onDeleted }: Props): React.JSX.Element {
   const { accessToken } = useAuth();
   const [busy, setBusy] = useState(false);
 
@@ -60,6 +62,19 @@ export function StoryMoreMenu({ visible, storyId, isOwnStory, otherUsername, onC
     } finally {
       setBusy(false);
       onClose();
+    }
+  };
+
+  const onNotInterested = async () => {
+    if (!accessToken || !otherUserId) return;
+    setBusy(true);
+    try {
+      await recordEvent({ eventType: "not_interested", creatorId: otherUserId }, accessToken);
+      onDeleted(); // this creator won't be recommended again — nothing more to show here
+    } catch {
+      Alert.alert("Couldn't save that — try again.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -118,6 +133,9 @@ export function StoryMoreMenu({ visible, storyId, isOwnStory, otherUsername, onC
           </>
         ) : (
           <>
+            <Pressable style={styles.row} onPress={onNotInterested}>
+              <Text style={typography.body}>Not Interested</Text>
+            </Pressable>
             <Pressable style={styles.row} onPress={onMute}>
               <Text style={typography.body}>Mute @{otherUsername}</Text>
             </Pressable>

@@ -83,6 +83,17 @@ export async function findCommentWithStoryOwner(commentId: string): Promise<Comm
   };
 }
 
+/** How many times this viewer has commented on this creator's Stories, ever — a real "meaningful reply" signal for recommendation scoring (spec section 7). */
+export async function countCommentsByUserOnCreator(viewerId: string, creatorId: string): Promise<number> {
+  const row = await queryOne(
+    `SELECT COUNT(*) AS n FROM story_comments c
+     JOIN stories s ON s.id = c.story_id
+     WHERE c.user_id = :'viewer_id' AND s.owner_id = :'creator_id' AND c.deleted_at IS NULL`,
+    { viewer_id: viewerId, creator_id: creatorId },
+  );
+  return Number(row?.n ?? 0);
+}
+
 export async function softDeleteComment(commentId: string): Promise<void> {
   await query(`UPDATE story_comments SET deleted_at = now() WHERE id = :'id'`, { id: commentId });
 }
