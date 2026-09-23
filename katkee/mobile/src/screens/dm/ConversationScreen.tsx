@@ -24,6 +24,16 @@ type Props = NativeStackScreenProps<DMStackParamList, "Conversation">;
 const PAGE_SIZE = 30;
 const POLL_INTERVAL_MS = 4_000;
 
+// A fixed, client-only emoji set — there's no attachment/media pipeline in
+// this DM module (see conversations/dto.ts's parseSendMessageInput, body
+// text or a shared Story only), so this inserts into the text composer
+// rather than sending as its own message kind.
+const EMOJIS = [
+  "😀", "😂", "😍", "😊", "😉", "😢", "😮", "😡",
+  "👍", "👎", "🙏", "👏", "🔥", "💯", "🎉", "❤️",
+  "😴", "🤔", "😎", "🥳", "😭", "🤝", "👋", "✨",
+];
+
 /**
  * A locally-echoed outgoing message, before (and unless) the server
  * confirms it — spec's Sending/Failed states, which are purely
@@ -76,6 +86,7 @@ export function ConversationScreen({ route }: Props): React.JSX.Element {
   const [loadingMore, setLoadingMore] = useState(false);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<PendingMessage[]>([]);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const focusedRef = useRef(true);
 
   const loadFirstPage = useCallback(async () => {
@@ -176,6 +187,10 @@ export function ConversationScreen({ route }: Props): React.JSX.Element {
     void attemptSend(p.tempId, p.body);
   };
 
+  const onInsertEmoji = (emoji: string) => {
+    setDraft((current) => current + emoji);
+  };
+
   const onOpenSharedStory = async (storyId: string) => {
     if (!accessToken) return;
     try {
@@ -257,13 +272,37 @@ export function ConversationScreen({ route }: Props): React.JSX.Element {
           </View>
         }
       />
+      {emojiPickerOpen ? (
+        <View style={styles.emojiPanel}>
+          <FlatList
+            data={EMOJIS}
+            keyExtractor={(emoji) => emoji}
+            numColumns={8}
+            renderItem={({ item }) => (
+              <Pressable style={styles.emojiKey} onPress={() => onInsertEmoji(item)} hitSlop={4}>
+                <Text style={styles.emojiKeyGlyph}>{item}</Text>
+              </Pressable>
+            )}
+          />
+        </View>
+      ) : null}
       <View style={styles.composerRow}>
+        <Pressable
+          style={styles.emojiToggle}
+          onPress={() => setEmojiPickerOpen((open) => !open)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={emojiPickerOpen ? "Hide emoji picker" : "Show emoji picker"}
+        >
+          <Text style={styles.emojiToggleGlyph}>{ICONS.emoji}</Text>
+        </Pressable>
         <TextInput
           style={styles.composerInput}
           placeholder="Message…"
           placeholderTextColor={colors.textDisabled}
           value={draft}
           onChangeText={setDraft}
+          onFocus={() => setEmojiPickerOpen(false)}
           multiline
         />
         <Pressable
@@ -330,4 +369,16 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: { opacity: 0.5 },
   sendButtonText: { color: colors.onAccent, fontWeight: "700" },
+  emojiToggle: { paddingBottom: spacing.sm },
+  emojiToggleGlyph: { fontSize: 22 },
+  emojiPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
+    maxHeight: 180,
+  },
+  emojiKey: { flex: 1 / 8, alignItems: "center", paddingVertical: spacing.xs },
+  emojiKeyGlyph: { fontSize: 24 },
 });

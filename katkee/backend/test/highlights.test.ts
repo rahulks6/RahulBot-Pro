@@ -120,6 +120,66 @@ describe("creating and editing a Highlight", () => {
   });
 });
 
+describe("Highlight cover override", () => {
+  it("defaults to the first item, can be overridden to any other member Story, and cleared back to the default", async () => {
+    const owner = await signupUser();
+    const storyA = await publishStory(owner.accessToken);
+    const storyB = await publishStory(owner.accessToken);
+    const created = await client.post(
+      "/api/v1/highlights",
+      { title: "Trip", storyIds: [storyA, storyB] },
+      authHeader(owner.accessToken),
+    );
+    const highlightId = created.body.highlight.id;
+    const firstCover = created.body.highlight.coverMediaId;
+
+    const overridden = await client.patch(
+      `/api/v1/highlights/${highlightId}`,
+      { coverStoryId: storyB },
+      authHeader(owner.accessToken),
+    );
+    assert.equal(overridden.status, 200);
+    assert.notEqual(overridden.body.highlight.coverMediaId, firstCover, "cover now reflects the override, not the first item");
+
+    const cleared = await client.patch(
+      `/api/v1/highlights/${highlightId}`,
+      { coverStoryId: null },
+      authHeader(owner.accessToken),
+    );
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.highlight.coverMediaId, firstCover, "null clears back to the default (first item) cover");
+  });
+
+  it("rejects a coverStoryId that isn't one of the Highlight's own Stories", async () => {
+    const owner = await signupUser();
+    const storyA = await publishStory(owner.accessToken);
+    const outsider = await publishStory(owner.accessToken);
+    const created = await client.post("/api/v1/highlights", { title: "Trip", storyIds: [storyA] }, authHeader(owner.accessToken));
+    const highlightId = created.body.highlight.id;
+
+    const res = await client.patch(`/api/v1/highlights/${highlightId}`, { coverStoryId: outsider }, authHeader(owner.accessToken));
+    assert.equal(res.status, 422);
+  });
+
+  it("dropping the cover Story from the item set falls back to the default cover", async () => {
+    const owner = await signupUser();
+    const storyA = await publishStory(owner.accessToken);
+    const storyB = await publishStory(owner.accessToken);
+    const created = await client.post(
+      "/api/v1/highlights",
+      { title: "Trip", storyIds: [storyA, storyB] },
+      authHeader(owner.accessToken),
+    );
+    const highlightId = created.body.highlight.id;
+
+    await client.patch(`/api/v1/highlights/${highlightId}`, { coverStoryId: storyB }, authHeader(owner.accessToken));
+    const replaced = await client.patch(`/api/v1/highlights/${highlightId}`, { storyIds: [storyA] }, authHeader(owner.accessToken));
+    assert.equal(replaced.status, 200);
+    assert.equal(replaced.body.highlight.itemCount, 1);
+    assert.equal(replaced.body.highlight.coverMediaId, replaced.body.highlight.items[0].mediaId, "cover falls back once its Story is gone");
+  });
+});
+
 describe("viewing another user's Highlights", () => {
   it("gates the list and detail the same way a private account gates everything else", async () => {
     const owner = await signupUser();

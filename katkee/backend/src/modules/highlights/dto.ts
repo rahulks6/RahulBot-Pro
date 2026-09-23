@@ -90,6 +90,8 @@ export function parseReorderHighlightsInput(body: unknown): ReorderHighlightsInp
 export interface UpdateHighlightInput {
   title?: string;
   storyIds?: string[];
+  /** `null` clears back to the default cover (the Highlight's first item). Absent means "leave as-is". */
+  coverStoryId?: string | null;
 }
 
 export function parseUpdateHighlightInput(body: unknown): UpdateHighlightInput {
@@ -105,8 +107,17 @@ export function parseUpdateHighlightInput(body: unknown): UpdateHighlightInput {
     const storyIds = parseStoryIds(b.storyIds, errors);
     if (storyIds !== undefined) result.storyIds = storyIds;
   }
-  if (b.title === undefined && b.storyIds === undefined) {
-    errors.title = "Nothing to update — provide title and/or storyIds.";
+  if (b.coverStoryId !== undefined) {
+    if (b.coverStoryId === null) {
+      result.coverStoryId = null;
+    } else if (typeof b.coverStoryId !== "string" || !UUID_RE.test(b.coverStoryId)) {
+      errors.coverStoryId = "coverStoryId must be a valid Story id, or null to clear it.";
+    } else {
+      result.coverStoryId = b.coverStoryId;
+    }
+  }
+  if (b.title === undefined && b.storyIds === undefined && b.coverStoryId === undefined) {
+    errors.title = "Nothing to update — provide title, storyIds, and/or coverStoryId.";
   }
 
   if (Object.keys(errors).length > 0) throw new ValidationError(errors);

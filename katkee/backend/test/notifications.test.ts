@@ -248,3 +248,77 @@ describe("notifications — pagination, unread count, and mark-read", () => {
     assert.notEqual(page1.body.notifications[0].id, page2.body.notifications[0].id);
   });
 });
+
+describe("notifications — preferences", () => {
+  it("default preferences are all-enabled when the user has never touched them", async () => {
+    const owner = await signupUser();
+    const res = await client.get("/api/v1/notifications/preferences", authHeader(owner.accessToken));
+    assert.deepEqual(res.body.preferences, {
+      likesEnabled: true,
+      commentsEnabled: true,
+      followsEnabled: true,
+      mentionsEnabled: true,
+    });
+  });
+
+  it("turning off likes suppresses only like notifications, leaving comments unaffected", async () => {
+    const owner = await signupUser();
+    const viewer = await signupUser();
+    const storyId = await publishStory(owner.accessToken);
+
+    const patchRes = await client.patch(
+      "/api/v1/notifications/preferences",
+      { likesEnabled: false },
+      authHeader(owner.accessToken),
+    );
+    assert.equal(patchRes.status, 200);
+    assert.equal(patchRes.body.preferences.likesEnabled, false);
+    assert.equal(patchRes.body.preferences.commentsEnabled, true, "unspecified fields are left untouched, not reset");
+
+    await client.post(`/api/v1/stories/${storyId}/like`, undefined, authHeader(viewer.accessToken));
+    await client.post(`/api/v1/stories/${storyId}/comments`, { body: "still notified" }, authHeader(viewer.accessToken));
+
+    const notifications = await listNotifications(owner.accessToken);
+    assert.ok(!notifications.some((n) => n.type === "like"), "a suppressed type must not create a notification row at all");
+    assert.ok(notifications.some((n) => n.type === "comment"), "an unrelated, still-enabled type must still notify");
+  });
+
+  it("follow_request notifications are never suppressible, even with follows disabled", async () => {
+    const alice = await signupUser();
+    const carol = await signupUser();
+    await client.patch("/api/v1/users/me", { isPrivate: true }, authHeader(carol.accessToken));
+    await client.patch("/api/v1/notifications/preferences", { followsEnabled: false }, authHeader(carol.accessToken));
+
+    await client.post(`/api/v1/users/${carol.input.username}/follow`, undefined, authHeader(alice.accessToken));
+
+    const carolNotifications = await listNotifications(carol.accessToken);
+    assert.equal(
+      carolNotifications.filter((n) => n.type === "follow_request").length,
+      1,
+      "a pending follow request is actionable, not a muteable broadcast, so it must always fire",
+    );
+  });
+
+  it("disabling mentions suppresses @mention notifications from comments", async () => {
+    const owner = await signupUser();
+    const commenter = await signupUser();
+    const mentioned = await signupUser();
+    await client.patch("/api/v1/notifications/preferences", { mentionsEnabled: false }, authHeader(mentioned.accessToken));
+    const storyId = await publishStory(owner.accessToken);
+
+    await client.post(
+      `/api/v1/stories/${storyId}/comments`,
+      { body: `hey @${mentioned.input.username}` },
+      authHeader(commenter.accessToken),
+    );
+
+    const mentionedNotifications = await listNotifications(mentioned.accessToken);
+    assert.ok(!mentionedNotifications.some((n) => n.type === "mention"));
+  });
+
+  it("rejects a non-boolean preference value", async () => {
+    const owner = await signupUser();
+    const res = await client.patch("/api/v1/notifications/preferences", { likesEnabled: "nope" }, authHeader(owner.accessToken));
+    assert.equal(res.status, 422);
+  });
+});

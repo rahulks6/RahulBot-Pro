@@ -42,6 +42,77 @@ const JOINS = `
   LEFT JOIN follow_requests fr ON fr.id = n.follow_request_id
 `;
 
+export interface NotificationPreferences {
+  likesEnabled: boolean;
+  commentsEnabled: boolean;
+  followsEnabled: boolean;
+  mentionsEnabled: boolean;
+}
+
+const DEFAULT_PREFERENCES: NotificationPreferences = {
+  likesEnabled: true,
+  commentsEnabled: true,
+  followsEnabled: true,
+  mentionsEnabled: true,
+};
+
+/** No row yet means the recipient never touched their preferences — everything defaults to on. */
+export async function getPreferences(userId: string): Promise<NotificationPreferences> {
+  const row = await queryOne(
+    `SELECT likes_enabled, comments_enabled, follows_enabled, mentions_enabled
+     FROM notification_preferences WHERE user_id = :'user_id'`,
+    { user_id: userId },
+  );
+  if (!row) return DEFAULT_PREFERENCES;
+  return {
+    likesEnabled: row.likes_enabled === "t",
+    commentsEnabled: row.comments_enabled === "t",
+    followsEnabled: row.follows_enabled === "t",
+    mentionsEnabled: row.mentions_enabled === "t",
+  };
+}
+
+export async function upsertPreferences(userId: string, patch: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
+  const current = await getPreferences(userId);
+  const next: NotificationPreferences = { ...current, ...patch };
+  await query(
+    `INSERT INTO notification_preferences (user_id, likes_enabled, comments_enabled, follows_enabled, mentions_enabled, updated_at)
+     VALUES (:'user_id', :'likes_enabled', :'comments_enabled', :'follows_enabled', :'mentions_enabled', now())
+     ON CONFLICT (user_id) DO UPDATE SET
+       likes_enabled = EXCLUDED.likes_enabled,
+       comments_enabled = EXCLUDED.comments_enabled,
+       follows_enabled = EXCLUDED.follows_enabled,
+       mentions_enabled = EXCLUDED.mentions_enabled,
+       updated_at = now()`,
+    {
+      user_id: userId,
+      likes_enabled: next.likesEnabled,
+      comments_enabled: next.commentsEnabled,
+      follows_enabled: next.followsEnabled,
+      mentions_enabled: next.mentionsEnabled,
+    },
+  );
+  return next;
+}
+
+/** The recipient's own preference for this notification type — `follow_request` is never gated here, since it's an actionable pending request, not a muteable broadcast. */
+async function isTypeEnabled(recipientId: string, type: NotificationType): Promise<boolean> {
+  if (type === "follow_request") return true;
+  const prefs = await getPreferences(recipientId);
+  switch (type) {
+    case "like":
+      return prefs.likesEnabled;
+    case "comment":
+      return prefs.commentsEnabled;
+    case "follow":
+      return prefs.followsEnabled;
+    case "mention":
+      return prefs.mentionsEnabled;
+    default:
+      return true;
+  }
+}
+
 export async function createNotification(input: {
   recipientId: string;
   actorId: string | null;
@@ -51,6 +122,7 @@ export async function createNotification(input: {
   followRequestId?: string;
 }): Promise<void> {
   if (input.actorId && input.actorId === input.recipientId) return; // never notify someone about their own action
+  if (!(await isTypeEnabled(input.recipientId, input.type))) return;
 
   await query(
     `INSERT INTO notifications (recipient_id, actor_id, type, story_id, comment_id, follow_request_id)

@@ -13,6 +13,11 @@ import { HighlightEditorScreen } from "../screens/highlight/HighlightEditorScree
 import { ArchiveScreen } from "../screens/profile/ArchiveScreen";
 import { SequenceInsightsScreen } from "../screens/profile/SequenceInsightsScreen";
 import { ArchivedStoryViewerScreen } from "../screens/profile/ArchivedStoryViewerScreen";
+import { EditProfileScreen } from "../screens/profile/EditProfileScreen";
+import { SettingsScreen } from "../screens/profile/SettingsScreen";
+import { NotificationSettingsScreen } from "../screens/profile/NotificationSettingsScreen";
+import { HelpScreen } from "../screens/profile/HelpScreen";
+import { AboutScreen } from "../screens/profile/AboutScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -64,6 +69,61 @@ function SignedInNavigator(): React.JSX.Element {
         name="ArchivedStoryViewer"
         component={ArchivedStoryViewerScreen}
         options={{ presentation: "fullScreenModal" }}
+      />
+      <Stack.Screen
+        name="EditProfile"
+        component={EditProfileScreen}
+        options={{
+          headerShown: true,
+          title: "Edit Profile",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          headerShown: true,
+          title: "Settings",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="NotificationSettings"
+        component={NotificationSettingsScreen}
+        options={{
+          headerShown: true,
+          title: "Notifications",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="Help"
+        component={HelpScreen}
+        options={{
+          headerShown: true,
+          title: "Help",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="About"
+        component={AboutScreen}
+        options={{
+          headerShown: true,
+          title: "About",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
       />
     </Stack.Navigator>
   );

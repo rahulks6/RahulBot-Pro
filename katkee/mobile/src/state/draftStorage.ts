@@ -48,3 +48,24 @@ export async function clearPendingDraft(mediaUri: string): Promise<void> {
     // Best-effort — a stale leftover entry only ever offers a (harmless) restore prompt for a since-published/discarded Story.
   }
 }
+
+/** Every crash-autosaved draft currently on this device — used by Settings' "Data & Storage" to show a real count before wiping them. */
+export async function countPendingDrafts(): Promise<number> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    return keys.filter((key) => key.startsWith(KEY_PREFIX)).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Wipes every crash-autosaved draft on this device — the one thing this app actually caches locally, so it's the one real thing "Clear cache" can mean here. */
+export async function clearAllPendingDrafts(): Promise<void> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const draftKeys = keys.filter((key) => key.startsWith(KEY_PREFIX));
+    if (draftKeys.length > 0) await AsyncStorage.multiRemove(draftKeys);
+  } catch {
+    // Best-effort — same rationale as clearPendingDraft above.
+  }
+}

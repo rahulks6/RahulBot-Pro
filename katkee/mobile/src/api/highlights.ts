@@ -43,10 +43,19 @@ export function getHighlightDetail(highlightId: string, accessToken: string): Pr
 
 export function updateHighlight(
   highlightId: string,
-  input: { title?: string; storyIds?: string[] },
+  input: { title?: string; storyIds?: string[]; coverStoryId?: string | null },
   accessToken: string,
 ): Promise<{ highlight: HighlightDetail }> {
   return apiPatch(`/api/v1/highlights/${highlightId}`, input, accessToken);
+}
+
+/** `null` clears back to the default cover (the Highlight's first item). */
+export function setHighlightCover(
+  highlightId: string,
+  coverStoryId: string | null,
+  accessToken: string,
+): Promise<{ highlight: HighlightDetail }> {
+  return apiPatch(`/api/v1/highlights/${highlightId}`, { coverStoryId }, accessToken);
 }
 
 export function deleteHighlight(highlightId: string, accessToken: string): Promise<void> {

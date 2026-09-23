@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from "./client";
+import { apiGet, apiPatch, apiPost } from "./client";
 
 /**
  * Mirrors backend/src/modules/notifications/notifications.repository.ts's
@@ -39,4 +39,22 @@ export function markNotificationRead(id: string, accessToken: string): Promise<v
 
 export function markAllNotificationsRead(accessToken: string): Promise<void> {
   return apiPost("/api/v1/notifications/read-all", undefined, accessToken);
+}
+
+export interface NotificationPreferences {
+  likesEnabled: boolean;
+  commentsEnabled: boolean;
+  followsEnabled: boolean;
+  mentionsEnabled: boolean;
+}
+
+export function getNotificationPreferences(accessToken: string): Promise<{ preferences: NotificationPreferences }> {
+  return apiGet("/api/v1/notifications/preferences", accessToken);
+}
+
+export function updateNotificationPreferences(
+  input: Partial<NotificationPreferences>,
+  accessToken: string,
+): Promise<{ preferences: NotificationPreferences }> {
+  return apiPatch("/api/v1/notifications/preferences", input, accessToken);
 }

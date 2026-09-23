@@ -70,6 +70,9 @@ export const ICONS = {
   undo: "↺",
   redo: "↻",
   logout: "⎋",
+  star: "☆",
+  starFilled: "★",
+  settings: "⚙",
 } as const;
 
 export type IconName = keyof typeof ICONS;

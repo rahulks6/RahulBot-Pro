@@ -39,10 +39,13 @@ function filterVisible(highlight: HighlightWithItems, canSeeFollowersOnly: boole
 }
 
 function toSummary(highlight: HighlightWithItems): HighlightSummary {
+  const chosenCover = highlight.coverStoryId
+    ? highlight.items.find((item) => item.storyId === highlight.coverStoryId)
+    : undefined;
   return {
     id: highlight.id,
     title: highlight.title,
-    coverMediaId: highlight.items[0]?.mediaId ?? null,
+    coverMediaId: chosenCover?.mediaId ?? highlight.items[0]?.mediaId ?? null,
     itemCount: highlight.items.length,
     createdAt: highlight.createdAt,
     updatedAt: highlight.updatedAt,
@@ -82,14 +85,27 @@ export async function updateHighlight(
   highlightId: string,
   input: UpdateHighlightInput,
 ): Promise<HighlightDetail> {
-  await requireOwnedHighlight(highlightId, ownerId);
+  const existing = await requireOwnedHighlight(highlightId, ownerId);
 
   if (input.storyIds) {
     await requireOwnedNonDeletedStories(ownerId, input.storyIds);
     await highlightsRepo.replaceHighlightItems(highlightId, input.storyIds);
+    // A cover pinned to a Story that just got dropped from the Highlight can't survive the swap — fall back to the default (first item) rather than point at content the Highlight no longer contains.
+    if (existing.coverStoryId && !input.storyIds.includes(existing.coverStoryId) && input.coverStoryId === undefined) {
+      await highlightsRepo.setCoverStory(highlightId, null);
+    }
   }
   if (input.title) {
     await highlightsRepo.renameHighlight(highlightId, input.title);
+  }
+  if (input.coverStoryId !== undefined) {
+    if (input.coverStoryId !== null) {
+      const memberIds = input.storyIds ?? existing.items.map((item) => item.storyId);
+      if (!memberIds.includes(input.coverStoryId)) {
+        throw new ValidationError({ coverStoryId: "coverStoryId must be one of this Highlight's own Stories." });
+      }
+    }
+    await highlightsRepo.setCoverStory(highlightId, input.coverStoryId);
   }
 
   const updated = await highlightsRepo.getWithItems(highlightId);

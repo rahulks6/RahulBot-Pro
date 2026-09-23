@@ -65,3 +65,24 @@ export function blockUser(username: string, accessToken: string): Promise<void> 
 export function muteUser(username: string, accessToken: string): Promise<void> {
   return apiPost(`/api/v1/users/${encodeURIComponent(username)}/mute`, undefined, accessToken);
 }
+
+export interface FollowedUser {
+  id: string;
+  username: string;
+  displayName: string;
+  bio: string;
+  isPrivate: boolean;
+  followedAt: string;
+}
+
+export function getFollowing(
+  username: string,
+  accessToken: string,
+  params: { limit?: number; offset?: number } = {},
+): Promise<{ following: FollowedUser[]; limit: number; offset: number }> {
+  const query = new URLSearchParams();
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return apiGet(`/api/v1/users/${encodeURIComponent(username)}/following${qs ? `?${qs}` : ""}`, accessToken);
+}

@@ -1,7 +1,8 @@
 import { HttpError } from "../../http/errors";
 import * as usersRepo from "../users/users.repository";
 import * as notificationsRepo from "./notifications.repository";
-import type { NotificationRecord } from "./notifications.repository";
+import type { NotificationRecord, NotificationPreferences } from "./notifications.repository";
+import type { UpdateNotificationPreferencesInput } from "./dto";
 
 export async function listNotifications(recipientId: string, limit: number, offset: number): Promise<NotificationRecord[]> {
   return notificationsRepo.listForRecipient(recipientId, limit, offset);
@@ -18,6 +19,17 @@ export async function markRead(recipientId: string, notificationId: string): Pro
 
 export async function markAllRead(recipientId: string): Promise<void> {
   await notificationsRepo.markAllRead(recipientId);
+}
+
+export async function getNotificationPreferences(userId: string): Promise<NotificationPreferences> {
+  return notificationsRepo.getPreferences(userId);
+}
+
+export async function updateNotificationPreferences(
+  userId: string,
+  input: UpdateNotificationPreferencesInput,
+): Promise<NotificationPreferences> {
+  return notificationsRepo.upsertPreferences(userId, input);
 }
 
 export async function notifyLike(actorId: string, storyOwnerId: string, storyId: string): Promise<void> {

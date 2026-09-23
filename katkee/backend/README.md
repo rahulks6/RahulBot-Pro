@@ -859,3 +859,40 @@ to `[-1, 1]` rather than rejecting an out-of-range value — consistent
 with how every other overlay field in this body is validated. Three tests
 cover it: the default, an exact round-trip through publish and a
 subsequent fetch, and clamping of an out-of-range value.
+
+## Notification preferences (migration 0018)
+
+A follow-up to a "make the icon-set features real" pass on the mobile side
+needed a real Notifications toggle screen, which needed real backend
+support — none existed before this (the `notifications` module only had
+list/unread-count/mark-read/mark-all-read). `notification_preferences` is
+a one-row-per-user table (`likes_enabled`/`comments_enabled`/
+`follows_enabled`/`mentions_enabled`, all `DEFAULT true`) with no row at
+all meaning "everything on" (`notifications.repository.ts`'s
+`getPreferences` returns the all-true default rather than requiring a
+row to exist). The enforcement point is `createNotification` itself — the
+single funnel every `notify*` service function already called through —
+so a suppressed type never creates a notification row in the first place,
+not a client-side filter of an unfiltered feed. `follow_request` is
+deliberately exempt from every check: it's an actionable pending request
+you have to accept or deny, not a muteable social broadcast, so it always
+fires regardless of preferences. New routes: `GET`/`PATCH
+/api/v1/notifications/preferences`. Tests cover the all-true default,
+that toggling likes off actually suppresses like notifications while
+leaving comments unaffected, that `follow_request` still fires with
+follows disabled, that mentions can be independently suppressed, and
+input validation.
+
+## Highlight cover override (migration 0019)
+
+`HighlightSummary.coverMediaId` was hardcoded to `items[0]?.mediaId` with
+no override mechanism at all. `highlights.cover_story_id` (nullable,
+`REFERENCES stories(id) ON DELETE SET NULL`) lets an owner pin any of a
+Highlight's own items as its cover instead. `PATCH /api/v1/highlights/:id`
+now also accepts `coverStoryId` (a Story id to pin it, or `null` to clear
+back to the default); the service layer rejects a `coverStoryId` that
+isn't actually one of that Highlight's own items, and silently falls back
+to the default cover if a subsequent `storyIds` replace drops the Story
+the cover was pinned to (rather than leaving the cover pointing at content
+no longer in the Highlight). Tests cover the override, clearing it,
+rejecting a non-member Story id, and the fallback-on-drop behavior.

@@ -3,6 +3,7 @@ import { requireAuth } from "../../http/middleware/auth.middleware";
 import { sendJson } from "../../http/respond";
 import { parsePagination, parseQueryString } from "../../http/pagination";
 import * as notificationsService from "./notifications.service";
+import { parseUpdateNotificationPreferencesInput } from "./dto";
 
 export function registerNotificationsRoutes(router: Router): void {
   router.get("/api/v1/notifications", async (req, res) => {
@@ -28,5 +29,18 @@ export function registerNotificationsRoutes(router: Router): void {
     requireAuth(req);
     await notificationsService.markRead(req.userId as string, req.params.id as string);
     sendJson(res, 204, undefined);
+  });
+
+  router.get("/api/v1/notifications/preferences", async (req, res) => {
+    requireAuth(req);
+    const preferences = await notificationsService.getNotificationPreferences(req.userId as string);
+    sendJson(res, 200, { preferences });
+  });
+
+  router.patch("/api/v1/notifications/preferences", async (req, res) => {
+    requireAuth(req);
+    const input = parseUpdateNotificationPreferencesInput(req.body);
+    const preferences = await notificationsService.updateNotificationPreferences(req.userId as string, input);
+    sendJson(res, 200, { preferences });
   });
 }

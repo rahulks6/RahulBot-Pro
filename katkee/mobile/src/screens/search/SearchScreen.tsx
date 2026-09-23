@@ -4,21 +4,55 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SearchStackParamList } from "../../navigation/types";
 import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
-import { searchUsers, type SearchResult } from "../../api/users";
+import { getFollowing, searchUsers, type SearchResult } from "../../api/users";
 import { ApiError } from "../../api/client";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { EmptyState } from "../../components/EmptyState";
 
 type Props = NativeStackScreenProps<SearchStackParamList, "SearchHome">;
 
+type SearchFilter = "all" | "following";
+
+// A hard cap, not a real page limit — enough for this sandbox's realistic
+// following-list sizes, fetched once per screen visit and cached, rather
+// than re-fetching every page on every keystroke.
+const MAX_FOLLOWING_TO_FETCH = 500;
+const FOLLOWING_PAGE_SIZE = 50;
+
 /** People-focused search (spec section 30) — no Discover/Reels feed here. */
 export function SearchScreen({ navigation }: Props): React.JSX.Element {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query.trim(), 300);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<SearchFilter>("all");
+  const [followingUsernames, setFollowingUsernames] = useState<Set<string> | null>(null);
+  const [loadingFollowing, setLoadingFollowing] = useState(false);
+
+  const onSelectFilter = async (next: SearchFilter) => {
+    setFilter(next);
+    if (next === "following" && followingUsernames === null && accessToken && user) {
+      setLoadingFollowing(true);
+      try {
+        const usernames = new Set<string>();
+        for (let offset = 0; offset < MAX_FOLLOWING_TO_FETCH; offset += FOLLOWING_PAGE_SIZE) {
+          const { following } = await getFollowing(user.username, accessToken, { limit: FOLLOWING_PAGE_SIZE, offset });
+          following.forEach((f) => usernames.add(f.username));
+          if (following.length < FOLLOWING_PAGE_SIZE) break;
+        }
+        setFollowingUsernames(usernames);
+      } catch {
+        setFollowingUsernames(new Set());
+      } finally {
+        setLoadingFollowing(false);
+      }
+    }
+  };
+
+  const visibleResults =
+    filter === "following" && followingUsernames ? results.filter((r) => followingUsernames.has(r.username)) : results;
 
   useEffect(() => {
     if (!debouncedQuery || !accessToken) {
@@ -66,14 +100,36 @@ export function SearchScreen({ navigation }: Props): React.JSX.Element {
         ) : null}
       </View>
 
+      {debouncedQuery ? (
+        <View style={styles.filterRow}>
+          <Pressable style={[styles.filterChip, filter === "all" && styles.filterChipActive]} onPress={() => onSelectFilter("all")}>
+            <Text style={[styles.filterChipLabel, filter === "all" && styles.filterChipLabelActive]}>All</Text>
+          </Pressable>
+          <Pressable style={[styles.filterChip, filter === "following" && styles.filterChipActive]} onPress={() => void onSelectFilter("following")}>
+            {loadingFollowing ? (
+              <ActivityIndicator color={colors.textPrimary} size="small" />
+            ) : (
+              <Text style={[styles.filterChipLabel, filter === "following" && styles.filterChipLabelActive]}>Following</Text>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
+
       {loading ? <ActivityIndicator color={colors.accent} style={styles.spinner} /> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {!loading && !error && debouncedQuery && results.length === 0 ? (
-        <EmptyState title="No one found" message={`No people match "${debouncedQuery}".`} />
+      {!loading && !error && debouncedQuery && visibleResults.length === 0 ? (
+        <EmptyState
+          title="No one found"
+          message={
+            filter === "following"
+              ? `No one you follow matches "${debouncedQuery}".`
+              : `No people match "${debouncedQuery}".`
+          }
+        />
       ) : (
         <FlatList
-          data={results}
+          data={visibleResults}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <Pressable
@@ -115,6 +171,19 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 15,
   },
+  filterRow: { flexDirection: "row", gap: spacing.xs, marginBottom: spacing.sm },
+  filterChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minWidth: 64,
+    alignItems: "center",
+  },
+  filterChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  filterChipLabel: { ...typography.caption, fontWeight: "600", color: colors.textSecondary },
+  filterChipLabelActive: { color: colors.onAccent },
   spinner: { marginTop: spacing.md },
   error: { color: colors.danger, marginTop: spacing.sm },
   row: {

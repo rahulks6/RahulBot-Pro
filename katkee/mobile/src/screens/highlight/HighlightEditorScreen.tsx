@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../navigation/types";
-import { colors, radii, spacing, typography } from "../../theme";
+import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { getMyArchivedStories, mediaFileUrl, type PublicStory } from "../../api/stories";
 import { createHighlight, deleteHighlight, getHighlightDetail, updateHighlight } from "../../api/highlights";
@@ -31,6 +31,9 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
   const [title, setTitle] = useState("");
   // Selection order matters (it becomes the Highlight's item order), so this is an ordered array, not a Set.
   const [selected, setSelected] = useState<string[]>(initialStoryIds ?? []);
+  // `undefined` means "use the default cover" (the first selected item) — only ever set explicitly once the owner picks one.
+  const [coverStoryId, setCoverStoryId] = useState<string | undefined>(undefined);
+  const [initialCoverStoryId, setInitialCoverStoryId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +52,9 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
         if (existing) {
           setTitle(existing.highlight.title);
           setSelected(existing.highlight.items.map((item) => item.storyId));
+          const currentCover = existing.highlight.items.find((item) => item.mediaId === existing.highlight.coverMediaId);
+          setCoverStoryId(currentCover?.storyId);
+          setInitialCoverStoryId(currentCover?.storyId);
         }
       } catch {
         if (!cancelled) setError("Couldn't load your Stories — try again.");
@@ -65,6 +71,12 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
     setSelected((current) =>
       current.includes(storyId) ? current.filter((id) => id !== storyId) : [...current, storyId],
     );
+    // A cover can't survive its own Story leaving the selection — fall back to the default (first item) rather than point at content that's no longer in the Highlight.
+    setCoverStoryId((current) => (current === storyId ? undefined : current));
+  };
+
+  const setCover = (storyId: string) => {
+    setCoverStoryId((current) => (current === storyId ? undefined : storyId));
   };
 
   // Selected stories, in current order, as full records — needed to
@@ -86,7 +98,12 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
     setError(null);
     try {
       if (isEditing) {
-        await updateHighlight(highlightId, { title: trimmedTitle, storyIds: selected }, accessToken);
+        const coverChanged = coverStoryId !== initialCoverStoryId;
+        await updateHighlight(
+          highlightId,
+          { title: trimmedTitle, storyIds: selected, ...(coverChanged ? { coverStoryId: coverStoryId ?? null } : {}) },
+          accessToken,
+        );
       } else {
         await createHighlight({ title: trimmedTitle, storyIds: selected }, accessToken);
       }
@@ -144,6 +161,7 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
       {selectedStories.length > 0 ? (
         <>
           <Text style={styles.sectionLabel}>Selected, in order — long-press and drag to reorder</Text>
+          <Text style={styles.sectionHint}>Tap the star to use a Story as this Highlight's cover.</Text>
           <View style={styles.selectedStrip}>
             <DraggableGrid
               data={selectedStories}
@@ -153,18 +171,32 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
               itemHeight={selectedThumbSize}
               gap={SELECTED_STRIP_GAP}
               onReorder={onReorderSelected}
-              renderItem={(story) => (
-                <View style={styles.selectedThumbWrapper}>
-                  <Image
-                    source={{ uri: mediaFileUrl(story.mediaId), headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined }}
-                    style={styles.selectedThumb}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.orderBadge}>
-                    <Text style={styles.orderBadgeText}>{selected.indexOf(story.id) + 1}</Text>
+              renderItem={(story) => {
+                const isCover = coverStoryId ? coverStoryId === story.id : selected[0] === story.id;
+                return (
+                  <View style={styles.selectedThumbWrapper}>
+                    <Image
+                      source={{ uri: mediaFileUrl(story.mediaId), headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined }}
+                      style={styles.selectedThumb}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.orderBadge}>
+                      <Text style={styles.orderBadgeText}>{selected.indexOf(story.id) + 1}</Text>
+                    </View>
+                    <Pressable
+                      style={styles.coverBadge}
+                      onPress={() => setCover(story.id)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={isCover ? "This Story is the cover" : "Set as cover"}
+                    >
+                      <Text style={[styles.coverBadgeGlyph, isCover && styles.coverBadgeGlyphActive]}>
+                        {isCover ? ICONS.starFilled : ICONS.star}
+                      </Text>
+                    </Pressable>
                   </View>
-                </View>
-              )}
+                );
+              }}
             />
           </View>
         </>
@@ -231,6 +263,7 @@ const styles = StyleSheet.create({
   },
   error: { color: colors.danger, marginHorizontal: spacing.md, marginTop: spacing.xs },
   sectionLabel: { ...typography.label, marginHorizontal: spacing.md, marginTop: spacing.md, marginBottom: spacing.xs },
+  sectionHint: { ...typography.caption, color: colors.textSecondary, marginHorizontal: spacing.md, marginBottom: spacing.xs },
   selectedStrip: { paddingHorizontal: spacing.md },
   selectedThumbWrapper: { flex: 1, borderRadius: radii.sm, overflow: "hidden", backgroundColor: colors.surfaceElevated },
   selectedThumb: { width: "100%", height: "100%" },
@@ -257,6 +290,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   orderBadgeText: { color: colors.onAccent, fontSize: 11, fontWeight: "700" },
+  coverBadge: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    width: 22,
+    height: 22,
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  coverBadgeGlyph: { color: colors.textPrimary, fontSize: 13 },
+  coverBadgeGlyphActive: { color: colors.accent },
   footer: {
     flexDirection: "row",
     justifyContent: "space-between",

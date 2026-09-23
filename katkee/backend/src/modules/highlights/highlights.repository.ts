@@ -1,4 +1,4 @@
-import { query, queryOne, type Row } from "../../db/psql";
+import { nullable, query, queryOne, type Row } from "../../db/psql";
 import type { Audience } from "../stories/stories.repository";
 
 export interface HighlightRow {
@@ -6,6 +6,7 @@ export interface HighlightRow {
   ownerId: string;
   title: string;
   position: number;
+  coverStoryId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -28,6 +29,7 @@ function mapHighlightRow(row: Row): HighlightRow {
     ownerId: row.owner_id as string,
     title: row.title as string,
     position: Number(row.position),
+    coverStoryId: (row.cover_story_id as string | null) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -38,11 +40,19 @@ export async function createHighlight(ownerId: string, title: string): Promise<H
   const row = await queryOne(
     `INSERT INTO highlights (owner_id, title, position)
      VALUES (:'owner_id', :'title', (SELECT COALESCE(MAX(position) + 1, 0) FROM highlights WHERE owner_id = :'owner_id'))
-     RETURNING id, owner_id, title, position, created_at, updated_at`,
+     RETURNING id, owner_id, title, position, cover_story_id, created_at, updated_at`,
     { owner_id: ownerId, title },
   );
   if (!row) throw new Error("Highlight insert returned no row");
   return mapHighlightRow(row);
+}
+
+/** Pass `null` to clear back to the default (first item) cover. */
+export async function setCoverStory(id: string, coverStoryId: string | null): Promise<void> {
+  await query(`UPDATE highlights SET cover_story_id = ${nullable("cover_story_id", "uuid")}, updated_at = now() WHERE id = :'id'`, {
+    id,
+    cover_story_id: coverStoryId,
+  });
 }
 
 /**
@@ -62,9 +72,10 @@ export async function reorderHighlights(ownerId: string, orderedIds: string[]): 
 }
 
 export async function findHighlightById(id: string): Promise<HighlightRow | null> {
-  const row = await queryOne(`SELECT id, owner_id, title, position, created_at, updated_at FROM highlights WHERE id = :'id'`, {
-    id,
-  });
+  const row = await queryOne(
+    `SELECT id, owner_id, title, position, cover_story_id, created_at, updated_at FROM highlights WHERE id = :'id'`,
+    { id },
+  );
   return row ? mapHighlightRow(row) : null;
 }
 
@@ -106,6 +117,7 @@ function groupIntoHighlights(rows: Row[]): HighlightWithItems[] {
         ownerId: row.owner_id as string,
         title: row.title as string,
         position: Number(row.h_position),
+        coverStoryId: (row.cover_story_id as string | null) ?? null,
         createdAt: row.created_at as string,
         updatedAt: row.updated_at as string,
         items: [],
@@ -133,7 +145,7 @@ function groupIntoHighlights(rows: Row[]): HighlightWithItems[] {
 // position within the Highlight) already claims the bare "position"
 // column name in this same SELECT list.
 const HIGHLIGHT_WITH_ITEMS_SELECT = `
-  h.id, h.owner_id, h.title, h.position AS h_position, h.created_at, h.updated_at,
+  h.id, h.owner_id, h.title, h.position AS h_position, h.cover_story_id, h.created_at, h.updated_at,
   hi.story_id, hi.position, hi.added_at, s.media_id, s.audience
 `;
 const HIGHLIGHT_WITH_ITEMS_JOINS = `

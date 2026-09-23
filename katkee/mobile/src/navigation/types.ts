@@ -15,6 +15,8 @@ export type DMStackParamList = {
   Conversation: { conversationId: string; otherUsername: string; otherDisplayName: string };
   /** Reached from ShareSheet's "Send to a Katkee user" (spec section 15) via a root→tab→stack deep link. */
   SendStory: { storyId: string; ownerUsername: string };
+  /** Search a user and open (or reopen) a real conversation with them via the existing conversation-start endpoint. */
+  NewChat: undefined;
 };
 
 export type MainTabParamList = {
@@ -66,4 +68,12 @@ export type RootStackParamList = {
   ArchivedStoryViewer: { storyId: string };
   /** "Per-sequence Insights" (spec) — completion %, following-vs-discovery split, and profile-visit rate aggregated across every currently-active Story you own. Always the caller's own. */
   SequenceInsights: undefined;
+  /** Display name + bio, wired to the existing `PATCH /api/v1/users/me` — always the caller's own profile. */
+  EditProfile: undefined;
+  /** Privacy, Notifications, Data & Storage, Help, About, Log Out, Delete account — the settings hub the icon reference calls for. */
+  Settings: undefined;
+  /** Per-type (like/comment/follow/mention) notification toggles, backed by migration 0018's real preferences table. */
+  NotificationSettings: undefined;
+  Help: undefined;
+  About: undefined;
 };

@@ -928,16 +928,53 @@ file below was doing before this pass.
   multi-select checkmark, and the Delete/Create Highlight actions now
   carry icons alongside their labels. Log out gets an exit icon.
 
-**Deliberately not touched — the reference depicts a feature this app
-doesn't have yet, and an icon with nothing behind it is a fake button, not
-a real one:** a dedicated Settings screen (Privacy/Notifications/Data &
-Storage/Help/About all as their own screens); Edit Profile / Share Profile
-buttons; Activity split into Likes/Comments/Follows/Mentions tabs (it's one
-merged feed by design — see ActivityScreen.tsx); Search filters; a DM
-attach/emoji/new-chat/back toolbar (there's no file-attach or emoji-picker
-feature, and conversations are only reached from the existing inbox list
-or a Story's Share sheet, not a dedicated "new chat" composer); and
-Highlights' "Change Cover" (a Highlight's cover is its first item's own
-media — see `HighlightsRow.tsx`'s own comment on why there's no separate
-cover-image upload/crop flow). Building any of these would be new feature
-work, not an icon update.
+**Initially deliberately not touched, then built for real in a follow-up
+pass** (the icon pass above stopped at re-skinning what already existed;
+the features below didn't exist yet, so adding their icons would have been
+a fake button — they're now real screens/flows, not icon-only stubs):
+
+- **Settings screen** (`SettingsScreen.tsx`) — a real hub: a Privacy switch
+  wired to the existing `isPrivate` field on `PATCH /api/v1/users/me`;
+  a link into **Notification Settings** (`NotificationSettingsScreen.tsx`),
+  backed by a genuinely new backend table (migration 0018,
+  `notification_preferences`) with real per-type (like/comment/follow/mention)
+  toggles enforced at `notifications.repository.ts`'s single `createNotification`
+  funnel point — turning one off actually suppresses that notification type
+  at creation time, not a client-side filter of an unfiltered feed.
+  `follow_request` is never in that list: it's an actionable pending
+  request, not a muteable broadcast, so the backend never lets it be
+  suppressed. Data & Storage is real too, in the one thing this app
+  actually caches on-device: it shows a live count of crash-autosaved Story
+  drafts (`draftStorage.ts`) and can wipe them. Help/About are real static
+  content (an FAQ list, a version number) rather than placeholder text.
+  Log Out and Delete Account moved here from the profile page itself,
+  matching the reference.
+- **Edit Profile** (`EditProfileScreen.tsx`) — display name and bio,
+  wired to the same `PATCH /api/v1/users/me` the backend already supported.
+- **Share Profile** — a native OS share sheet with a `katkee://user/<username>`
+  deep link, same inert-until-native-linking-exists caveat as `ShareSheet.tsx`'s
+  Story share link.
+- **Activity tabs** (`ActivityScreen.tsx`) — All/Likes/Comments/Follows/Mentions
+  tab bar, a client-side filter of the same unified feed (no backend
+  change) — `follow_request` notifications live under the Follows tab
+  alongside `follow`, since both are the same relationship concern.
+- **Search filter** — an All/Following toggle. "Following" fetches the
+  viewer's own following list once (`getFollowing`, paginated up to a
+  500-person cap) and cross-references it client-side against search
+  results — there's no backend search-scoping endpoint, so this is real
+  filtering of real data, just done on-device.
+- **DM new-chat + emoji picker** — a "New Chat" header button
+  (`NewChatScreen.tsx`) searches a user and opens a real conversation via
+  the existing `POST /api/v1/users/:username/conversation` endpoint (it
+  already supported this — no backend change needed). The emoji picker is
+  a fixed, client-only glyph grid that inserts into the composer text;
+  file/image attachments were **not** built — `conversations/dto.ts`'s
+  `parseSendMessageInput` only accepts text body or a shared Story, and
+  adding real attachment upload/storage/moderation is out of proportion to
+  an icon-set follow-up.
+- **Highlights "Change Cover"** — a Highlight's cover now has a real
+  override: `cover_story_id` (migration 0019), settable to any of that
+  Highlight's own items via a star toggle in `HighlightEditorScreen.tsx`,
+  validated server-side to actually belong to the Highlight, and falling
+  back to the original first-item default if that Story is later dropped
+  from the set or the override is explicitly cleared.

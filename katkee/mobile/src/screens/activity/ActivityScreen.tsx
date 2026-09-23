@@ -19,6 +19,23 @@ import { EmptyState } from "../../components/EmptyState";
 
 const PAGE_SIZE = 20;
 
+type ActivityTab = "all" | "like" | "comment" | "follow" | "mention";
+
+const TABS: Array<{ key: ActivityTab; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "like", label: "Likes" },
+  { key: "comment", label: "Comments" },
+  { key: "follow", label: "Follows" },
+  { key: "mention", label: "Mentions" },
+];
+
+/** A `follow_request` reads as the same relationship-y thing a `follow` does — the "Follows" tab covers both rather than needing a 5th tab. */
+function matchesTab(notification: NotificationRecord, tab: ActivityTab): boolean {
+  if (tab === "all") return true;
+  if (tab === "follow") return notification.type === "follow" || notification.type === "follow_request";
+  return notification.type === tab;
+}
+
 type ActivityNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, "Activity">,
   NativeStackNavigationProp<RootStackParamList>
@@ -147,6 +164,7 @@ export function ActivityScreen(): React.JSX.Element {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActivityTab>("all");
 
   const loadFirstPage = useCallback(async () => {
     if (!accessToken) return;
@@ -185,15 +203,19 @@ export function ActivityScreen(): React.JSX.Element {
     }
   }, [accessToken, loadingMore, hasMore, notifications, offset]);
 
+  const tabFiltered = useMemo(
+    () => (notifications ?? []).filter((n) => matchesTab(n, activeTab)),
+    [notifications, activeTab],
+  );
+
   const sections = useMemo(() => {
-    if (!notifications) return [];
-    const today = notifications.filter((n) => isToday(n.createdAt));
-    const earlier = notifications.filter((n) => !isToday(n.createdAt));
+    const today = tabFiltered.filter((n) => isToday(n.createdAt));
+    const earlier = tabFiltered.filter((n) => !isToday(n.createdAt));
     return [
       ...(today.length ? [{ title: "Today", data: groupNotifications(today) }] : []),
       ...(earlier.length ? [{ title: "Earlier", data: groupNotifications(earlier) }] : []),
     ];
-  }, [notifications]);
+  }, [tabFiltered]);
 
   const unreadInList = notifications?.some((n) => n.readAt === null) ?? false;
 
@@ -294,35 +316,54 @@ export function ActivityScreen(): React.JSX.Element {
           </Pressable>
         ) : null}
       </View>
-      <SectionList
-        sections={sections}
-        keyExtractor={(row) => row.key}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        onEndReachedThreshold={0.4}
-        onEndReached={() => void loadMore()}
-        renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
-        renderItem={({ item: row }) => {
-          const avatarLetter = (row.kind === "grouped-like" ? row.actorNames[0] : row.notification.actor?.displayName) ?? "?";
-          const message = row.kind === "grouped-like" ? messageForGroup(row) : messageFor(row.notification);
-          const createdAt = row.kind === "grouped-like" ? row.createdAt : row.notification.createdAt;
-          const unread = row.kind === "grouped-like" ? row.anyUnread : row.notification.readAt === null;
-          return (
-            <Pressable style={styles.row} onPress={() => void onPressRow(row)}>
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitial}>{avatarLetter.charAt(0).toUpperCase()}</Text>
-              </View>
-              <View style={styles.rowText}>
-                <Text style={typography.body} numberOfLines={2}>
-                  {message}
-                </Text>
-                <Text style={typography.caption}>{new Date(createdAt).toLocaleString()}</Text>
-              </View>
-              {unread ? <View style={styles.unreadDot} /> : null}
-            </Pressable>
-          );
-        }}
-        ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.accent} style={styles.footerSpinner} /> : null}
-      />
+      <View style={styles.tabBar}>
+        {TABS.map((tab) => (
+          <Pressable
+            key={tab.key}
+            style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+            onPress={() => setActiveTab(tab.key)}
+            accessibilityRole="button"
+            accessibilityLabel={tab.label}
+          >
+            <Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>{tab.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {tabFiltered.length === 0 ? (
+        <View style={styles.emptyTab}>
+          <Text style={typography.body}>Nothing here yet.</Text>
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={(row) => row.key}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          onEndReachedThreshold={0.4}
+          onEndReached={() => void loadMore()}
+          renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
+          renderItem={({ item: row }) => {
+            const avatarLetter = (row.kind === "grouped-like" ? row.actorNames[0] : row.notification.actor?.displayName) ?? "?";
+            const message = row.kind === "grouped-like" ? messageForGroup(row) : messageFor(row.notification);
+            const createdAt = row.kind === "grouped-like" ? row.createdAt : row.notification.createdAt;
+            const unread = row.kind === "grouped-like" ? row.anyUnread : row.notification.readAt === null;
+            return (
+              <Pressable style={styles.row} onPress={() => void onPressRow(row)}>
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitial}>{avatarLetter.charAt(0).toUpperCase()}</Text>
+                </View>
+                <View style={styles.rowText}>
+                  <Text style={typography.body} numberOfLines={2}>
+                    {message}
+                  </Text>
+                  <Text style={typography.caption}>{new Date(createdAt).toLocaleString()}</Text>
+                </View>
+                {unread ? <View style={styles.unreadDot} /> : null}
+              </Pressable>
+            );
+          }}
+          ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.accent} style={styles.footerSpinner} /> : null}
+        />
+      )}
     </View>
   );
 }
@@ -339,6 +380,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   markAllRead: { color: colors.accent, fontSize: 13, fontWeight: "600" },
+  tabBar: {
+    flexDirection: "row",
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingBottom: spacing.sm,
+  },
+  tab: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radii.pill },
+  tabActive: { backgroundColor: colors.surfaceElevated },
+  tabLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: "600" },
+  tabLabelActive: { color: colors.textPrimary },
+  emptyTab: { flex: 1, alignItems: "center", justifyContent: "center" },
   sectionHeader: {
     ...typography.label,
     backgroundColor: colors.background,

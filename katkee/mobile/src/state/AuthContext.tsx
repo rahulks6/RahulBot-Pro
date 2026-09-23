@@ -16,6 +16,8 @@ interface AuthContextValue extends AuthState {
   logout: () => Promise<void>;
   /** Real, irreversible account deletion (password-confirmed) — throws ApiError (e.g. wrong password) on failure, otherwise ends signed out. */
   deleteAccount: (password: string) => Promise<void>;
+  /** Re-fetches `/auth/me` and replaces the in-context user — call after any server-side profile edit (display name, bio, privacy) so the rest of the app reflects it without a full re-login. */
+  refreshUser: () => Promise<void>;
   error: string | null;
   fieldErrors: Record<string, string> | undefined;
   clearError: () => void;
@@ -133,9 +135,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     setFieldErrors(undefined);
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    if (!state.accessToken) return;
+    try {
+      const { user } = await authApi.fetchMe(state.accessToken);
+      setState((current) => (current.status === "signedIn" ? { ...current, user } : current));
+    } catch {
+      // Best-effort — the screen that triggered this already has its own error handling for the edit itself.
+    }
+  }, [state.accessToken]);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, signup, login, logout, deleteAccount, error, fieldErrors, clearError }),
-    [state, signup, login, logout, deleteAccount, error, fieldErrors, clearError],
+    () => ({ ...state, signup, login, logout, deleteAccount, refreshUser, error, fieldErrors, clearError }),
+    [state, signup, login, logout, deleteAccount, refreshUser, error, fieldErrors, clearError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
