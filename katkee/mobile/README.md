@@ -104,6 +104,19 @@ both stores require in the listing itself.
     (following-vs-discovery reflects a viewer's *current* follow
     relationship, not necessarily what it was at view time — this schema
     has no historical snapshot of that).
+  - **Every real gap identified in the original spec pass is now closed.**
+    The one remaining item, `ArchiveScreen.tsx`'s missing full-screen
+    viewer for an individual expired Story, is done: a new
+    `src/screens/profile/ArchivedStoryViewerScreen.tsx` (view-only, no
+    like/comment/next — same philosophy as `HighlightViewerScreen.tsx`)
+    plays back any of your own Archive Stories regardless of expiry. No
+    backend change was needed — an owner already bypasses the normal 24h
+    check for their own content, both for the Story detail fetch and the
+    media file itself (see `media.routes.ts`'s `requireAccessibleMedia`).
+    `ArchiveScreen.tsx`'s grid now distinguishes a plain tap (opens the
+    viewer) from a long-press, or a tap while already mid-selection
+    (toggles selection) — the Photos-app convention, not a new gesture
+    library.
 - `src/theme/` — the Katkee design system tokens: near-black background,
   off-white text, one amber/yellow accent (`colors.accent`) used for the
   Story ring, primary CTA, Follow, Create, and unread badges. No
@@ -362,11 +375,6 @@ both stores require in the listing itself.
   (only `StoryInsightsSheet.tsx`, per-Story, does) — an aggregate
   cross-Story identity list is a genuinely separate feature this pass
   doesn't add.
-- **Archive has no full-screen viewer for an individual expired Story** —
-  tapping a thumbnail selects it (for a Highlight or deletion) rather than
-  opening playback. `StoryFeed.tsx`'s pipeline only ever fetches *active*
-  Stories (see `getMyActiveStories`/`getUserActiveStories`); a real
-  expired-Story viewer is a separate feature this pass doesn't build.
 
 ### Phase 12 specifically
 

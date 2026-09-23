@@ -62,6 +62,8 @@ export type RootStackParamList = {
   HighlightEditor: { highlightId?: string; initialStoryIds?: string[] };
   /** Every Story you've ever published, expired or not — private, owner-only, grouped by month (spec: a dedicated Archive, not just the Highlight picker). */
   Archive: undefined;
+  /** Single, view-only playback of one of your own Stories from Archive, active or long expired — always your own (owners bypass the normal 24h expiry check, see stories.service.ts). */
+  ArchivedStoryViewer: { storyId: string };
   /** "Per-sequence Insights" (spec) — completion %, following-vs-discovery split, and profile-visit rate aggregated across every currently-active Story you own. Always the caller's own. */
   SequenceInsights: undefined;
 };

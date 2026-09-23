@@ -12,6 +12,7 @@ import { HighlightViewerScreen } from "../screens/highlight/HighlightViewerScree
 import { HighlightEditorScreen } from "../screens/highlight/HighlightEditorScreen";
 import { ArchiveScreen } from "../screens/profile/ArchiveScreen";
 import { SequenceInsightsScreen } from "../screens/profile/SequenceInsightsScreen";
+import { ArchivedStoryViewerScreen } from "../screens/profile/ArchivedStoryViewerScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -58,6 +59,11 @@ function SignedInNavigator(): React.JSX.Element {
           headerTintColor: colors.textPrimary,
           headerShadowVisible: false,
         }}
+      />
+      <Stack.Screen
+        name="ArchivedStoryViewer"
+        component={ArchivedStoryViewerScreen}
+        options={{ presentation: "fullScreenModal" }}
       />
     </Stack.Navigator>
   );

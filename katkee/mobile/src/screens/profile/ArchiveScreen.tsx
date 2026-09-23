@@ -51,14 +51,13 @@ function groupByMonth(stories: PublicStory[]): MonthSection[] {
 
 /**
  * Every Story you've ever published, expired or not (spec: a dedicated
- * private Archive, grouped by month, with multi-select) — not just the
- * Highlight-creation picker this same `GET /api/v1/stories/mine/archive`
- * endpoint already fed. Tapping a thumbnail selects it directly rather
- * than opening a full-screen viewer: StoryFeed's playback pipeline only
- * ever fetches *active* Stories (see HomeScreen/StoryViewerScreen), and
- * an expired-story viewer is a genuinely separate feature this pass
- * doesn't build — browsing thumbnails and picking Stories for a Highlight
- * or deletion is what the spec actually asks Archive to do.
+ * private Archive, grouped by month, with multi-select). A plain tap
+ * opens full-screen playback (ArchivedStoryViewerScreen — works
+ * regardless of expiry, since an owner already bypasses the normal 24h
+ * check for their own content); a long-press, or a tap while already
+ * mid-selection, toggles selection instead — same convention as a
+ * Photos-app picker. Multi-select feeds into creating a Highlight or
+ * bulk deletion.
  */
 export function ArchiveScreen({ navigation }: Props): React.JSX.Element {
   const { accessToken } = useAuth();
@@ -166,7 +165,8 @@ export function ArchiveScreen({ navigation }: Props): React.JSX.Element {
                 return (
                   <Pressable
                     key={story.id}
-                    onPress={() => toggle(story.id)}
+                    onPress={() => (selected.length > 0 ? toggle(story.id) : navigation.navigate("ArchivedStoryViewer", { storyId: story.id }))}
+                    onLongPress={() => toggle(story.id)}
                     style={[styles.thumbWrapper, { width: thumbSize, height: thumbSize }]}
                   >
                     <Image source={{ uri: mediaFileUrl(story.mediaId), headers: authHeaders }} style={styles.thumb} resizeMode="cover" />
