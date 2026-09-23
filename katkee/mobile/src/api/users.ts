@@ -157,3 +157,16 @@ export function getFollowing(
   const qs = query.toString();
   return apiGet(`/api/v1/users/${encodeURIComponent(username)}/following${qs ? `?${qs}` : ""}`, accessToken);
 }
+
+/** Same shape and gating as getFollowing — a private account's list is 403 unless you're the owner or an accepted follower. */
+export function getFollowers(
+  username: string,
+  accessToken: string,
+  params: { limit?: number; offset?: number } = {},
+): Promise<{ followers: FollowedUser[]; limit: number; offset: number }> {
+  const query = new URLSearchParams();
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return apiGet(`/api/v1/users/${encodeURIComponent(username)}/followers${qs ? `?${qs}` : ""}`, accessToken);
+}

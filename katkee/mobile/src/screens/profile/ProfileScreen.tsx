@@ -87,14 +87,24 @@ export function ProfileScreen(): React.JSX.Element {
       {user.bio ? <Text style={[typography.body, styles.bio]}>{user.bio}</Text> : null}
 
       <View style={styles.statsRow}>
-        <View style={styles.stat}>
+        <Pressable
+          style={styles.stat}
+          onPress={() => navigation.navigate("FollowList", { username: user.username, mode: "followers" })}
+          accessibilityRole="button"
+          accessibilityLabel="Followers"
+        >
           <Text style={typography.bodyStrong}>{counts ? counts.followerCount : "—"}</Text>
           <Text style={typography.caption}>Followers</Text>
-        </View>
-        <View style={styles.stat}>
+        </Pressable>
+        <Pressable
+          style={styles.stat}
+          onPress={() => navigation.navigate("FollowList", { username: user.username, mode: "following" })}
+          accessibilityRole="button"
+          accessibilityLabel="Following"
+        >
           <Text style={typography.bodyStrong}>{counts ? counts.followingCount : "—"}</Text>
           <Text style={typography.caption}>Following</Text>
-        </View>
+        </Pressable>
       </View>
 
       <View style={styles.actionRow}>

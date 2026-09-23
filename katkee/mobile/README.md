@@ -1016,6 +1016,20 @@ didn't seem worth it once a real management screen exists elsewhere; the
 same "action in the moment, review/undo in Settings" split most social
 apps already use.
 
+### The follower/following counts have looked tappable since Phase 1 — they never were
+
+The same route cross-reference turned up one more: every profile
+(`ProfileScreen.tsx`, `UserProfileScreen.tsx`) has shown a bold follower
+count and a bold following count since Phase 1, styled and laid out
+exactly like a tappable stat — but neither `Pressable` nor `onPress` was
+ever attached to either one. `GET /api/v1/users/:username/followers` and
+`.../following` have both existed and been tested since Phase 2. Fixed
+with one shared `FollowListScreen.tsx` (both directions are the same
+shape and the same `assertCanViewConnections` access rule on the
+backend), reached by tapping either count on either profile screen; each
+row in the list navigates to that user's own profile the same way a
+search result does.
+
 ### Edit-in-place for location and date/time content
 
 Double-tap-to-re-edit (spec section 20) was explicitly a text-only

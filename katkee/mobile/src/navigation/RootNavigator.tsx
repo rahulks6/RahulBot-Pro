@@ -21,6 +21,7 @@ import { AboutScreen } from "../screens/profile/AboutScreen";
 import { FollowRequestsScreen } from "../screens/profile/FollowRequestsScreen";
 import { BlockedAccountsScreen } from "../screens/profile/BlockedAccountsScreen";
 import { MutedAccountsScreen } from "../screens/profile/MutedAccountsScreen";
+import { FollowListScreen } from "../screens/profile/FollowListScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -160,6 +161,17 @@ function SignedInNavigator(): React.JSX.Element {
           headerTintColor: colors.textPrimary,
           headerShadowVisible: false,
         }}
+      />
+      <Stack.Screen
+        name="FollowList"
+        component={FollowListScreen}
+        options={({ route }) => ({
+          headerShown: true,
+          title: route.params.mode === "followers" ? "Followers" : "Following",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        })}
       />
     </Stack.Navigator>
   );

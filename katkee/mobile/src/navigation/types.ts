@@ -82,4 +82,6 @@ export type RootStackParamList = {
   BlockedAccounts: undefined;
   /** Accounts you've muted — a real unmute action for each, not just a one-way door. */
   MutedAccounts: undefined;
+  /** A profile's real follower or following list — the count on a profile has looked tappable since Phase 1, but never was until now. */
+  FollowList: { username: string; mode: "followers" | "following" };
 };

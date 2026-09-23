@@ -143,14 +143,24 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
       {profile.bio ? <Text style={[typography.body, styles.bio]}>{profile.bio}</Text> : null}
 
       <View style={styles.statsRow}>
-        <View style={styles.stat}>
+        <Pressable
+          style={styles.stat}
+          onPress={() => rootNavigation.navigate("FollowList", { username: profile.username, mode: "followers" })}
+          accessibilityRole="button"
+          accessibilityLabel="Followers"
+        >
           <Text style={typography.bodyStrong}>{profile.followerCount}</Text>
           <Text style={typography.caption}>Followers</Text>
-        </View>
-        <View style={styles.stat}>
+        </Pressable>
+        <Pressable
+          style={styles.stat}
+          onPress={() => rootNavigation.navigate("FollowList", { username: profile.username, mode: "following" })}
+          accessibilityRole="button"
+          accessibilityLabel="Following"
+        >
           <Text style={typography.bodyStrong}>{profile.followingCount}</Text>
           <Text style={typography.caption}>Following</Text>
-        </View>
+        </Pressable>
       </View>
 
       {!profile.isSelf ? (
