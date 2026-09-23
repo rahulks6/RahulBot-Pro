@@ -916,6 +916,20 @@ accessible way to author a freehand stroke without a finger path, the same
 way there isn't in any drawing app, so this is a permanent, honest limit
 rather than an oversight.
 
+### Drag-to-reorder had the exact same gap — also fixed
+
+`DraggableGrid.tsx` (Highlights' own order in `HighlightsRow.tsx`, and a
+Highlight's item order in `HighlightEditorScreen.tsx`'s selected strip)
+had **zero** accessibility props at all before this — not even a label,
+let alone an alternative to the long-press-and-drag gesture itself. A
+screen-reader user had no way to reorder anything through either surface.
+Each item in reorder mode now exposes `accessibilityActions` ("Move
+earlier/later in order"), handled by a new `onMoveStep` that moves the
+item exactly one slot and commits immediately through the same `onReorder`
+a drag's release already calls — a screen-reader user gets a slower,
+one-step-at-a-time equivalent, not a dead end. Both call sites needed no
+changes themselves; the fix is entirely inside `DraggableGrid.tsx`.
+
 ### Edit-in-place for location and date/time content
 
 Double-tap-to-re-edit (spec section 20) was explicitly a text-only

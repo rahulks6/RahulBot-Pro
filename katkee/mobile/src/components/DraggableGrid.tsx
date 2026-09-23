@@ -20,6 +20,8 @@ interface DraggableGridItemProps {
   onDragMove: (key: string, dx: number, dy: number) => void;
   onDragEnd: (key: string) => void;
   onPress: () => void;
+  /** The non-gesture equivalent of a long-press-and-drag reorder — see this file's own doc comment. */
+  onMoveStep: (key: string, direction: -1 | 1) => void;
   children: React.ReactNode;
 }
 
@@ -34,6 +36,7 @@ function DraggableGridItem({
   onDragMove,
   onDragEnd,
   onPress,
+  onMoveStep,
   children,
 }: DraggableGridItemProps): React.JSX.Element {
   const [isDragging, setIsDragging] = useState(false);
@@ -144,7 +147,26 @@ function DraggableGridItem({
         // Only ever attaches the PanResponder while this grid is actually
         // in reorder mode — see DraggableGrid's own doc comment for why
         // that's what makes this safe to use inside a ScrollView at all.
-        <View {...responder.panHandlers} style={styles.fill}>
+        // A screen reader intercepts the raw long-press-and-drag gesture
+        // before this PanResponder ever sees it, so accessibilityActions
+        // gives it a real one-step-at-a-time equivalent instead — the same
+        // technique OverlayAdjustSheet/CameraScreen already use elsewhere
+        // in this app for a gesture this component can't reach otherwise.
+        <View
+          {...responder.panHandlers}
+          style={styles.fill}
+          accessible
+          accessibilityLabel="Reorder item"
+          accessibilityHint="Use the actions menu to move it earlier or later"
+          accessibilityActions={[
+            { name: "moveUp", label: "Move earlier in order" },
+            { name: "moveDown", label: "Move later in order" },
+          ]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === "moveUp") onMoveStep(itemKey, -1);
+            else if (event.nativeEvent.actionName === "moveDown") onMoveStep(itemKey, 1);
+          }}
+        >
           {children}
         </View>
       ) : (
@@ -220,6 +242,13 @@ export interface DraggableGridProps<T> {
  * there. HighlightsRow.tsx uses this for a real "Reorder" mode toggle,
  * rather than leaving drag permanently on and the ancestor page
  * permanently unscrollable-from-a-Highlight-card.
+ *
+ * While `draggable`, each item also exposes `accessibilityActions`
+ * ("Move earlier/later in order") that move it one slot and commit
+ * immediately via `onReorder` — a screen reader intercepts the raw
+ * long-press-and-drag before this component's own PanResponder ever
+ * sees it, so this is the real, working alternative, not just a label
+ * describing the gesture.
  */
 export function DraggableGrid<T>({
   data,
@@ -305,6 +334,25 @@ export function DraggableGrid<T>({
     onReorder(orderRef.current);
   }, [onReorder]);
 
+  // The accessible alternative to a drag: move one slot at a time and
+  // commit immediately, rather than waiting for a drag-end that a
+  // gesture-only interaction will never produce here.
+  const onMoveStep = useCallback(
+    (key: string, direction: -1 | 1) => {
+      const current = orderRef.current;
+      const fromIndex = current.findIndex((item) => keyExtractor(item) === key);
+      if (fromIndex === -1) return;
+      const toIndex = fromIndex + direction;
+      if (toIndex < 0 || toIndex >= current.length) return;
+      const next = current.slice();
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved as T);
+      setOrder(next);
+      onReorder(next);
+    },
+    [keyExtractor, onReorder],
+  );
+
   const totalSlots = order.length + startIndex;
   const rows = Math.ceil(totalSlots / columns);
   const containerHeight = rows > 0 ? rows * cellHeight - gap : 0;
@@ -327,6 +375,7 @@ export function DraggableGrid<T>({
             onDragStart={onDragStart}
             onDragMove={onDragMove}
             onDragEnd={onDragEnd}
+            onMoveStep={onMoveStep}
             onPress={() => onPress?.(item)}
           >
             {renderItem(item)}
