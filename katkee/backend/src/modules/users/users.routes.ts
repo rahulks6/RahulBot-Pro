@@ -26,6 +26,8 @@ export function registerUserRoutes(router: Router): void {
         displayName: user.displayName,
         bio: user.bio,
         isPrivate: user.isPrivate,
+        role: user.role,
+        isPrimaryAdmin: user.isPrimaryAdmin,
       },
     });
   });

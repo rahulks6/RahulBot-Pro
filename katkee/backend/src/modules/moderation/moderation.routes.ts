@@ -4,7 +4,7 @@ import { sendJson } from "../../http/respond";
 import { HttpError } from "../../http/errors";
 import { parsePagination, parseQueryString } from "../../http/pagination";
 import { parseUsernameParam } from "../../shared/validation";
-import { parseCreateReportInput, parseResolveReportInput } from "./dto";
+import { parseCreateReportInput, parseResolveReportInput, parsePromoteInput } from "./dto";
 import * as moderationService from "./moderation.service";
 import type { ReportStatus } from "./moderation.repository";
 
@@ -49,5 +49,27 @@ export function registerModerationRoutes(router: Router): void {
     const username = parseUsernameParam(req.params.username);
     await moderationService.unsuspendUserByUsername(req.userId as string, username);
     sendJson(res, 204, undefined);
+  });
+
+  // Admin-only (see moderation.service.ts's requireAdmin) — granting/
+  // revoking moderator or admin access, and listing who currently has it.
+  router.get("/api/v1/admin/staff", async (req, res) => {
+    requireAuth(req);
+    const staff = await moderationService.listStaff(req.userId as string);
+    sendJson(res, 200, { staff });
+  });
+
+  router.post("/api/v1/admin/staff", async (req, res) => {
+    requireAuth(req);
+    const input = parsePromoteInput(req.body);
+    const member = await moderationService.promoteUser(req.userId as string, input);
+    sendJson(res, 200, { member });
+  });
+
+  router.delete("/api/v1/admin/staff/:username", async (req, res) => {
+    requireAuth(req);
+    const username = parseUsernameParam(req.params.username);
+    const member = await moderationService.demoteUser(req.userId as string, username);
+    sendJson(res, 200, { member });
   });
 }

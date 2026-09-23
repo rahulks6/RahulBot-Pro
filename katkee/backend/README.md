@@ -710,6 +710,9 @@ followed).
 | POST | `/api/v1/moderation/reports/:id/resolve` | Bearer, moderator-only | `{action: "dismiss"\|"remove_content"\|"suspend_user", note?}` → `{report}`; `remove_content` only for story/comment reports, `suspend_user` only for user reports (400 on a mismatch), 409 if already resolved |
 | POST | `/api/v1/moderation/users/:username/suspend` | Bearer, moderator-only | Standalone suspension, independent of any report on file → 204 |
 | POST | `/api/v1/moderation/users/:username/unsuspend` | Bearer, moderator-only | Reverses a suspension → 204 |
+| GET | `/api/v1/admin/staff` | Bearer, admin-only | Current moderator/admin roster, primary admin sorted first — migration 0020 |
+| POST | `/api/v1/admin/staff` | Bearer, admin-only | `{username, role: "moderator"\|"admin"}` → `{member}`; any admin can grant either tier |
+| DELETE | `/api/v1/admin/staff/:username` | Bearer, admin-only | Revokes back to `"user"` → `{member}`; 403 if the target is the primary admin |
 
 `not_interested` is one of `POST /api/v1/events`'s `eventType` values — it
 both logs the event and immediately excludes that creator from your
@@ -788,10 +791,11 @@ suspension, but not a full trust-and-safety surface: filing a report only
 gets the generic global rate limit (600 req/min/IP, same as everything
 else), not a dedicated stricter budget of its own; no report-aggregation
 ("this Story has 12 reports" is 12 rows, not one with a count); no
-appeals flow; and no mobile UI for the moderator queue itself (it's a
-real, tested API with no admin screen built against it yet — a
-deliberately small, internal-only audience didn't justify a dedicated
-admin app in this pass). Account deletion (Phase 12) deliberately doesn't
+appeals flow; and ~~no mobile UI for the moderator queue itself~~ **built
+later, in the same pass that added the admin-role hierarchy** — see the
+"A real staff hierarchy" section above for `ModerationQueueScreen.tsx`/
+`AdminStaffScreen.tsx` and why a small, internal-only audience no longer
+meant skipping a real screen once it was explicitly asked for. Account deletion (Phase 12) deliberately doesn't
 scrub comments left on other people's Stories or DM history — see that
 section above and `../legal/PRIVACY_POLICY.md` for why. Rate limiting is
 in-memory and per-process (Phase 11 — it won't coordinate across multiple
@@ -906,3 +910,91 @@ to the default cover if a subsequent `storyIds` replace drops the Story
 the cover was pinned to (rather than leaving the cover pointing at content
 no longer in the Highlight). Tests cover the override, clearing it,
 rejecting a non-member Story id, and the fallback-on-drop behavior.
+
+## A real staff hierarchy: admin login, and a primary admin that can't be removed (migration 0020)
+
+`users.is_moderator` (a single boolean, migration 0011) becomes a real
+three-tier `role` column — `'user'` (everyone, default) < `'moderator'`
+(everything Phase 10 already built: resolve reports, remove content,
+suspend accounts) < `'admin'` (everything a moderator can do, plus grant
+or revoke moderator/admin access on any other account). There's no
+separate "admin login" — an admin signs in exactly like everyone else
+through `POST /api/v1/auth/login`; their elevated `role` (now included on
+every `PublicUser` response — signup, login, `/auth/me`, `PATCH
+/users/me`) is what unlocks the moderation and staff-management surface
+on the client. A second, invented login system for admins would just be
+more attack surface for no real benefit.
+
+**The primary admin.** Exactly one account can ever hold
+`is_primary_admin = true` — enforced twice: a real DB-level unique
+partial index (`users_single_primary_admin_idx`, migration 0020) as the
+backstop, and an application-layer check in `moderation.service.ts` as
+the actual UX (a specific 403, not a constraint-violation 500). That
+account can never be demoted (`demoteUser` rejects it before it ever
+reaches the database) and can never be suspended — not through the direct
+`POST /api/v1/moderation/users/:username/suspend` endpoint, and not
+through a user-report's `suspend_user` resolution either, because both
+paths funnel through the same `suspendUser()` in `moderation.service.ts`,
+which is where the check actually lives. There is deliberately no
+override, from anyone, including another admin: restoring a
+wrongly-suspended primary admin would need the same kind of direct DB
+write that granting the role does in the first place.
+
+**Granting and revoking staff access.** New admin-only endpoints:
+`GET /api/v1/admin/staff` (the current moderator/admin roster, primary
+admin sorted first), `POST /api/v1/admin/staff` (`{username, role}` —
+grants `'moderator'` or `'admin'`), and `DELETE /api/v1/admin/staff/:username`
+(revokes back to `'user'`; 403 if the target is the primary admin). Any
+admin can promote straight to `'admin'`, not just `'moderator'` — "an
+admin can create other admins if they want to" was the explicit ask, not
+a multi-step approval chain, and an admin created by another admin has
+exactly the same rights as any other admin, not a lesser tier.
+
+**Bootstrapping the very first admin.** There's a real chicken-and-egg
+problem here: every admin-granting endpoint requires an existing admin to
+call it. `scripts/seedPrimaryAdmin.ts` (`npm run seed:admin`) is the way
+out — sign up a normal account through the app, set `PRIMARY_ADMIN_EMAIL`
+in `.env` to that account's email, then run the script once. It's
+idempotent by design: if a primary admin already exists, it does nothing
+and says so, and it never moves primary-admin status from one account to
+another automatically — that would defeat the entire "can't be removed"
+guarantee. There is no HTTP route for this at all, on purpose.
+
+Tests (`test/admin.test.ts`): a plain user and a plain moderator both get
+403 from every `/api/v1/admin/staff` endpoint (moderator and admin are
+different tiers, not a spectrum); an admin can promote to moderator and
+that moderator can immediately use moderator-only endpoints; an admin can
+promote straight to admin and that new admin has full rights; demoting
+actually revokes access immediately; the staff roster lists correctly;
+invalid roles and nonexistent usernames are rejected; and the primary
+admin can never be demoted or suspended by anyone, including another
+admin, through either the direct endpoint or a resolved report.
+
+## Ads: not built, but the architecture doesn't block it later
+
+No ad SDK is integrated, and none should be faked here — a placeholder ad
+slot that doesn't actually serve or track anything would be exactly the
+kind of dishonest functionality this whole project has avoided everywhere
+else. What's real: the places a real ad SDK would eventually plug in
+don't require restructuring anything that exists today.
+
+- **Backend**: an ad network is typically client-side (the mobile SDK
+  talks directly to the ad network); this backend's only likely
+  involvement is analytics correlation. `recommendation_events` (migration
+  0007) already has the exact shape a "sponsored impression" event would
+  need — `events.dto.ts`'s `EventType` union is a closed list specifically
+  so a new event type is a deliberate, reviewed addition, not schema
+  drift; adding `"ad_impression"`/`"ad_click"` there later is a small,
+  additive change, not a redesign.
+- **Mobile**: `StoryFeed.tsx`'s feed is already just an array of entries
+  rendered one at a time (`RankedFeedEntry[]` from `getRankedHomeFeed`);
+  inserting a sponsored entry every N creators later is a filter/interleave
+  step over that same array, not a rewrite of the feed's rendering or
+  gesture code. `StoryMoreMenu.tsx` already has real, working "Not
+  Interested"/Mute/Block actions — the same UX pattern a "why am I seeing
+  this ad" control would reuse.
+- **Revenue-model decisions this pass deliberately didn't make**: which ad
+  network/SDK, impression vs. click billing, frequency capping, and
+  targeting all need a real business decision (and a real SDK account)
+  neither available nor appropriate to guess at inside a sandbox with no
+  network access to any ad network in the first place.

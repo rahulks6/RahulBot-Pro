@@ -88,6 +88,14 @@ export const config = {
     accessTtlSeconds: optionalInt("JWT_ACCESS_TTL_SECONDS", 900),
     refreshTtlSeconds: optionalInt("JWT_REFRESH_TTL_SECONDS", 60 * 60 * 24 * 30),
   },
+  admin: {
+    // Read only by scripts/seedPrimaryAdmin.ts, never by the request-serving
+    // app itself — there is deliberately no HTTP path that grants
+    // is_primary_admin (see users.repository.ts's grantPrimaryAdmin). Unset
+    // means "don't seed anything," not an error: most environments (every
+    // test run, most local dev) have no need for a primary admin at all.
+    primaryAdminEmail: process.env.PRIMARY_ADMIN_EMAIL || null,
+  },
   rateLimit: {
     // In-memory, single-process limiter (see http/rateLimiter.ts) — there's
     // no Redis/shared store in this sandbox, so this resets on restart and

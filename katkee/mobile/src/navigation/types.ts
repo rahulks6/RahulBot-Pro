@@ -84,4 +84,8 @@ export type RootStackParamList = {
   MutedAccounts: undefined;
   /** A profile's real follower or following list — the count on a profile has looked tappable since Phase 1, but never was until now. */
   FollowList: { username: string; mode: "followers" | "following" };
+  /** Pending/actioned/dismissed reports, with real Dismiss/Remove Content/Suspend actions — moderator or admin accounts only. */
+  ModerationQueue: undefined;
+  /** Grant or revoke moderator/admin access — admin accounts only; the primary admin can never be demoted. */
+  AdminStaff: undefined;
 };

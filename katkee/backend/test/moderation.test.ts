@@ -34,15 +34,15 @@ async function signupUser() {
 }
 
 /**
- * There is deliberately no self-serve "become a moderator" endpoint (see
- * moderation.service.ts's requireModerator) — granting it is meant to
- * happen out-of-band, the same way this test does it: a direct DB write,
- * the same technique test/stories.test.ts already uses for a short-TTL
- * Story via storiesService.publishStory reaching one level below the
- * public API for a legitimate bootstrapping need.
+ * A real `POST /api/v1/admin/staff` now grants this (admin-only — see
+ * test/admin.test.ts), but bootstrapping the very first admin still has
+ * to happen out-of-band: a direct DB write, the same technique
+ * test/stories.test.ts already uses for a short-TTL Story via
+ * storiesService.publishStory reaching one level below the public API
+ * for a legitimate bootstrapping need.
  */
 async function promoteToModerator(userId: string): Promise<void> {
-  await query(`UPDATE users SET is_moderator = true WHERE id = :'id'`, { id: userId });
+  await query(`UPDATE users SET role = 'moderator' WHERE id = :'id'`, { id: userId });
 }
 
 async function uploadPhoto(accessToken: string): Promise<string> {

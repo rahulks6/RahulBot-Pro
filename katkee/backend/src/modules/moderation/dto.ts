@@ -1,5 +1,30 @@
 import { ValidationError } from "../auth/dto";
+import { USERNAME_RE } from "../../shared/validation";
 import type { ReportReason, TargetType } from "./moderation.repository";
+import type { UserRole } from "../users/users.repository";
+
+const PROMOTABLE_ROLES: Extract<UserRole, "moderator" | "admin">[] = ["moderator", "admin"];
+
+export interface PromoteInput {
+  username: string;
+  role: "moderator" | "admin";
+}
+
+export function parsePromoteInput(body: unknown): PromoteInput {
+  const errors: Record<string, string> = {};
+  const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+
+  const username = typeof b.username === "string" ? b.username.trim().toLowerCase() : "";
+  if (!USERNAME_RE.test(username)) errors.username = "username is required.";
+
+  const role = b.role as UserRole;
+  if (!PROMOTABLE_ROLES.includes(role as "moderator" | "admin")) {
+    errors.role = `role must be one of: ${PROMOTABLE_ROLES.join(", ")}.`;
+  }
+
+  if (Object.keys(errors).length > 0) throw new ValidationError(errors);
+  return { username, role: role as "moderator" | "admin" };
+}
 
 const TARGET_TYPES: TargetType[] = ["story", "comment", "user"];
 const REASONS: ReportReason[] = ["spam", "harassment", "nudity", "violence", "hate_speech", "self_harm", "other"];

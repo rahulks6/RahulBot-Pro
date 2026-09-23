@@ -10,6 +10,8 @@ import { appEnv } from "../config/env";
 
 export const API_BASE_URL = appEnv.apiBaseUrl;
 
+export type UserRole = "user" | "moderator" | "admin";
+
 export interface PublicUser {
   id: string;
   username: string;
@@ -17,6 +19,8 @@ export interface PublicUser {
   displayName: string;
   bio: string;
   isPrivate: boolean;
+  role: UserRole;
+  isPrimaryAdmin: boolean;
 }
 
 export interface TokenPair {

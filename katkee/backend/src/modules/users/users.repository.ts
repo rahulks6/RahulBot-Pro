@@ -1,5 +1,7 @@
 import { query, queryOne } from "../../db/psql";
 
+export type UserRole = "user" | "moderator" | "admin";
+
 export interface UserRecord {
   id: string;
   username: string;
@@ -9,11 +11,13 @@ export interface UserRecord {
   bio: string;
   isPrivate: boolean;
   isActive: boolean;
-  isModerator: boolean;
+  role: UserRole;
+  isPrimaryAdmin: boolean;
   createdAt: string;
 }
 
-const SELECT_COLUMNS = "id, username, email, password_hash, display_name, bio, is_private, is_active, is_moderator, created_at";
+const SELECT_COLUMNS =
+  "id, username, email, password_hash, display_name, bio, is_private, is_active, role, is_primary_admin, created_at";
 
 function mapRow(row: Record<string, string | null>): UserRecord {
   return {
@@ -25,7 +29,8 @@ function mapRow(row: Record<string, string | null>): UserRecord {
     bio: row.bio as string,
     isPrivate: row.is_private === "t",
     isActive: row.is_active === "t",
-    isModerator: row.is_moderator === "t",
+    role: row.role as UserRole,
+    isPrimaryAdmin: row.is_primary_admin === "t",
     createdAt: row.created_at as string,
   };
 }
@@ -116,6 +121,37 @@ export async function setProfile(
 /** Moderator-only action (see moderation.service.ts) — login and token refresh both already check isActive, so this is the one lever that actually enforces a suspension. */
 export async function setActive(id: string, isActive: boolean): Promise<void> {
   await query(`UPDATE users SET is_active = :'is_active' WHERE id = :'id'`, { id, is_active: isActive });
+}
+
+/** Admin-only action (see moderation.service.ts's requireAdmin/promoteUser/demoteUser) — grants or revokes moderator/admin access. Never touches is_primary_admin; that's set exactly once, out of band, by scripts/seedPrimaryAdmin.ts. */
+export async function setRole(id: string, role: UserRole): Promise<void> {
+  await query(`UPDATE users SET role = :'role' WHERE id = :'id'`, { id, role });
+}
+
+/** The current moderator/admin roster, for the admin management screen — deliberately excludes plain 'user' rows (that's every account, not staff). */
+export async function listStaff(): Promise<UserRecord[]> {
+  const rows = await query(
+    `SELECT ${SELECT_COLUMNS} FROM users
+     WHERE deleted_at IS NULL AND role IN ('moderator', 'admin')
+     ORDER BY is_primary_admin DESC, role DESC, username ASC`,
+    {},
+  );
+  return rows.map(mapRow);
+}
+
+/**
+ * Idempotent, out-of-band primary-admin bootstrap (see
+ * scripts/seedPrimaryAdmin.ts) — never exposed through any HTTP route.
+ * The unique partial index on is_primary_admin (migration 0020) is the
+ * real backstop; this check is the friendly, specific error message.
+ */
+export async function findPrimaryAdmin(): Promise<UserRecord | null> {
+  const row = await queryOne(`SELECT ${SELECT_COLUMNS} FROM users WHERE is_primary_admin = true`, {});
+  return row ? mapRow(row) : null;
+}
+
+export async function grantPrimaryAdmin(id: string): Promise<void> {
+  await query(`UPDATE users SET role = 'admin', is_primary_admin = true WHERE id = :'id'`, { id });
 }
 
 /**

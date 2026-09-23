@@ -424,13 +424,14 @@ both stores require in the listing itself.
 
 ### Phase 10 specifically
 
-- **No mobile moderator queue.** The backend's
-  `GET /api/v1/moderation/reports` and resolve/suspend endpoints are
-  real and tested, but there's no admin screen in this app to drive them
-  — moderators are expected to be a tiny internal cohort, and building a
-  dedicated review UI for that audience didn't earn its place in this
-  pass over the user-facing Report flow itself. See backend/README.md's
-  Phase 10 section for the same call spelled out on that side.
+- ~~No mobile moderator queue~~ **Built in a later pass** —
+  `ModerationQueueScreen.tsx` (Settings > Moderation > Report queue, shown
+  to `role: "moderator"`/`"admin"` accounts) drives the backend's
+  `GET /api/v1/moderation/reports` and resolve/suspend endpoints for real:
+  tap a pending report to Dismiss, Remove Content, or Suspend the account,
+  same as the API always supported. See "Admin login and a real staff
+  hierarchy" below for the rest (who can grant that access, and why one
+  account can never lose it).
 - **Reporting doesn't visibly change what you see afterward.** Filing a
   report shows a "thanks, we'll review this" confirmation and nothing
   else — it doesn't hide the reported content, mute the account, or
@@ -1043,6 +1044,38 @@ shape and the same `assertCanViewConnections` access rule on the
 backend), reached by tapping either count on either profile screen; each
 row in the list navigates to that user's own profile the same way a
 search result does.
+
+### Admin login and a real staff hierarchy
+
+There is no separate "admin login screen" — an admin or moderator signs
+in through the exact same `LoginScreen.tsx` everyone else uses. What's
+new is that `PublicUser` (from signup/login/`/auth/me`) now carries a
+real `role: "user" | "moderator" | "admin"` and `isPrimaryAdmin: boolean`
+from the backend (migration 0020), and the app conditionally shows a
+**Moderation** section in `SettingsScreen.tsx` once `user.role` is
+anything other than `"user"` — a moderator sees "Report queue," an admin
+additionally sees "Manage staff."
+
+- **`ModerationQueueScreen.tsx`** — Pending/Actioned/Dismissed tabs (same
+  tab-bar pattern as `ActivityScreen.tsx`), each report showing the
+  reporter, the reason, and a real denormalized summary of what's actually
+  being reported (a Story, a comment with its body, or an account).
+  Tapping a pending report opens Dismiss / Remove Content / Suspend
+  Account, exactly the three actions `POST /api/v1/moderation/reports/:id
+  /resolve` already supported with no mobile screen driving it before now.
+- **`AdminStaffScreen.tsx`** (admin-only) — a username field and a
+  Moderator/Admin toggle to grant access, and the current staff roster
+  with a Remove button per row. The primary admin's row has no Remove
+  button at all — not just disabled, actually absent — since the backend
+  rejects that call unconditionally anyway (see backend/README.md's "A
+  real staff hierarchy" section for exactly why, and how the very first
+  admin gets bootstrapped, since there's deliberately no in-app way to
+  create the first one).
+
+`api/moderation.ts` already existed for the user-facing Report flow
+(`createReport`, `REPORT_REASONS` — `ReportSheet.tsx`'s own module); the
+new moderator/admin calls were added to that same file rather than a
+duplicate one, since they're the same backend module.
 
 ### Edit-in-place for location and date/time content
 

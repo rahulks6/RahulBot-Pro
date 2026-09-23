@@ -22,6 +22,8 @@ import { FollowRequestsScreen } from "../screens/profile/FollowRequestsScreen";
 import { BlockedAccountsScreen } from "../screens/profile/BlockedAccountsScreen";
 import { MutedAccountsScreen } from "../screens/profile/MutedAccountsScreen";
 import { FollowListScreen } from "../screens/profile/FollowListScreen";
+import { ModerationQueueScreen } from "../screens/profile/ModerationQueueScreen";
+import { AdminStaffScreen } from "../screens/profile/AdminStaffScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -172,6 +174,28 @@ function SignedInNavigator(): React.JSX.Element {
           headerTintColor: colors.textPrimary,
           headerShadowVisible: false,
         })}
+      />
+      <Stack.Screen
+        name="ModerationQueue"
+        component={ModerationQueueScreen}
+        options={{
+          headerShown: true,
+          title: "Reports",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="AdminStaff"
+        component={AdminStaffScreen}
+        options={{
+          headerShown: true,
+          title: "Manage Staff",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
       />
     </Stack.Navigator>
   );

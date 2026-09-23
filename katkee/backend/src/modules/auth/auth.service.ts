@@ -22,6 +22,8 @@ export interface PublicUser {
   displayName: string;
   bio: string;
   isPrivate: boolean;
+  role: usersRepo.UserRole;
+  isPrimaryAdmin: boolean;
 }
 
 function toPublicUser(user: usersRepo.UserRecord): PublicUser {
@@ -32,6 +34,8 @@ function toPublicUser(user: usersRepo.UserRecord): PublicUser {
     displayName: user.displayName,
     bio: user.bio,
     isPrivate: user.isPrivate,
+    role: user.role,
+    isPrimaryAdmin: user.isPrimaryAdmin,
   };
 }
 

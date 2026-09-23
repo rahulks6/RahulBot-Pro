@@ -123,6 +123,18 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
         />
       </View>
 
+      {user?.role === "moderator" || user?.role === "admin" ? (
+        <>
+          <Text style={styles.sectionHeader}>Moderation</Text>
+          <View style={styles.card}>
+            <ListRow label="Report queue" onPress={() => navigation.navigate("ModerationQueue")} />
+            {user.role === "admin" ? (
+              <ListRow label="Manage staff" onPress={() => navigation.navigate("AdminStaff")} />
+            ) : null}
+          </View>
+        </>
+      ) : null}
+
       <Text style={styles.sectionHeader}>Support</Text>
       <View style={styles.card}>
         <ListRow label="Help" onPress={() => navigation.navigate("Help")} />

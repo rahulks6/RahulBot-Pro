@@ -14,6 +14,8 @@
     "dev": "ts-node --transpile-only src/index.ts",
     "migrate": "ts-node --transpile-only scripts/migrate.ts",
     "migrate:prod": "node dist/scripts/migrate.js",
+    "seed:admin": "ts-node --transpile-only scripts/seedPrimaryAdmin.ts",
+    "seed:admin:prod": "node dist/scripts/seedPrimaryAdmin.js",
     "pretest": "ts-node --transpile-only scripts/reset-test-db.ts",
     "test": "tsc -p tsconfig.json && node --test dist/test/*.test.js"
   },

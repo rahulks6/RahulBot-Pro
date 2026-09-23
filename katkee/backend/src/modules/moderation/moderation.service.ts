@@ -1,5 +1,6 @@
 import { HttpError } from "../../http/errors";
 import * as usersRepo from "../users/users.repository";
+import type { UserRecord, UserRole } from "../users/users.repository";
 import * as storiesRepo from "../stories/stories.repository";
 import * as commentsRepo from "../stories/comments.repository";
 import * as storiesService from "../stories/stories.service";
@@ -7,11 +8,20 @@ import * as engagementService from "../stories/engagement.service";
 import * as refreshTokensRepo from "../auth/refresh-tokens.repository";
 import * as moderationRepo from "./moderation.repository";
 import type { ReportRow, ReportStatus, TargetType } from "./moderation.repository";
-import type { CreateReportInput, ResolveReportInput } from "./dto";
+import type { CreateReportInput, ResolveReportInput, PromoteInput } from "./dto";
 
+/** An admin can do everything a moderator can, plus grant/revoke staff access (see requireAdmin below). */
 async function requireModerator(viewerId: string): Promise<void> {
   const user = await usersRepo.findUserById(viewerId);
-  if (!user || !user.isModerator) throw new HttpError(403, "Moderator access required.");
+  if (!user || (user.role !== "moderator" && user.role !== "admin")) {
+    throw new HttpError(403, "Moderator access required.");
+  }
+}
+
+async function requireAdmin(viewerId: string): Promise<UserRecord> {
+  const user = await usersRepo.findUserById(viewerId);
+  if (!user || user.role !== "admin") throw new HttpError(403, "Admin access required.");
+  return user;
 }
 
 async function assertReportableAndNotSelf(reporterId: string, targetType: TargetType, targetId: string): Promise<void> {
@@ -99,6 +109,13 @@ export async function listReportsQueue(
 }
 
 async function suspendUser(userId: string): Promise<void> {
+  const target = await usersRepo.findUserById(userId);
+  // The primary admin is never suspendable through any path that reaches
+  // this function — a direct suspend, or a user-report's suspend_user
+  // resolution — regardless of who's asking. There is deliberately no
+  // override; restoring a wrongly-suspended primary admin would need a
+  // direct DB write, the same as granting primary-admin status itself.
+  if (target?.isPrimaryAdmin) throw new HttpError(403, "The primary admin can't be suspended.");
   await usersRepo.setActive(userId, false);
   // Revoking every existing refresh token closes the main persistent
   // bypass: refresh() now re-checks isActive (see auth.service.ts), so a
@@ -152,4 +169,55 @@ export async function unsuspendUserByUsername(moderatorId: string, username: str
   const user = await usersRepo.findUserByUsername(username);
   if (!user) throw new HttpError(404, "User not found.");
   await usersRepo.setActive(user.id, true);
+}
+
+export interface StaffMember {
+  id: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+  isPrimaryAdmin: boolean;
+}
+
+function toStaffMember(user: UserRecord): StaffMember {
+  return { id: user.id, username: user.username, displayName: user.displayName, role: user.role, isPrimaryAdmin: user.isPrimaryAdmin };
+}
+
+/** Admin-only — the roster the admin management screen lists and picks a target from. */
+export async function listStaff(adminId: string): Promise<StaffMember[]> {
+  await requireAdmin(adminId);
+  const staff = await usersRepo.listStaff();
+  return staff.map(toStaffMember);
+}
+
+/**
+ * Grants moderator or admin access. Any admin can promote any other
+ * account (including straight to 'admin', not just 'moderator') — the
+ * spec here is "an admin can create other admins if they want to," not a
+ * multi-step approval chain. The one thing no admin can ever do through
+ * this path is touch is_primary_admin — that's set exactly once, out of
+ * band (see scripts/seedPrimaryAdmin.ts and users.repository.ts's own
+ * comment on why).
+ */
+export async function promoteUser(adminId: string, input: PromoteInput): Promise<StaffMember> {
+  await requireAdmin(adminId);
+  const target = await usersRepo.findUserByUsername(input.username);
+  if (!target) throw new HttpError(404, "User not found.");
+  await usersRepo.setRole(target.id, input.role);
+  return toStaffMember({ ...target, role: input.role });
+}
+
+/**
+ * Revokes moderator/admin access, back to a plain 'user'. The primary
+ * admin can never be demoted — not by another admin, and not by
+ * themselves — matching the same "can't be removed from this position"
+ * rule suspendUser enforces for suspension.
+ */
+export async function demoteUser(adminId: string, username: string): Promise<StaffMember> {
+  await requireAdmin(adminId);
+  const target = await usersRepo.findUserByUsername(username);
+  if (!target) throw new HttpError(404, "User not found.");
+  if (target.isPrimaryAdmin) throw new HttpError(403, "The primary admin can't be demoted.");
+  await usersRepo.setRole(target.id, "user");
+  return toStaffMember({ ...target, role: "user" });
 }
