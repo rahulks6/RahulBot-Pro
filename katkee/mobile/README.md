@@ -740,3 +740,72 @@ recording/zoom code path is real, but only on-device testing can confirm
 audio actually stays in sync — see spec section 45's own test plan,
 unrun here); and, as with the rest of this project, any of it actually
 running on a device.
+
+### Video/audio: the mute toggle now actually publishes, and overlay sync needs no extra code
+
+The editor's mute/unmute control (spec section 44) had exactly the same
+bug overlays and the filter choice did: `StoryEditorScreen` toggled a
+`videoMuted` state that only ever affected its own `<Video muted={...}>`
+preview — nothing sent it to the backend, so a Story muted in the editor
+still published with its original audio. Fixed the same way: it's now
+`draft.audioMuted`, sent on publish (backend migration `0016`), and read
+back by every viewer's own `<Video muted={...}>` (`StoryFeed.tsx`,
+`ArchivedStoryViewerScreen.tsx`, `HighlightViewerScreen.tsx`) instead of
+each hardcoding `false`.
+
+"Overlays stay synced over the video timeline" (spec section 44) turns
+out to need no new code at all, once you look at how overlays are already
+stored: every overlay's `x`/`y`/`scale`/`rotation` is a static value
+normalized to the media container's box (see `storyDraft.ts`), not
+keyframed to a particular video timestamp — an overlay doesn't move
+*during* playback, it sits in one place for the Story's whole duration,
+the same way it would over a photo. Since the editor's preview and every
+viewer both render that same normalized position through the same
+`OverlayBody` component, over a `<Video resizeMode="cover">` that's sized
+identically in both places, "the overlay is in the same spot at every
+point in the video" was already true by construction — there was no
+separate timeline-sync mechanism to build or that could drift.
+
+### Accessibility: what's real, and what's still gesture-only
+
+Spec: "gesture-only interaction must have an accessible alternative where
+needed." What's actually built:
+
+- **Reduced Motion** (`hooks/useReducedMotion.ts`, reading the OS setting
+  live via `AccessibilityInfo`): the double-tap-to-like heart burst in
+  `StoryFeed.tsx` collapses to an instant flash instead of a scaling/fading
+  animation when it's on. The auto-advance progress bar's own timing is
+  left alone deliberately — it's the mechanism that decides when the next
+  Story shows, not decoration, so "reducing" it would break the feature.
+- **Screen-reader labels, roles, and selection state** on every icon-only
+  control this module added or touched: Camera's flash/timer/flip/gallery/
+  close, the editor's Text/Stickers/Draw/mute buttons and filter/audience
+  chips, the sticker sheet's tabs/emoji/stickers/mention results, the text
+  tool's style/align/color/size controls, and the drawing tool's
+  tool/color/size/undo/redo controls.
+- **A real, working non-gesture path for every canvas-object manipulation**
+  (`OverlayAdjustSheet.tsx`): tapping an object opens directional nudge
+  buttons for position, +/- for scale and rotation, and a Delete button —
+  standing in for one-finger drag, two-finger pinch-and-twist, and
+  drag-to-trash respectively, reachable through ordinary button activation.
+  Text additionally gets an "Edit Text" button into the existing style
+  editor. Because a screen reader intercepts raw touches for its own
+  navigation, `DraggableCanvasObject.tsx` also wires this up as a real
+  `accessibilityAction` ("activate"), not just a touch handler with a
+  label — the same technique the camera's capture button uses for "take
+  photo" / "record video" as explicit actions rather than relying on the
+  hold-to-record gesture reaching a screen reader at all.
+- **Touch targets**: every canvas object gets a 16px `hitSlop` on top of
+  its visible size, so a small emoji or a tightly-scaled sticker still has
+  a reasonably sized hit area.
+
+**Not attempted, and disclosed rather than faked:** camera tap-to-focus has
+no button alternative (most devices' continuous autofocus makes this a
+bonus rather than the only way to get a focused shot, but it's still a
+gap); high-contrast mode isn't specifically tested against (the existing
+color tokens already have strong contrast by design — see `BRAND.md` —
+but nothing here verifies WCAG ratios against every combination); and
+none of this has been exercised with an actual screen reader on a real
+device, which is the only way to know for certain whether VoiceOver/
+TalkBack really do route to the `accessibilityActions` this code declares
+rather than fighting the `PanResponder` underneath them.

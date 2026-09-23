@@ -76,7 +76,14 @@ export function TextToolModal({ visible, initialText, initialProperties, onCance
 
         <View style={styles.stylesRow}>
           {STYLES.map((s) => (
-            <Pressable key={s} onPress={() => setStyle(s)} style={[styles.styleChip, style === s && styles.styleChipActive]}>
+            <Pressable
+              key={s}
+              onPress={() => setStyle(s)}
+              style={[styles.styleChip, style === s && styles.styleChipActive]}
+              accessibilityRole="button"
+              accessibilityLabel={`${s} text style`}
+              accessibilityState={{ selected: style === s }}
+            >
               <Text style={[styles.styleChipLabel, style === s && styles.styleChipLabelActive]}>{s}</Text>
             </Pressable>
           ))}
@@ -84,15 +91,32 @@ export function TextToolModal({ visible, initialText, initialProperties, onCance
 
         <View style={styles.alignRow}>
           {ALIGNS.map((a) => (
-            <Pressable key={a} onPress={() => setAlign(a)} style={[styles.alignChip, align === a && styles.alignChipActive]}>
+            <Pressable
+              key={a}
+              onPress={() => setAlign(a)}
+              style={[styles.alignChip, align === a && styles.alignChipActive]}
+              accessibilityRole="button"
+              accessibilityLabel={`Align ${a}`}
+              accessibilityState={{ selected: align === a }}
+            >
               <Text style={[styles.alignChipLabel, align === a && styles.alignChipLabelActive]}>{a}</Text>
             </Pressable>
           ))}
           <View style={styles.sizeRow}>
-            <Pressable onPress={() => setFontSizeIndex((i) => Math.max(0, i - 1))} hitSlop={8}>
+            <Pressable
+              onPress={() => setFontSizeIndex((i) => Math.max(0, i - 1))}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease text size"
+            >
               <Text style={styles.sizeStepper}>A−</Text>
             </Pressable>
-            <Pressable onPress={() => setFontSizeIndex((i) => Math.min(FONT_SIZE_STEPS.length - 1, i + 1))} hitSlop={8}>
+            <Pressable
+              onPress={() => setFontSizeIndex((i) => Math.min(FONT_SIZE_STEPS.length - 1, i + 1))}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Increase text size"
+            >
               <Text style={styles.sizeStepper}>A+</Text>
             </Pressable>
           </View>
@@ -104,9 +128,18 @@ export function TextToolModal({ visible, initialText, initialProperties, onCance
               key={c}
               onPress={() => setColor(c)}
               style={[styles.colorSwatch, { backgroundColor: c }, color === c && styles.colorSwatchActive]}
+              accessibilityRole="button"
+              accessibilityLabel={`Text color ${c}`}
+              accessibilityState={{ selected: color === c }}
             />
           ))}
-          <Pressable onPress={() => setHasBackground((v) => !v)} style={styles.bgToggle}>
+          <Pressable
+            onPress={() => setHasBackground((v) => !v)}
+            style={styles.bgToggle}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle text background"
+            accessibilityState={{ checked: hasBackground }}
+          >
             <Text style={styles.bgToggleLabel}>{hasBackground ? "Background: on" : "Background: off"}</Text>
           </Pressable>
         </View>

@@ -108,7 +108,7 @@ export function ArchivedStoryViewerScreen({ route, navigation }: Props): React.J
           resizeMode="cover"
           onLoad={(meta) => setVideoDurationMs(Math.max(1000, meta.duration * 1000))}
           paused={false}
-          muted={false}
+          muted={detail.audioMuted}
         />
       ) : mediaKind === "photo" ? (
         <Image source={{ uri: mediaUrl, headers: authHeaders }} style={StyleSheet.absoluteFill} resizeMode="cover" />

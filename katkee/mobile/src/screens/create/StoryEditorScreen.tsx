@@ -27,6 +27,7 @@ import { OverlayBody } from "../../components/OverlayBody";
 import { TextToolModal } from "../../components/TextToolModal";
 import { StickerSheet, type StickerAddPayload } from "../../components/StickerSheet";
 import { DrawingCanvas } from "../../components/DrawingCanvas";
+import { OverlayAdjustSheet } from "../../components/OverlayAdjustSheet";
 
 type Props = NativeStackScreenProps<CreateStackParamList, "StoryEditor">;
 type Audience = "public" | "followers";
@@ -53,8 +54,8 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
   const [stickerSheetVisible, setStickerSheetVisible] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [editingOverlayId, setEditingOverlayId] = useState<string | null>(null);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const [isDraggingOverlay, setIsDraggingOverlay] = useState(false);
-  const [videoMuted, setVideoMuted] = useState(false);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -126,6 +127,8 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     | (Overlay & { type: "text" })
     | undefined;
 
+  const selectedOverlay = draft.overlays.find((o) => o.id === selectedOverlayId) ?? null;
+
   const activeFilter = useMemo(() => FILTER_PREVIEWS.find((f) => f.name === draft.filter) ?? FILTER_PREVIEWS[0], [draft.filter]);
 
   const confirmDiscard = useCallback(
@@ -160,6 +163,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           overlays: draft.overlays,
           drawing: draft.drawing,
           filter: filterKey(draft.filter),
+          audioMuted: draft.audioMuted,
         },
         accessToken,
       );
@@ -185,7 +189,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
             style={StyleSheet.absoluteFill}
             resizeMode="cover"
             repeat
-            muted={videoMuted}
+            muted={draft.audioMuted}
             paused={false}
           />
         )}
@@ -194,6 +198,15 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           <View
             pointerEvents="none"
             style={[StyleSheet.absoluteFill, { backgroundColor: activeFilter.overlayColor, opacity: activeFilter.overlayOpacity }]}
+          />
+        ) : null}
+
+        {!drawMode && selectedOverlayId ? (
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setSelectedOverlayId(null)}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
           />
         ) : null}
 
@@ -206,13 +219,19 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
                 containerHeight={containerSize.height}
                 isOverTrash={isOverTrash}
                 onChange={updateOverlay}
-                onDeleted={deleteOverlay}
+                onDeleted={(id) => {
+                  deleteOverlay(id);
+                  setSelectedOverlayId((s) => (s === id ? null : s));
+                }}
                 onDragStateChange={setIsDraggingOverlay}
+                onTap={(id) => setSelectedOverlayId(id)}
                 onDoubleTap={(id) => {
                   const o = draft.overlays.find((x) => x.id === id);
                   if (o?.type === "text") {
                     setEditingOverlayId(id);
                     setTextModalVisible(true);
+                  } else {
+                    setSelectedOverlayId(id);
                   }
                 }}
               />
@@ -256,7 +275,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
 
       {!drawMode ? (
         <View style={styles.topBar}>
-          <Pressable onPress={onClose} hitSlop={12}>
+          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close editor">
             <Text style={styles.topIcon}>✕</Text>
           </Pressable>
           <View style={styles.topRight}>
@@ -266,18 +285,25 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
                 setTextModalVisible(true);
               }}
               hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Add text"
             >
               <Text style={styles.topIcon}>Text</Text>
             </Pressable>
-            <Pressable onPress={() => setStickerSheetVisible(true)} hitSlop={12}>
+            <Pressable onPress={() => setStickerSheetVisible(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Add sticker, emoji, mention, location, or date and time">
               <Text style={styles.topIcon}>Stickers</Text>
             </Pressable>
-            <Pressable onPress={() => setDrawMode(true)} hitSlop={12}>
+            <Pressable onPress={() => setDrawMode(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Draw">
               <Text style={styles.topIcon}>Draw</Text>
             </Pressable>
             {kind === "video" ? (
-              <Pressable onPress={() => setVideoMuted((m) => !m)} hitSlop={12}>
-                <Text style={styles.topIcon}>{videoMuted ? "Muted" : "Audio on"}</Text>
+              <Pressable
+                onPress={() => setDraft((d) => ({ ...d, audioMuted: !d.audioMuted }))}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={draft.audioMuted ? "Audio muted, tap to turn on" : "Audio on, tap to mute"}
+              >
+                <Text style={styles.topIcon}>{draft.audioMuted ? "Muted" : "Audio on"}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -292,6 +318,8 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
                 key={f.name}
                 onPress={() => setDraft((d) => ({ ...d, filter: f.name }))}
                 style={[styles.filterChip, draft.filter === f.name && styles.filterChipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: draft.filter === f.name }}
               >
                 <Text style={[styles.filterChipLabel, draft.filter === f.name && styles.filterChipLabelActive]}>{f.name}</Text>
               </Pressable>
@@ -313,6 +341,8 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
                 key={a}
                 onPress={() => setAudience(a)}
                 style={[styles.audienceChip, audience === a && styles.audienceChipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: audience === a }}
               >
                 <Text style={[styles.audienceLabel, audience === a && styles.audienceLabelActive]}>
                   {a === "public" ? "Public" : "Followers"}
@@ -355,6 +385,16 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
         onDone={addOrUpdateText}
       />
       <StickerSheet visible={stickerSheetVisible} onClose={() => setStickerSheetVisible(false)} onAdd={addSticker} />
+      <OverlayAdjustSheet
+        overlay={selectedOverlay}
+        onChange={updateOverlay}
+        onEditText={(id) => {
+          setEditingOverlayId(id);
+          setTextModalVisible(true);
+        }}
+        onDelete={(id) => deleteOverlay(id)}
+        onClose={() => setSelectedOverlayId(null)}
+      />
     </View>
   );
 }

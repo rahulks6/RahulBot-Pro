@@ -138,17 +138,24 @@ export function DrawingCanvas({ containerWidth, containerHeight, strokes, onChan
       <View style={styles.toolbar}>
         <View style={styles.toolRow}>
           {TOOLS.map((t) => (
-            <Pressable key={t} onPress={() => setTool(t)} style={[styles.toolChip, tool === t && styles.toolChipActive]}>
+            <Pressable
+              key={t}
+              onPress={() => setTool(t)}
+              style={[styles.toolChip, tool === t && styles.toolChipActive]}
+              accessibilityRole="button"
+              accessibilityLabel={`${t} tool`}
+              accessibilityState={{ selected: tool === t }}
+            >
               <Text style={[styles.toolLabel, tool === t && styles.toolLabelActive]}>{t}</Text>
             </Pressable>
           ))}
-          <Pressable onPress={undo} hitSlop={8} style={styles.iconButton}>
+          <Pressable onPress={undo} hitSlop={8} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Undo">
             <Text style={styles.iconLabel}>↺</Text>
           </Pressable>
-          <Pressable onPress={redo} hitSlop={8} style={styles.iconButton}>
+          <Pressable onPress={redo} hitSlop={8} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Redo">
             <Text style={styles.iconLabel}>↻</Text>
           </Pressable>
-          <Pressable onPress={onDone} style={styles.doneButton}>
+          <Pressable onPress={onDone} style={styles.doneButton} accessibilityRole="button" accessibilityLabel="Done drawing">
             <Text style={styles.doneLabel}>Done</Text>
           </Pressable>
         </View>
@@ -156,14 +163,31 @@ export function DrawingCanvas({ containerWidth, containerHeight, strokes, onChan
         {tool !== "eraser" ? (
           <View style={styles.colorRow}>
             {COLORS.map((c) => (
-              <Pressable key={c} onPress={() => setColor(c)} style={[styles.colorSwatch, { backgroundColor: c }, color === c && styles.colorSwatchActive]} />
+              <Pressable
+                key={c}
+                onPress={() => setColor(c)}
+                style={[styles.colorSwatch, { backgroundColor: c }, color === c && styles.colorSwatchActive]}
+                accessibilityRole="button"
+                accessibilityLabel={`Draw color ${c}`}
+                accessibilityState={{ selected: color === c }}
+              />
             ))}
             <View style={styles.sizeRow}>
-              <Pressable onPress={() => setSizeIndex((i) => Math.max(0, i - 1))} hitSlop={8}>
+              <Pressable
+                onPress={() => setSizeIndex((i) => Math.max(0, i - 1))}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Decrease brush size"
+              >
                 <Text style={styles.sizeStepper}>−</Text>
               </Pressable>
               <View style={[styles.sizePreview, { width: previewSize, height: previewSize, borderRadius: previewSize / 2, backgroundColor: color }]} />
-              <Pressable onPress={() => setSizeIndex((i) => Math.min(SIZE_STEPS.length - 1, i + 1))} hitSlop={8}>
+              <Pressable
+                onPress={() => setSizeIndex((i) => Math.min(SIZE_STEPS.length - 1, i + 1))}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Increase brush size"
+              >
                 <Text style={styles.sizeStepper}>+</Text>
               </Pressable>
             </View>

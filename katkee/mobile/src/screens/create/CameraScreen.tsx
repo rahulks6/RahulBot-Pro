@@ -295,23 +295,31 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
       </View>
 
       {zoomIndicator.visible ? (
-        <View style={styles.zoomBadge}>
-          <Text style={styles.zoomBadgeLabel}>{zoomIndicator.label}</Text>
+        <View style={styles.zoomBadge} accessibilityLiveRegion="polite">
+          <Text style={styles.zoomBadgeLabel}>Zoom {zoomIndicator.label}</Text>
         </View>
       ) : null}
 
       <View style={styles.topBar}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
+        <Pressable onPress={() => navigation.goBack()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close camera">
           <Text style={styles.topIcon}>✕</Text>
         </Pressable>
         <View style={styles.topRight}>
-          <Pressable onPress={() => setFlash((f) => (f === "off" ? "on" : "off"))} hitSlop={12}>
+          <Pressable
+            onPress={() => setFlash((f) => (f === "off" ? "on" : "off"))}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Flash"
+            accessibilityState={{ selected: flash === "on" }}
+          >
             <Text style={[styles.topIcon, flash === "on" && styles.topIconActive]}>⚡</Text>
           </Pressable>
           <Pressable
             onPress={() => setTimerSeconds((t) => (t === 0 ? 3 : t === 3 ? 10 : 0))}
             hitSlop={12}
             style={styles.timerButton}
+            accessibilityRole="button"
+            accessibilityLabel={timerSeconds === 0 ? "Timer off" : `Timer, ${timerSeconds} seconds`}
           >
             <Text style={[styles.topIcon, timerSeconds > 0 && styles.topIconActive]}>
               {timerSeconds === 0 ? "Timer" : `${timerSeconds}s`}
@@ -331,13 +339,46 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
       ) : null}
 
       <View style={styles.bottomBar}>
-        <Pressable onPress={openGallery} hitSlop={12} style={styles.sideButton}>
+        <Pressable onPress={openGallery} hitSlop={12} style={styles.sideButton} accessibilityRole="button" accessibilityLabel="Choose from gallery">
           <Text style={styles.sideButtonLabel}>Gallery</Text>
         </Pressable>
 
-        <View {...captureGesture.panHandlers} style={[styles.captureButton, isRecording && styles.captureButtonRecording]} />
+        {/*
+          The gesture itself (tap=photo, hold+drag=record-and-zoom) can be
+          unreachable under a screen reader, which intercepts raw touches
+          for its own navigation — accessibilityActions gives VoiceOver/
+          TalkBack a real, non-gesture path to the same two outcomes via
+          their standard activate gesture and actions menu, not just a label
+          on an otherwise-inaccessible control.
+        */}
+        <View
+          {...captureGesture.panHandlers}
+          style={[styles.captureButton, isRecording && styles.captureButtonRecording]}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={isRecording ? "Recording — activate to stop" : "Take photo"}
+          accessibilityHint={isRecording ? undefined : "Use the actions menu to record video instead"}
+          accessibilityActions={[
+            { name: "activate", label: isRecording ? "Stop recording" : "Take photo" },
+            { name: "longpress", label: "Record video" },
+          ]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === "activate") {
+              if (isRecording) void stopRecording();
+              else void takePhoto();
+            } else if (event.nativeEvent.actionName === "longpress" && !isRecording) {
+              startRecording();
+            }
+          }}
+        />
 
-        <Pressable onPress={() => setPosition((p) => (p === "back" ? "front" : "back"))} hitSlop={12} style={styles.sideButton}>
+        <Pressable
+          onPress={() => setPosition((p) => (p === "back" ? "front" : "back"))}
+          hitSlop={12}
+          style={styles.sideButton}
+          accessibilityRole="button"
+          accessibilityLabel="Flip camera"
+        >
           <Text style={styles.sideButtonLabel}>Flip</Text>
         </Pressable>
       </View>

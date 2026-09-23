@@ -309,7 +309,7 @@ describe("the 24-hour lifecycle", () => {
     const me = await client.get("/api/v1/auth/me", authHeader(owner.accessToken));
     const published = await storiesService.publishStory(
       me.body.user.id,
-      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true, overlays: [], drawing: [], filter: "original" },
+      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true, overlays: [], drawing: [], filter: "original", audioMuted: false },
       { ttlSecondsOverride: 1 },
     );
 
@@ -433,15 +433,25 @@ describe("Camera + Editor: overlays, filter, and drawing survive publish", () =>
       { id: "e1", type: "emoji", x: 0.2, y: 0.8, scale: 1, rotation: 0, zIndex: 2, properties: { emoji: "🔥" } },
     ];
     const drawing = [{ id: "s1", tool: "pen", color: "#FCB020", width: 0.01, points: [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }] }];
-    const res = await publishStory(owner.accessToken, mediaId, { overlays, filter: "cinema", drawing });
+    const res = await publishStory(owner.accessToken, mediaId, { overlays, filter: "cinema", drawing, audioMuted: true });
     assert.equal(res.status, 201);
     assert.deepEqual(res.body.story.overlays, overlays);
     assert.deepEqual(res.body.story.drawing, drawing);
     assert.equal(res.body.story.filter, "cinema");
+    assert.equal(res.body.story.audioMuted, true, "the editor's mute toggle must actually reach the published Story");
 
     const fetched = await client.get(`/api/v1/stories/${res.body.story.id}`, authHeader(owner.accessToken));
     assert.deepEqual(fetched.body.story.overlays, overlays);
     assert.equal(fetched.body.story.filter, "cinema");
+    assert.equal(fetched.body.story.audioMuted, true);
+  });
+
+  it("audioMuted defaults to false — original recorded audio is kept by default", async () => {
+    const owner = await signupUser();
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const res = await publishStory(owner.accessToken, mediaId, {});
+    assert.equal(res.status, 201);
+    assert.equal(res.body.story.audioMuted, false);
   });
 
   it("drops malformed overlay entries instead of rejecting the whole publish", async () => {

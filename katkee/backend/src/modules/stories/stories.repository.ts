@@ -5,7 +5,7 @@ export type Audience = "public" | "followers";
 export type CommentSetting = "everyone" | "followers" | "disabled";
 
 const STORY_COLUMNS =
-  "id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at, overlays, drawing, filter";
+  "id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at, overlays, drawing, filter, audio_muted";
 
 export interface StoryRecord {
   id: string;
@@ -21,6 +21,7 @@ export interface StoryRecord {
   overlays: StoryOverlay[];
   drawing: DrawStroke[];
   filter: FilterKey;
+  audioMuted: boolean;
 }
 
 function parseJsonArray<T>(raw: string | null | undefined): T[] {
@@ -48,6 +49,7 @@ function mapRow(row: Row): StoryRecord {
     overlays: parseJsonArray<StoryOverlay>(row.overlays),
     drawing: parseJsonArray<DrawStroke>(row.drawing),
     filter: (row.filter as FilterKey) ?? "original",
+    audioMuted: row.audio_muted === "t",
   };
 }
 
@@ -62,10 +64,11 @@ export async function createStory(input: {
   overlays: StoryOverlay[];
   drawing: DrawStroke[];
   filter: FilterKey;
+  audioMuted: boolean;
 }): Promise<StoryRecord> {
   const row = await queryOne(
-    `INSERT INTO stories (owner_id, media_id, caption, audience, allow_comments, allow_sharing, expires_at, overlays, drawing, filter)
-     VALUES (:'owner_id', :'media_id', :'caption', :'audience', :'allow_comments', :'allow_sharing', :'expires_at', :'overlays'::jsonb, :'drawing'::jsonb, :'filter')
+    `INSERT INTO stories (owner_id, media_id, caption, audience, allow_comments, allow_sharing, expires_at, overlays, drawing, filter, audio_muted)
+     VALUES (:'owner_id', :'media_id', :'caption', :'audience', :'allow_comments', :'allow_sharing', :'expires_at', :'overlays'::jsonb, :'drawing'::jsonb, :'filter', :'audio_muted')
      RETURNING ${STORY_COLUMNS}`,
     {
       owner_id: input.ownerId,
@@ -78,6 +81,7 @@ export async function createStory(input: {
       overlays: JSON.stringify(input.overlays),
       drawing: JSON.stringify(input.drawing),
       filter: input.filter,
+      audio_muted: input.audioMuted,
     },
   );
   if (!row) throw new Error("Insert did not return a row");

@@ -25,6 +25,17 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "stickers", label: "Stickers" },
 ];
 
+const STICKER_NAMES: Record<string, string> = {
+  spark: "Spark",
+  "heart-line": "Heart outline",
+  "star-outline": "Star outline",
+  wave: "Wave",
+  flame: "Flame",
+  confetti: "Confetti",
+  ring: "Ring",
+  bolt: "Bolt",
+};
+
 const EMOJI_SET = ["😀", "😂", "😍", "🔥", "🎉", "❤️", "👏", "😢", "😎", "🥳", "👀", "✨", "💯", "🙌", "😮", "🤔", "😴", "🙏", "💪", "😅", "🤩", "😭", "👍", "🎂"];
 
 export type StickerAddPayload =
@@ -157,12 +168,18 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
-      <Pressable style={styles.backdrop} onPress={close} />
+      <Pressable style={styles.backdrop} onPress={close} accessibilityRole="button" accessibilityLabel="Close" />
       <View style={styles.sheet}>
         <View style={styles.handle} />
         <View style={styles.tabRow}>
           {TABS.map((t) => (
-            <Pressable key={t.key} onPress={() => setTab(t.key)} style={[styles.tab, tab === t.key && styles.tabActive]}>
+            <Pressable
+              key={t.key}
+              onPress={() => setTab(t.key)}
+              style={[styles.tab, tab === t.key && styles.tabActive]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === t.key }}
+            >
               <Text style={[styles.tabLabel, tab === t.key && styles.tabLabelActive]}>{t.label}</Text>
             </Pressable>
           ))}
@@ -175,7 +192,7 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
               keyExtractor={(e) => e}
               numColumns={6}
               renderItem={({ item }) => (
-                <Pressable style={styles.emojiCell} onPress={() => addEmoji(item)}>
+                <Pressable style={styles.emojiCell} onPress={() => addEmoji(item)} accessibilityRole="button" accessibilityLabel={`Add ${item} emoji`}>
                   <Text style={styles.emojiGlyph}>{item}</Text>
                 </Pressable>
               )}
@@ -197,7 +214,12 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
                 data={mentionResults}
                 keyExtractor={(u) => u.id}
                 renderItem={({ item }) => (
-                  <Pressable style={styles.resultRow} onPress={() => addMention(item)}>
+                  <Pressable
+                    style={styles.resultRow}
+                    onPress={() => addMention(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Mention ${item.displayName}, @${item.username}`}
+                  >
                     <Text style={typography.body}>{item.displayName}</Text>
                     <Text style={styles.resultUsername}>@{item.username}</Text>
                   </Pressable>
@@ -247,7 +269,12 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
               keyExtractor={(s) => s}
               numColumns={4}
               renderItem={({ item }) => (
-                <Pressable style={styles.stickerCell} onPress={() => addSticker(item)}>
+                <Pressable
+                  style={styles.stickerCell}
+                  onPress={() => addSticker(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add ${STICKER_NAMES[item] ?? "sticker"}`}
+                >
                   <Text style={styles.stickerGlyph}>{STICKER_GLYPHS[item]}</Text>
                 </Pressable>
               )}

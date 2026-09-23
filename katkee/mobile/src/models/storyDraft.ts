@@ -98,13 +98,21 @@ export interface StoryDraft {
   overlays: Overlay[];
   drawing: DrawStroke[];
   caption: string;
+  /** Video only — original recorded audio is kept by default (spec section 44). */
+  audioMuted: boolean;
 }
 
 export function createEmptyDraft(sourceMedia: SourceMedia): StoryDraft {
-  return { sourceMedia, filter: "Original", overlays: [], drawing: [], caption: "" };
+  return { sourceMedia, filter: "Original", overlays: [], drawing: [], caption: "", audioMuted: false };
 }
 
 /** Used for the discard-protection prompt (spec section 27) — has the user actually changed anything? */
 export function hasMeaningfulEdits(draft: StoryDraft): boolean {
-  return draft.filter !== "Original" || draft.overlays.length > 0 || draft.drawing.length > 0 || draft.caption.trim().length > 0;
+  return (
+    draft.filter !== "Original" ||
+    draft.overlays.length > 0 ||
+    draft.drawing.length > 0 ||
+    draft.caption.trim().length > 0 ||
+    draft.audioMuted
+  );
 }

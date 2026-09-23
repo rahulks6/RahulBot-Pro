@@ -14,6 +14,7 @@ import { StoryMoreMenu } from "../../components/StoryMoreMenu";
 import { StoryInsightsSheet } from "../../components/StoryInsightsSheet";
 import { StoryOverlayLayer, useContainerLayout } from "../../components/StoryOverlayLayer";
 import { filterNameFromKey } from "../../models/filterPreviews";
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 
 const PHOTO_DURATION_MS = 5000;
 const HOLD_DELAY_MS = 250;
@@ -55,6 +56,7 @@ export interface StoryFeedProps {
  */
 export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpenDM, onOpenProfile }: StoryFeedProps): React.JSX.Element {
   const { user: authUser, accessToken } = useAuth();
+  const reducedMotion = useReducedMotion();
   const [containerSize, onContainerLayout] = useContainerLayout();
 
   const [creatorIndex, setCreatorIndex] = useState(startIndex);
@@ -270,16 +272,22 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
     if (!accessToken || !currentStory || !detail || detail.viewerHasLiked) return;
     setDetail((d) => (d ? { ...d, viewerHasLiked: true, likeCount: d.likeCount + 1 } : d));
     Vibration.vibrate(10); // no haptics package available — a short vibration is a real, if blunter, substitute
+    // Reduce Motion (spec: "reduced-motion support where practical") — the
+    // pulse is purely decorative, so it collapses to an instant flash
+    // (duration 0) rather than the scaling/fading animation. The
+    // confirmation itself (the heart briefly appearing) still happens;
+    // only its motion is removed.
+    const pulseDuration = reducedMotion ? 0 : 150;
     Animated.sequence([
-      Animated.timing(heartPulse, { toValue: 1, duration: 150, useNativeDriver: true }),
-      Animated.timing(heartPulse, { toValue: 0, duration: 150, useNativeDriver: true }),
+      Animated.timing(heartPulse, { toValue: 1, duration: pulseDuration, useNativeDriver: true }),
+      Animated.timing(heartPulse, { toValue: 0, duration: pulseDuration, useNativeDriver: true, delay: reducedMotion ? 300 : 0 }),
     ]).start();
     try {
       await likeStory(currentStory.id, accessToken);
     } catch {
       setDetail((d) => (d ? { ...d, viewerHasLiked: false, likeCount: Math.max(0, d.likeCount - 1) } : d));
     }
-  }, [accessToken, currentStory, detail, heartPulse]);
+  }, [accessToken, currentStory, detail, heartPulse, reducedMotion]);
 
   const toggleLike = useCallback(async () => {
     if (!accessToken || !currentStory || !detail) return;
@@ -398,6 +406,7 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
           source={{ uri: mediaUrl, headers: authHeaders }}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
+          muted={detail?.audioMuted ?? currentStory.audioMuted}
           paused={paused || sheetOpen}
           onLoad={(meta) => setVideoDurationMs(Math.max(meta.duration * 1000, 1000))}
           onEnd={() => {

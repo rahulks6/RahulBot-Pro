@@ -830,3 +830,17 @@ fetch, with no edit to the Story itself. Five tests in
 `test/stories.test.ts`'s "Camera + Editor" describe block cover this:
 round-trip fidelity, malformed-overlay dropping, live mention resolution,
 block-hides-mention, and deletion-hides-mention.
+
+## Video mute/unmute (migration 0016) — the same class of bug, closed the same way
+
+The editor's video mute/unmute control (spec section 44: "original
+recorded audio kept by default with a simple mute/unmute control that
+affects the published Story") had the identical problem overlays did
+before migration 0015: it only ever changed the editor's own preview
+playback, never the published Story. `stories.audio_muted BOOLEAN NOT
+NULL DEFAULT false` (migration 0016) closes it — `parsePublishStoryInput`
+accepts an optional `audioMuted` boolean (default `false`, so "keep the
+original audio" is what happens if a caller sends nothing), and every
+viewer-facing read now returns it. Two tests cover it: a published Story
+returns exactly the `audioMuted` it was published with, and it defaults to
+`false` when omitted.

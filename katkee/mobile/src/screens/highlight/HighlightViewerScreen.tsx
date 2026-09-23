@@ -147,7 +147,7 @@ export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.E
           resizeMode="cover"
           onLoad={(meta) => setVideoDurationMs(Math.max(1000, meta.duration * 1000))}
           paused={false}
-          muted={false}
+          muted={detail?.audioMuted ?? false}
         />
       ) : mediaKind === "photo" ? (
         <Image source={{ uri: mediaUrl, headers: authHeaders }} style={StyleSheet.absoluteFill} resizeMode="cover" />

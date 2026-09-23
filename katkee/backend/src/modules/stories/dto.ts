@@ -16,6 +16,7 @@ export interface PublishStoryInput {
   overlays: StoryOverlay[];
   drawing: DrawStroke[];
   filter: string;
+  audioMuted: boolean;
 }
 
 const MAX_OVERLAYS = 40;
@@ -166,6 +167,8 @@ export function parsePublishStoryInput(body: unknown): PublishStoryInput {
   if (typeof allowSharing !== "boolean") errors.allowSharing = "allowSharing must be a boolean.";
 
   const filter = typeof b.filter === "string" && FILTER_NAMES.includes(b.filter as (typeof FILTER_NAMES)[number]) ? b.filter : "original";
+  const audioMuted = b.audioMuted === undefined ? false : b.audioMuted;
+  if (typeof audioMuted !== "boolean") errors.audioMuted = "audioMuted must be a boolean.";
 
   if (Object.keys(errors).length > 0) throw new ValidationError(errors);
   return {
@@ -177,6 +180,7 @@ export function parsePublishStoryInput(body: unknown): PublishStoryInput {
     overlays: parseOverlays(b.overlays),
     drawing: parseDrawing(b.drawing),
     filter,
+    audioMuted: audioMuted as boolean,
   };
 }
 

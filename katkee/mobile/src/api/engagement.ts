@@ -18,6 +18,7 @@ export interface StoryDetail {
   drawing: DrawStroke[];
   /** Lowercase key — see models/storyDraft.ts's filterKey/filterNameFromKey. */
   filter: string;
+  audioMuted: boolean;
 }
 
 export interface Comment {

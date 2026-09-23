@@ -9,6 +9,8 @@ interface Props {
   containerHeight: number;
   isOverTrash: (x: number, y: number) => boolean;
   onChange: (id: string, patch: Partial<Pick<Overlay, "x" | "y" | "scale" | "rotation">>) => void;
+  /** A clean tap (no drag) — selects the object; see OverlayAdjustSheet, the non-gesture path to move/resize/rotate/delete. */
+  onTap: (id: string) => void;
   onDoubleTap: (id: string) => void;
   onDragStateChange: (dragging: boolean) => void;
   onDeleted: (id: string) => void;
@@ -47,6 +49,7 @@ export function DraggableCanvasObject({
   containerHeight,
   isOverTrash,
   onChange,
+  onTap,
   onDoubleTap,
   onDragStateChange,
   onDeleted,
@@ -115,17 +118,38 @@ export function DraggableCanvasObject({
             if (touch && isOverTrash(touch.pageX, touch.pageY)) {
               onDeleted(overlay.id);
             }
+          } else if (gestureStart.current.pinchDistance === 0) {
+            // Neither a drag nor a pinch happened — a clean tap, selecting
+            // this object (see OverlayAdjustSheet's non-gesture path).
+            onTap(overlay.id);
           }
+          gestureStart.current.pinchDistance = 0;
           setDragging(false);
           onDragStateChange(false);
         },
       }),
-    [overlay, containerWidth, containerHeight, dragging, onChange, onDoubleTap, onDragStateChange, isOverTrash, onDeleted],
+    [overlay, containerWidth, containerHeight, dragging, onChange, onTap, onDoubleTap, onDragStateChange, isOverTrash, onDeleted],
   );
 
   return (
     <View
       {...panResponder.panHandlers}
+      hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={`${overlayDescription(overlay)}. Activate to open position, size, and rotation controls without gestures.`}
+      accessibilityHint="Drag to move, pinch with two fingers to resize and rotate, or activate for button controls"
+      // A screen reader intercepts raw touches for its own navigation, so
+      // the PanResponder-driven `onTap` above this comment (fired from a
+      // real touch release) never reaches this view while VoiceOver/
+      // TalkBack is running — its standard "activate" gesture is delivered
+      // here instead, as a real accessibility action, not a touch. Without
+      // this, "tap = select" (and everything the OverlayAdjustSheet it
+      // opens leads to) would be gesture-only after all.
+      accessibilityActions={[{ name: "activate", label: "Open controls" }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "activate") onTap(overlay.id);
+      }}
       style={[
         styles.wrapper,
         {
@@ -139,6 +163,26 @@ export function DraggableCanvasObject({
       <OverlayBody overlay={overlay} containerWidth={containerWidth} containerHeight={containerHeight} />
     </View>
   );
+}
+
+/** A short, human description for screen readers — the on-canvas glyph/text alone isn't always self-describing (an emoji, a sticker glyph). */
+function overlayDescription(overlay: Overlay): string {
+  switch (overlay.type) {
+    case "text":
+      return `Text: ${overlay.properties.text}`;
+    case "emoji":
+      return `Emoji ${overlay.properties.emoji}`;
+    case "mention":
+      return `Mention of @${overlay.properties.username ?? "unknown"}`;
+    case "location":
+      return `Location: ${overlay.properties.label}`;
+    case "datetime":
+      return overlay.properties.display;
+    case "sticker":
+      return "Sticker";
+    default:
+      return "Story object";
+  }
 }
 
 const styles = StyleSheet.create({

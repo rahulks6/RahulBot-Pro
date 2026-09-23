@@ -24,6 +24,7 @@ export interface PublicStory {
   overlays: StoryOverlay[];
   drawing: DrawStroke[];
   filter: FilterKey;
+  audioMuted: boolean;
 }
 
 /**
@@ -73,6 +74,7 @@ async function toPublicStory(story: StoryRecord, viewerId: string): Promise<Publ
     overlays: await resolveOverlaysForViewer(story.overlays, viewerId),
     drawing: story.drawing,
     filter: story.filter,
+    audioMuted: story.audioMuted,
   };
 }
 
@@ -111,6 +113,7 @@ export async function publishStory(
     overlays: input.overlays,
     drawing: input.drawing,
     filter: input.filter as FilterKey,
+    audioMuted: input.audioMuted,
   });
   return toPublicStory(story, ownerId);
 }

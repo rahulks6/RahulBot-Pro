@@ -16,6 +16,7 @@ export interface PublicStory {
   drawing: DrawStroke[];
   /** Lowercase key (e.g. "cinema") — see models/storyDraft.ts's filterKey/filterNameFromKey. */
   filter: string;
+  audioMuted: boolean;
 }
 
 export interface FeedEntry {
@@ -38,6 +39,7 @@ export interface PublishStoryInput {
   drawing?: DrawStroke[];
   /** Lowercase key — see models/storyDraft.ts's filterKey. */
   filter?: string;
+  audioMuted?: boolean;
 }
 
 export function publishStory(input: PublishStoryInput, accessToken: string): Promise<{ story: PublicStory }> {
