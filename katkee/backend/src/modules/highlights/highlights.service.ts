@@ -6,7 +6,8 @@ import * as storiesService from "../stories/stories.service";
 import type { StoryDetail } from "../stories/stories.service";
 import * as highlightsRepo from "./highlights.repository";
 import type { HighlightWithItems } from "./highlights.repository";
-import type { CreateHighlightInput, UpdateHighlightInput } from "./dto";
+import { ValidationError } from "../auth/dto";
+import type { CreateHighlightInput, ReorderHighlightsInput, UpdateHighlightInput } from "./dto";
 
 async function requireOwnedNonDeletedStories(ownerId: string, storyIds: string[]): Promise<void> {
   for (const storyId of storyIds) {
@@ -99,6 +100,32 @@ export async function updateHighlight(
 export async function deleteHighlight(ownerId: string, highlightId: string): Promise<void> {
   await requireOwnedHighlight(highlightId, ownerId);
   await highlightsRepo.deleteHighlight(highlightId);
+}
+
+/**
+ * The client always sends its *entire* current Highlight order (it
+ * already has the full list to drag around — that's how the reorder UI
+ * gets built in the first place), never a partial reshuffle — the same
+ * "full replace, not a diff/patch" shape as replaceHighlightItems one
+ * level down. Rejects anything that isn't exactly this owner's current
+ * set: a stale client (another device edited the list in between), a
+ * missing id, or someone else's Highlight id, are all real bugs to
+ * surface immediately rather than silently drop or duplicate a row.
+ */
+export async function reorderHighlights(ownerId: string, input: ReorderHighlightsInput): Promise<HighlightSummary[]> {
+  const current = await highlightsRepo.listForOwner(ownerId);
+  const currentIds = new Set(current.map((h) => h.id));
+  const givenIds = new Set(input.highlightIds);
+
+  if (currentIds.size !== givenIds.size || [...currentIds].some((id) => !givenIds.has(id))) {
+    throw new ValidationError({
+      highlightIds: "highlightIds must contain exactly your current set of Highlights, in the new order.",
+    });
+  }
+
+  await highlightsRepo.reorderHighlights(ownerId, input.highlightIds);
+  const reordered = await highlightsRepo.listForOwner(ownerId);
+  return reordered.map((h) => toSummary(h));
 }
 
 export async function listHighlightsForUser(username: string, viewerId: string): Promise<HighlightSummary[]> {

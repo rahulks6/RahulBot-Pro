@@ -235,3 +235,57 @@ describe("deleting a Story removes it from every Highlight", () => {
     assert.equal(afterDelete.body.highlight.items[0].storyId, storyB);
   });
 });
+
+async function createHighlight(accessToken: string, title: string): Promise<string> {
+  const storyId = await publishStory(accessToken);
+  const res = await client.post("/api/v1/highlights", { title, storyIds: [storyId] }, authHeader(accessToken));
+  return res.body.highlight.id as string;
+}
+
+describe("reordering Highlights", () => {
+  it("reorders to exactly the given order and a fresh Highlight still joins the end", async () => {
+    const owner = await signupUser();
+    const a = await createHighlight(owner.accessToken, "A");
+    const b = await createHighlight(owner.accessToken, "B");
+    const c = await createHighlight(owner.accessToken, "C");
+
+    const listedBefore = await client.get(`/api/v1/users/${owner.input.username}/highlights`, authHeader(owner.accessToken));
+    assert.deepEqual(
+      listedBefore.body.highlights.map((h: { id: string }) => h.id),
+      [a, b, c],
+      "creation order to start",
+    );
+
+    const reordered = await client.post("/api/v1/highlights/reorder", { highlightIds: [c, a, b] }, authHeader(owner.accessToken));
+    assert.equal(reordered.status, 200);
+    assert.deepEqual(reordered.body.highlights.map((h: { id: string }) => h.id), [c, a, b]);
+
+    const listedAfter = await client.get(`/api/v1/users/${owner.input.username}/highlights`, authHeader(owner.accessToken));
+    assert.deepEqual(listedAfter.body.highlights.map((h: { id: string }) => h.id), [c, a, b], "reorder persists");
+
+    const d = await createHighlight(owner.accessToken, "D");
+    const listedWithD = await client.get(`/api/v1/users/${owner.input.username}/highlights`, authHeader(owner.accessToken));
+    assert.deepEqual(
+      listedWithD.body.highlights.map((h: { id: string }) => h.id),
+      [c, a, b, d],
+      "a newly-created Highlight joins the end of the existing order, not the start",
+    );
+  });
+
+  it("rejects a partial or stale set with 422 rather than silently dropping a Highlight", async () => {
+    const owner = await signupUser();
+    const a = await createHighlight(owner.accessToken, "A");
+    const b = await createHighlight(owner.accessToken, "B");
+
+    const missingOne = await client.post("/api/v1/highlights/reorder", { highlightIds: [a] }, authHeader(owner.accessToken));
+    assert.equal(missingOne.status, 422);
+
+    const unrelated = await createHighlight((await signupUser()).accessToken, "Stranger's");
+    const foreignId = await client.post(
+      "/api/v1/highlights/reorder",
+      { highlightIds: [a, b, unrelated] },
+      authHeader(owner.accessToken),
+    );
+    assert.equal(foreignId.status, 422, "someone else's Highlight id can't be smuggled into your own order");
+  });
+});

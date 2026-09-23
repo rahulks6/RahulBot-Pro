@@ -31,9 +31,10 @@ const PHOTO_DURATION_MS = 5000;
  */
 export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.Element {
   const { highlightId, title } = route.params;
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
 
   const [items, setItems] = useState<HighlightItem[] | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [mediaKind, setMediaKind] = useState<"photo" | "video" | null>(null);
   const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
@@ -46,7 +47,10 @@ export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.E
     let cancelled = false;
     getHighlightDetail(highlightId, accessToken)
       .then(({ highlight }) => {
-        if (!cancelled) setItems(highlight.items);
+        if (!cancelled) {
+          setItems(highlight.items);
+          setOwnerId(highlight.ownerId);
+        }
       })
       .catch(() => {
         if (!cancelled) setItems([]);
@@ -165,6 +169,11 @@ export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.E
         {title}
       </Text>
 
+      {ownerId === user?.id ? (
+        <Pressable style={styles.editButton} onPress={() => navigation.navigate("HighlightEditor", { highlightId })} hitSlop={12}>
+          <Text style={styles.editIcon}>✎</Text>
+        </Pressable>
+      ) : null}
       <Pressable style={styles.closeButton} onPress={() => navigation.goBack()} hitSlop={12}>
         <Text style={styles.closeIcon}>✕</Text>
       </Pressable>
@@ -200,6 +209,8 @@ const styles = StyleSheet.create({
   title: { position: "absolute", top: spacing.xl + 14, left: spacing.md, color: "#fff", fontWeight: "700" },
   closeButton: { position: "absolute", top: spacing.xl + 10, right: spacing.md, padding: spacing.xs },
   closeIcon: { color: "#fff", fontSize: 20 },
+  editButton: { position: "absolute", top: spacing.xl + 10, right: spacing.xxl + spacing.sm, padding: spacing.xs },
+  editIcon: { color: "#fff", fontSize: 18 },
   tapZones: { ...StyleSheet.absoluteFillObject, flexDirection: "row" },
   tapZone: { flex: 1 },
 });

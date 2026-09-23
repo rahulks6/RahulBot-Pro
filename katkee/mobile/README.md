@@ -78,8 +78,16 @@ both stores require in the listing itself.
     actually fetches messages — the honest "delivered" signal available
     with no push/WebSocket channel) alongside the existing `last_read_at`.
     See `backend/README.md`'s Phase 13 section for the full mechanism.
-  - Still open after this pass (see "Phase 13 specifically" below):
-    drag-and-drop reordering of Highlights or their contents.
+  - `src/components/DraggableGrid.tsx` (new) — long-press-and-drag
+    reordering, hand-rolled with `PanResponder` (no drag library
+    installed). Closes the last major spec gap from this pass: Highlights
+    can now be reordered (`HighlightsRow.tsx`, backed by a new
+    `POST /api/v1/highlights/reorder` + `highlights.position` column —
+    see `backend/README.md`'s Phase 13 section), and so can a Highlight's
+    own contents (`HighlightEditorScreen.tsx`'s new "selected, in order"
+    strip, persisted through the existing `updateHighlight` storyIds
+    order — no new endpoint needed there). See "Phase 13 specifically"
+    below for a real tradeoff this technique has with a scrolling parent.
 - `src/theme/` — the Katkee design system tokens: near-black background,
   off-white text, one amber/yellow accent (`colors.accent`) used for the
   Story ring, primary CTA, Follow, Create, and unread badges. No
@@ -306,12 +314,24 @@ both stores require in the listing itself.
   older than that won't progress past whatever it showed on last fetch,
   which is fine in practice since a status caption only ever renders on
   the single most recent message anyway.
-- **Drag-and-drop reordering isn't built** — neither reordering
-  Highlights themselves nor reordering content within one.
-  `HighlightEditorScreen.tsx`'s selection order (tap order → numbered
-  badge) is the only ordering control that exists; picking it up and
-  dropping it elsewhere needs real gesture-drag code this pass doesn't
-  add.
+- **Drag-and-drop reordering intercepts the touch responder immediately,
+  which has one real cost: it can't coexist with a scrolling ancestor.**
+  `src/components/DraggableGrid.tsx` is a hand-rolled long-press-to-drag
+  grid (`PanResponder`, no `react-native-gesture-handler` — not
+  installable here, same npm-registry constraint as everywhere else in
+  this project) used by both `HighlightsRow.tsx` (Highlights' own order,
+  spec) and `HighlightEditorScreen.tsx`'s new "selected, in order" strip
+  (a Highlight's content order — drag there, then Save persists it via
+  the existing `updateHighlight` storyIds order, no separate endpoint
+  needed). Detecting "held still, not moving, for 300ms" requires
+  claiming the responder at touch-*down*, before any movement exists to
+  judge — there's no way to defer that decision until motion happens
+  without gesture-handler's simultaneous-recognizer support. The real
+  consequence: a scroll gesture that *starts* on a Highlight card won't
+  scroll `ProfileScreen`/`UserProfileScreen` (now `ScrollView`s, for the
+  multi-row grid itself) — scrolling from anywhere else on the page still
+  works normally. `HighlightEditorScreen.tsx`'s own strip isn't inside a
+  ScrollView at all, so this doesn't affect it.
 - **Story Insights is the viewer list and the count, not the full spec.**
   `getStoryViewers`/`StoryViewersSheet.tsx` give an owner the real "who
   watched" list this session added, and the count is now public. What's

@@ -2,7 +2,7 @@ import type { Router } from "../../http/router";
 import { requireAuth } from "../../http/middleware/auth.middleware";
 import { sendJson } from "../../http/respond";
 import { parseUsernameParam } from "../../shared/validation";
-import { parseCreateHighlightInput, parseUpdateHighlightInput } from "./dto";
+import { parseCreateHighlightInput, parseReorderHighlightsInput, parseUpdateHighlightInput } from "./dto";
 import * as highlightsService from "./highlights.service";
 
 export function registerHighlightsRoutes(router: Router): void {
@@ -11,6 +11,16 @@ export function registerHighlightsRoutes(router: Router): void {
     const input = parseCreateHighlightInput(req.body);
     const highlight = await highlightsService.createHighlight(req.userId as string, input);
     sendJson(res, 201, { highlight });
+  });
+
+  // Registered as its own literal path, not "/api/v1/highlights/:id" —
+  // an action endpoint (spec: drag-and-drop reordering), same convention
+  // as /follow, /block, /read elsewhere in this codebase.
+  router.post("/api/v1/highlights/reorder", async (req, res) => {
+    requireAuth(req);
+    const input = parseReorderHighlightsInput(req.body);
+    const highlights = await highlightsService.reorderHighlights(req.userId as string, input);
+    sendJson(res, 200, { highlights });
   });
 
   router.get("/api/v1/users/:username/highlights", async (req, res) => {

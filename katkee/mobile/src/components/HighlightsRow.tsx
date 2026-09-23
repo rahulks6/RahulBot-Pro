@@ -5,8 +5,9 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, radii, spacing, typography } from "../theme";
 import { useAuth } from "../state/AuthContext";
-import { listHighlightsForUser, type HighlightSummary } from "../api/highlights";
+import { listHighlightsForUser, reorderHighlights, type HighlightSummary } from "../api/highlights";
 import { mediaFileUrl } from "../api/stories";
+import { DraggableGrid } from "./DraggableGrid";
 
 interface Props {
   username: string;
@@ -21,8 +22,6 @@ const GAP = spacing.sm;
 const CONTAINER_PADDING = spacing.lg;
 const CARD_ASPECT_RATIO = 1.35; // portrait, not circular — spec section 62
 
-type GridItem = { key: string; kind: "new" } | { key: string; kind: "highlight"; highlight: HighlightSummary };
-
 /**
  * The Highlights grid under a profile's bio (spec section 62): EXACTLY 3
  * per row, rectangular/portrait cards — explicitly not circular
@@ -30,6 +29,9 @@ type GridItem = { key: string; kind: "new" } | { key: string; kind: "highlight";
  * Highlight's cover is just its first item's Story media — see
  * migrations/0010_highlights.sql for why there's no separate cover-image
  * upload/crop flow in this pass.
+ *
+ * Your own grid is drag-to-reorder (long-press a card) — someone else's
+ * is a plain grid, since only the owner's own order can ever change.
  */
 export function HighlightsRow({ username, isOwner }: Props): React.JSX.Element | null {
   const { accessToken } = useAuth();
@@ -53,6 +55,19 @@ export function HighlightsRow({ username, isOwner }: Props): React.JSX.Element |
     }, [load]),
   );
 
+  const onReorder = useCallback(
+    (newOrder: HighlightSummary[]) => {
+      if (!accessToken) return;
+      const previous = highlights;
+      setHighlights(newOrder); // optimistic — matches what the grid already visually settled into on drop
+      reorderHighlights(
+        newOrder.map((h) => h.id),
+        accessToken,
+      ).catch(() => setHighlights(previous)); // the server's set didn't match (stale list, concurrent edit elsewhere) — fall back to what it actually has
+    },
+    [accessToken, highlights],
+  );
+
   if (highlights === null) return null;
   if (highlights.length === 0 && !isOwner) return null;
 
@@ -60,61 +75,55 @@ export function HighlightsRow({ username, isOwner }: Props): React.JSX.Element |
   const cardWidth = (screenWidth - CONTAINER_PADDING * 2 - GAP * (COLUMNS - 1)) / COLUMNS;
   const cardHeight = cardWidth * CARD_ASPECT_RATIO;
 
-  const items: GridItem[] = [
-    ...(isOwner ? [{ key: "new", kind: "new" as const }] : []),
-    ...highlights.map((highlight) => ({ key: highlight.id, kind: "highlight" as const, highlight })),
-  ];
-
   return (
-    <View style={[styles.grid, { gap: GAP }]}>
-      {items.map((item) => {
-        if (item.kind === "new") {
-          return (
-            <Pressable
-              key={item.key}
-              style={[styles.card, styles.newCard, { width: cardWidth, height: cardHeight }]}
-              onPress={() => navigation.navigate("HighlightEditor", {})}
-            >
-              <Text style={styles.newGlyph}>+</Text>
-              <Text style={styles.newLabel}>New</Text>
-            </Pressable>
-          );
-        }
-
-        const { highlight } = item;
-        return (
+    <DraggableGrid
+      data={highlights}
+      keyExtractor={(h) => h.id}
+      columns={COLUMNS}
+      itemWidth={cardWidth}
+      itemHeight={cardHeight}
+      gap={GAP}
+      startIndex={isOwner ? 1 : 0}
+      onReorder={onReorder}
+      onPress={(highlight) => navigation.navigate("HighlightViewer", { highlightId: highlight.id, title: highlight.title })}
+      leadingChildren={
+        isOwner ? (
           <Pressable
-            key={item.key}
-            style={[styles.card, { width: cardWidth, height: cardHeight }]}
-            onPress={() => navigation.navigate("HighlightViewer", { highlightId: highlight.id, title: highlight.title })}
-            onLongPress={() => isOwner && navigation.navigate("HighlightEditor", { highlightId: highlight.id })}
+            style={[styles.card, styles.newCard, { width: cardWidth, height: cardHeight, left: 0, top: 0 }]}
+            onPress={() => navigation.navigate("HighlightEditor", {})}
           >
-            {highlight.coverMediaId ? (
-              <Image
-                source={{ uri: mediaFileUrl(highlight.coverMediaId), headers: authHeaders }}
-                style={styles.coverImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.coverFallback}>
-                <Text style={styles.coverFallbackInitial}>{highlight.title.charAt(0).toUpperCase()}</Text>
-              </View>
-            )}
-            <View style={styles.labelScrim}>
-              <Text style={styles.label} numberOfLines={2}>
-                {highlight.title}
-              </Text>
-            </View>
+            <Text style={styles.newGlyph}>+</Text>
+            <Text style={styles.newLabel}>New</Text>
           </Pressable>
-        );
-      })}
-    </View>
+        ) : null
+      }
+      renderItem={(highlight) => (
+        <View style={styles.card}>
+          {highlight.coverMediaId ? (
+            <Image
+              source={{ uri: mediaFileUrl(highlight.coverMediaId), headers: authHeaders }}
+              style={styles.coverImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.coverFallback}>
+              <Text style={styles.coverFallbackInitial}>{highlight.title.charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
+          <View style={styles.labelScrim}>
+            <Text style={styles.label} numberOfLines={2}>
+              {highlight.title}
+            </Text>
+          </View>
+        </View>
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: "row", flexWrap: "wrap", marginTop: spacing.md, width: "100%" },
   card: {
+    flex: 1,
     borderRadius: radii.md,
     overflow: "hidden",
     backgroundColor: colors.surface,
@@ -135,9 +144,11 @@ const styles = StyleSheet.create({
   },
   label: { ...typography.caption, color: colors.textPrimary, fontSize: 11, fontWeight: "700" },
   newCard: {
+    position: "absolute",
     borderStyle: "dashed",
     borderWidth: 2,
     borderColor: colors.border,
+    borderRadius: radii.md,
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.xs,

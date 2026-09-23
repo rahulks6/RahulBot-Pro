@@ -57,6 +57,36 @@ export function parseCreateHighlightInput(body: unknown): CreateHighlightInput {
   return { title: title as string, storyIds: storyIds as string[] };
 }
 
+export interface ReorderHighlightsInput {
+  highlightIds: string[];
+}
+
+const MAX_HIGHLIGHTS = 200;
+
+export function parseReorderHighlightsInput(body: unknown): ReorderHighlightsInput {
+  const errors: Record<string, string> = {};
+  const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+
+  const value = b.highlightIds;
+  if (!Array.isArray(value) || value.length === 0) {
+    errors.highlightIds = "highlightIds must be a non-empty array.";
+  } else if (value.length > MAX_HIGHLIGHTS) {
+    errors.highlightIds = `highlightIds can't exceed ${MAX_HIGHLIGHTS} entries.`;
+  } else {
+    const seen = new Set<string>();
+    for (const item of value) {
+      if (typeof item !== "string" || !UUID_RE.test(item) || seen.has(item)) {
+        errors.highlightIds = "highlightIds must be distinct, valid Highlight ids.";
+        break;
+      }
+      seen.add(item);
+    }
+  }
+
+  if (Object.keys(errors).length > 0) throw new ValidationError(errors);
+  return { highlightIds: value as string[] };
+}
+
 export interface UpdateHighlightInput {
   title?: string;
   storyIds?: string[];

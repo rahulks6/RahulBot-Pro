@@ -53,6 +53,11 @@ export function deleteHighlight(highlightId: string, accessToken: string): Promi
   return apiDelete(`/api/v1/highlights/${highlightId}`, accessToken);
 }
 
+/** Full replace, always your entire current set in the new order — see backend's reorderHighlights for why a partial list is rejected. */
+export function reorderHighlights(highlightIds: string[], accessToken: string): Promise<{ highlights: HighlightSummary[] }> {
+  return apiPost("/api/v1/highlights/reorder", { highlightIds }, accessToken);
+}
+
 /** Bypasses a Story's normal 24h expiry — only valid for a Story that's actually a member of this Highlight. */
 export function getHighlightItemDetail(
   highlightId: string,

@@ -5,6 +5,7 @@ export interface HighlightRow {
   id: string;
   ownerId: string;
   title: string;
+  position: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -26,23 +27,44 @@ function mapHighlightRow(row: Row): HighlightRow {
     id: row.id as string,
     ownerId: row.owner_id as string,
     title: row.title as string,
+    position: Number(row.position),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
 }
 
+/** New Highlights join the end of the owner's own order, same as a freshly-created item joins the end of a Highlight's own contents. */
 export async function createHighlight(ownerId: string, title: string): Promise<HighlightRow> {
   const row = await queryOne(
-    `INSERT INTO highlights (owner_id, title) VALUES (:'owner_id', :'title')
-     RETURNING id, owner_id, title, created_at, updated_at`,
+    `INSERT INTO highlights (owner_id, title, position)
+     VALUES (:'owner_id', :'title', (SELECT COALESCE(MAX(position) + 1, 0) FROM highlights WHERE owner_id = :'owner_id'))
+     RETURNING id, owner_id, title, position, created_at, updated_at`,
     { owner_id: ownerId, title },
   );
   if (!row) throw new Error("Highlight insert returned no row");
   return mapHighlightRow(row);
 }
 
+/**
+ * Full reorder, same shape as replaceHighlightItems one level down — the
+ * caller (highlights.service.ts) has already checked `orderedIds` is
+ * exactly this owner's current Highlight set, so this just assigns each
+ * its new array index as its position.
+ */
+export async function reorderHighlights(ownerId: string, orderedIds: string[]): Promise<void> {
+  for (let i = 0; i < orderedIds.length; i++) {
+    await query(`UPDATE highlights SET position = :position, updated_at = now() WHERE id = :'id' AND owner_id = :'owner_id'`, {
+      id: orderedIds[i] as string,
+      position: i,
+      owner_id: ownerId,
+    });
+  }
+}
+
 export async function findHighlightById(id: string): Promise<HighlightRow | null> {
-  const row = await queryOne(`SELECT id, owner_id, title, created_at, updated_at FROM highlights WHERE id = :'id'`, { id });
+  const row = await queryOne(`SELECT id, owner_id, title, position, created_at, updated_at FROM highlights WHERE id = :'id'`, {
+    id,
+  });
   return row ? mapHighlightRow(row) : null;
 }
 
@@ -83,6 +105,7 @@ function groupIntoHighlights(rows: Row[]): HighlightWithItems[] {
         id,
         ownerId: row.owner_id as string,
         title: row.title as string,
+        position: Number(row.h_position),
         createdAt: row.created_at as string,
         updatedAt: row.updated_at as string,
         items: [],
@@ -106,8 +129,11 @@ function groupIntoHighlights(rows: Row[]): HighlightWithItems[] {
   return order.map((id) => byId.get(id)!);
 }
 
+// h.position is aliased to h_position — hi.position (an item's own
+// position within the Highlight) already claims the bare "position"
+// column name in this same SELECT list.
 const HIGHLIGHT_WITH_ITEMS_SELECT = `
-  h.id, h.owner_id, h.title, h.created_at, h.updated_at,
+  h.id, h.owner_id, h.title, h.position AS h_position, h.created_at, h.updated_at,
   hi.story_id, hi.position, hi.added_at, s.media_id, s.audience
 `;
 const HIGHLIGHT_WITH_ITEMS_JOINS = `
@@ -120,7 +146,7 @@ export async function listForOwner(ownerId: string): Promise<HighlightWithItems[
   const rows = await query(
     `SELECT ${HIGHLIGHT_WITH_ITEMS_SELECT} ${HIGHLIGHT_WITH_ITEMS_JOINS}
      WHERE h.owner_id = :'owner_id'
-     ORDER BY h.created_at ASC, hi.position ASC`,
+     ORDER BY h.position ASC, h.created_at ASC, hi.position ASC`,
     { owner_id: ownerId },
   );
   return groupIntoHighlights(rows);

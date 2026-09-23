@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../navigation/types";
 import { colors, radii, spacing, typography } from "../../theme";
@@ -7,10 +7,13 @@ import { useAuth } from "../../state/AuthContext";
 import { getMyArchivedStories, mediaFileUrl, type PublicStory } from "../../api/stories";
 import { createHighlight, deleteHighlight, getHighlightDetail, updateHighlight } from "../../api/highlights";
 import { ApiError } from "../../api/client";
+import { DraggableGrid } from "../../components/DraggableGrid";
 
 type Props = NativeStackScreenProps<RootStackParamList, "HighlightEditor">;
 
 const MAX_TITLE_LENGTH = 30;
+const SELECTED_STRIP_COLUMNS = 5;
+const SELECTED_STRIP_GAP = spacing.xs;
 
 /**
  * Create (no `highlightId`) or edit (rename/replace items/delete) a
@@ -22,6 +25,7 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
   const { highlightId, initialStoryIds } = route.params;
   const isEditing = highlightId !== undefined;
   const { accessToken } = useAuth();
+  const { width: screenWidth } = useWindowDimensions();
 
   const [archive, setArchive] = useState<PublicStory[] | null>(null);
   const [title, setTitle] = useState("");
@@ -61,6 +65,17 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
     setSelected((current) =>
       current.includes(storyId) ? current.filter((id) => id !== storyId) : [...current, storyId],
     );
+  };
+
+  // Selected stories, in current order, as full records — needed to
+  // actually render the reorder strip's thumbnails (the archive picker
+  // grid below only has ids selected, not full story data).
+  const selectedStories = selected
+    .map((id) => (archive ?? []).find((s) => s.id === id))
+    .filter((s): s is PublicStory => s !== undefined);
+
+  const onReorderSelected = (newOrder: PublicStory[]) => {
+    setSelected(newOrder.map((s) => s.id));
   };
 
   const onSave = async () => {
@@ -111,6 +126,8 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
   }
 
   const canSave = title.trim().length > 0 && selected.length > 0 && !saving;
+  const selectedThumbSize =
+    (screenWidth - spacing.md * 2 - SELECTED_STRIP_GAP * (SELECTED_STRIP_COLUMNS - 1)) / SELECTED_STRIP_COLUMNS;
 
   return (
     <View style={styles.container}>
@@ -123,6 +140,35 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
         maxLength={MAX_TITLE_LENGTH}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      {selectedStories.length > 0 ? (
+        <>
+          <Text style={styles.sectionLabel}>Selected, in order — long-press and drag to reorder</Text>
+          <View style={styles.selectedStrip}>
+            <DraggableGrid
+              data={selectedStories}
+              keyExtractor={(s) => s.id}
+              columns={SELECTED_STRIP_COLUMNS}
+              itemWidth={selectedThumbSize}
+              itemHeight={selectedThumbSize}
+              gap={SELECTED_STRIP_GAP}
+              onReorder={onReorderSelected}
+              renderItem={(story) => (
+                <View style={styles.selectedThumbWrapper}>
+                  <Image
+                    source={{ uri: mediaFileUrl(story.mediaId), headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined }}
+                    style={styles.selectedThumb}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.orderBadge}>
+                    <Text style={styles.orderBadgeText}>{selected.indexOf(story.id) + 1}</Text>
+                  </View>
+                </View>
+              )}
+            />
+          </View>
+        </>
+      ) : null}
 
       <Text style={styles.sectionLabel}>Choose from your Archive ({selected.length} selected)</Text>
       <FlatList
@@ -185,6 +231,9 @@ const styles = StyleSheet.create({
   },
   error: { color: colors.danger, marginHorizontal: spacing.md, marginTop: spacing.xs },
   sectionLabel: { ...typography.label, marginHorizontal: spacing.md, marginTop: spacing.md, marginBottom: spacing.xs },
+  selectedStrip: { paddingHorizontal: spacing.md },
+  selectedThumbWrapper: { flex: 1, borderRadius: radii.sm, overflow: "hidden", backgroundColor: colors.surfaceElevated },
+  selectedThumb: { width: "100%", height: "100%" },
   grid: { paddingHorizontal: spacing.md, gap: spacing.xs },
   thumbWrapper: { margin: spacing.xs / 2 },
   thumb: {
