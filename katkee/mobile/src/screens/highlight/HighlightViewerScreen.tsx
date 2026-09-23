@@ -4,7 +4,7 @@ import Video from "react-native-video";
 import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import type { RootStackParamList } from "../../navigation/types";
-import { colors, spacing } from "../../theme";
+import { colors, spacing, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { getHighlightDetail, getHighlightItemDetail, type HighlightItem } from "../../api/highlights";
 import { getMedia } from "../../api/media";
@@ -186,17 +186,29 @@ export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.E
       </Text>
 
       {ownerId === user?.id ? (
-        <Pressable style={styles.editButton} onPress={() => navigation.navigate("HighlightEditor", { highlightId })} hitSlop={12}>
-          <Text style={styles.editIcon}>✎</Text>
+        <Pressable
+          style={styles.editButton}
+          onPress={() => navigation.navigate("HighlightEditor", { highlightId })}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Edit Highlight"
+        >
+          <Text style={styles.editIcon}>{ICONS.edit}</Text>
         </Pressable>
       ) : null}
-      <Pressable style={styles.closeButton} onPress={() => navigation.goBack()} hitSlop={12}>
-        <Text style={styles.closeIcon}>✕</Text>
+      <Pressable
+        style={styles.closeButton}
+        onPress={() => navigation.goBack()}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Close"
+      >
+        <Text style={styles.closeIcon}>{ICONS.close}</Text>
       </Pressable>
 
       <View style={styles.tapZones}>
-        <Pressable style={styles.tapZone} onPress={goPrevious} />
-        <Pressable style={styles.tapZone} onPress={goNext} />
+        <Pressable style={styles.tapZone} onPress={goPrevious} accessibilityRole="button" accessibilityLabel="Previous item" />
+        <Pressable style={styles.tapZone} onPress={goNext} accessibilityRole="button" accessibilityLabel="Next item" />
       </View>
 
       {detail && containerSize.width > 0 ? (

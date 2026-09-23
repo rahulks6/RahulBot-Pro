@@ -4,7 +4,7 @@ import Video from "react-native-video";
 import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import type { RootStackParamList } from "../../navigation/types";
-import { colors, spacing } from "../../theme";
+import { colors, spacing, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { getStoryDetail, type StoryDetail } from "../../api/engagement";
 import { getMedia } from "../../api/media";
@@ -82,8 +82,8 @@ export function ArchivedStoryViewerScreen({ route, navigation }: Props): React.J
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{error}</Text>
-        <Pressable style={styles.closeButton} onPress={close} hitSlop={12}>
-          <Text style={styles.closeIcon}>✕</Text>
+        <Pressable style={styles.closeButton} onPress={close} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+          <Text style={styles.closeIcon}>{ICONS.close}</Text>
         </Pressable>
       </View>
     );
@@ -142,8 +142,8 @@ export function ArchivedStoryViewerScreen({ route, navigation }: Props): React.J
 
       {detail.caption ? <Text style={styles.caption}>{detail.caption}</Text> : null}
 
-      <Pressable style={styles.closeButton} onPress={close} hitSlop={12}>
-        <Text style={styles.closeIcon}>✕</Text>
+      <Pressable style={styles.closeButton} onPress={close} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+        <Text style={styles.closeIcon}>{ICONS.close}</Text>
       </Pressable>
     </View>
   );

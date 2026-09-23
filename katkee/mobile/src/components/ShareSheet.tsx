@@ -68,7 +68,7 @@ export function ShareSheet({ visible, storyId, ownerUsername, isPublic, onClose,
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
+      <Pressable style={styles.backdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
       <View style={styles.sheet}>
         <View style={styles.handle} />
         <Pressable

@@ -77,6 +77,8 @@ export function ProfileScreen(): React.JSX.Element {
         }}
         disabled={!hasActiveStory}
         style={[styles.avatarPlaceholder, hasActiveStory && styles.avatarRingActive]}
+        accessibilityRole={hasActiveStory ? "button" : undefined}
+        accessibilityLabel={hasActiveStory ? "Open your Story" : user.displayName}
       >
         <Text style={styles.avatarInitial}>{user.displayName.charAt(0).toUpperCase()}</Text>
       </Pressable>

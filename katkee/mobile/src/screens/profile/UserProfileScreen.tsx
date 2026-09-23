@@ -133,6 +133,8 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
         onPress={openStoryViewer}
         disabled={!hasActiveStory}
         style={[styles.avatarPlaceholder, hasActiveStory && styles.avatarRingActive]}
+        accessibilityRole={hasActiveStory ? "button" : undefined}
+        accessibilityLabel={hasActiveStory ? `Open ${profile.displayName}'s Story` : profile.displayName}
       >
         <Text style={styles.avatarInitial}>{profile.displayName.charAt(0).toUpperCase()}</Text>
       </Pressable>

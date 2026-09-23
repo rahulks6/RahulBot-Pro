@@ -62,6 +62,8 @@ export function DeleteAccountSheet({ visible, onClose }: Props): React.JSX.Eleme
             onClose();
           }
         }}
+        accessibilityRole="button"
+        accessibilityLabel="Close"
       />
       <View style={styles.sheet}>
         <View style={styles.handle} />

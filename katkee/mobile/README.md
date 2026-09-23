@@ -964,6 +964,34 @@ is indistinguishable from a gestural one in every system that consumes it
 deliberately — the action rail's own "Like"/"Unlike" button already covers
 that intent through an ordinary, already-accessible `Pressable`.
 
+### A sweep for smaller accessibility gaps the icon pass left behind
+
+Auditing every gesture surface turned up a handful of smaller,
+easy-to-miss gaps in files the earlier accessibility and icon passes
+never actually touched:
+
+- **`HighlightViewerScreen.tsx` and `ArchivedStoryViewerScreen.tsx`** were
+  never migrated to the shared `ICONS` glyph module at all (still using
+  raw `"✎"`/`"✕"` strings), and none of their buttons — Edit, Close, and
+  the previous/next tap zones — had an `accessibilityLabel`. Both are now
+  on `ICONS.edit`/`ICONS.close`, with real labels throughout ("Previous
+  item", "Next item", "Edit Highlight", "Close").
+- **Every modal's tap-outside-to-dismiss backdrop** (`ShareSheet.tsx`,
+  `CommentsSheet.tsx`, `StoryInsightsSheet.tsx`, `StoryMoreMenu.tsx`,
+  `ReportSheet.tsx`, `DeleteAccountSheet.tsx`) was an unlabeled, still-
+  focusable `Pressable` — a screen reader would land on it and announce
+  only "button," with no indication of what it does. `StickerSheet.tsx`
+  and `OverlayAdjustSheet.tsx` already had this right (`accessibilityRole
+  ="button" accessibilityLabel="Close"`); the other six now match that
+  existing, correct convention instead of it being applied inconsistently.
+- **The Story-ring avatar Pressable** on both `ProfileScreen.tsx` and
+  `UserProfileScreen.tsx` had a `Text` child that was just a single
+  initial letter (e.g. "R") — a screen reader's default behavior of
+  reading a Pressable's visible text as its label meant this announced as
+  "R, button" with no indication it opens a Story. Both now get a real,
+  conditional label ("Open your Story" / "Open {name}'s Story" when there
+  is one to open, otherwise just the name).
+
 ### Edit-in-place for location and date/time content
 
 Double-tap-to-re-edit (spec section 20) was explicitly a text-only

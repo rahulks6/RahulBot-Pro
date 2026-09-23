@@ -61,6 +61,8 @@ export function ReportSheet({ visible, targetType, targetId, onClose }: Props): 
           reset();
           onClose();
         }}
+        accessibilityRole="button"
+        accessibilityLabel="Close"
       />
       <View style={styles.sheet}>
         <View style={styles.handle} />

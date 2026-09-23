@@ -91,7 +91,7 @@ export function CommentsSheet({ visible, storyId, storyOwnerId, commentsDisabled
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
+        <Pressable style={styles.backdrop} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.sheet}>
         <View style={styles.handle} />
         <Text style={[typography.bodyStrong, styles.title]}>Comments</Text>
