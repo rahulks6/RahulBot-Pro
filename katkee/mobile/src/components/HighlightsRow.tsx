@@ -34,9 +34,12 @@ const CARD_ASPECT_RATIO = 1.35; // portrait, not circular — spec section 62
  * The Highlights grid under a profile's bio (spec section 62): EXACTLY 3
  * per row, rectangular/portrait cards — explicitly not circular
  * Instagram-style bubbles, which is how this rendered before. A
- * Highlight's cover is just its first item's Story media — see
- * migrations/0010_highlights.sql for why there's no separate cover-image
- * upload/crop flow in this pass.
+ * Highlight's cover defaults to its first item's Story media, but the
+ * owner can pin any of the Highlight's own items as the cover instead
+ * (backend `cover_story_id`, migration 0019 — see
+ * HighlightEditorScreen.tsx's star toggle). Still no separate cover-image
+ * upload/crop flow: the override picks an existing item's media, not a
+ * new upload.
  *
  * Your own grid can be reordered via an explicit "Reorder" toggle —
  * someone else's is always a plain grid, since only the owner's own

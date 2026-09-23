@@ -697,6 +697,20 @@ preview and a new one-finger record-and-drag-to-zoom on the capture button
 itself (spec section 18) are both hand-rolled `PanResponder`s, with a
 temporary "Nx" zoom badge.
 
+**The exact same phantom-dependency bug survived at the app root, found
+during a later full-app audit.** `App.tsx` still wrapped the whole tree in
+`<GestureHandlerRootView>` from `react-native-gesture-handler` — the
+CameraScreen fix above removed the library's only real usage but left
+this root-level setup wrapper behind, still importing a package that was
+never in `package.json` and still isn't used anywhere in this codebase.
+It would have failed to resolve on a real build the same way the old
+`PinchGestureHandler` import would have. Removed; `App.tsx` no longer
+imports `react-native-gesture-handler` at all. Caught by cross-referencing
+every `import ... from "<package>"` in `src/`, `App.tsx`, and `index.js`
+against `package.json`'s actual `dependencies` — a check worth re-running
+after any future gesture work, since this is the second time it's caught
+exactly this mistake.
+
 **Real: mentions are structural, not baked-in text.** A mention overlay
 stores only `{userId}`; the backend re-resolves it to a live
 `username`/`displayName` on every read, dropping it entirely if the
@@ -804,7 +818,7 @@ needed." What's actually built:
   a reasonably sized hit area.
 
 **Not attempted, and disclosed rather than faked:** high-contrast mode isn't specifically tested against (the existing
-color tokens already have strong contrast by design — see `BRAND.md` —
+color tokens already have strong contrast by design — see `../BRAND.md` —
 but nothing here verifies WCAG ratios against every combination); and
 none of this has been exercised with an actual screen reader on a real
 device, which is the only way to know for certain whether VoiceOver/

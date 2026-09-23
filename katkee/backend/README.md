@@ -262,10 +262,16 @@ it out of every Highlight it was ever added to
 Phase 4 deletion behavior) has to mean gone from Highlights too, not a
 loophole where a "deleted" Story keeps rendering forever inside one.
 
-A Highlight's cover is deliberately not a stored column — it's computed
-as its first item's Story media, so this pass doesn't need a separate
-cover-image upload/crop flow (this sandbox still has no image processing;
-see the media limitations above). 123/123 tests passing (10 new: create/
+A Highlight's cover was deliberately not a stored column in this pass —
+it's computed as its first item's Story media, so this pass doesn't need
+a separate cover-image upload/crop flow (this sandbox still has no image
+processing; see the media limitations above). ~~Deliberately not a stored
+column~~ **Revisited later**: migration `0019` added `cover_story_id`, a
+real, nullable override an owner can point at any of the Highlight's own
+items — see this file's own "Highlight cover override (migration 0019)"
+section further down. The "no separate image upload/crop flow" reasoning
+still holds (the override picks an existing item's media, it doesn't add
+a new upload path). 123/123 tests passing (10 new: create/
 rename/replace-items/delete, ownership and audience gating on both the
 Highlight list and detail, the expiry-bypass behavior end to end via a
 real 1-second-TTL Story, membership enforcement on the item-detail
@@ -773,8 +779,10 @@ rather than cross-referenced against a conversation (see mobile/README.md
 — DMs existing now doesn't automatically make that attribution real, it
 would need its own correlation logic). Group DMs and video
 transcoding/thumbnails are later phases per the build plan. A Highlight's
-cover is computed (its first item's media), not a separately
-uploadable/croppable image — see "Phase 9" above for why. Moderation
+cover defaults to its first item's media, with a real override to pin any
+of the Highlight's own items instead (`cover_story_id`, migration 0019);
+either way it's never a separately uploadable/croppable image — see
+"Phase 9" above and the "Highlight cover override" section for why. Moderation
 itself covers Reports, a moderator queue, content removal, and account
 suspension, but not a full trust-and-safety surface: filing a report only
 gets the generic global rate limit (600 req/min/IP, same as everything
