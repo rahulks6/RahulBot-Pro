@@ -35,6 +35,15 @@ export function registerStoriesRoutes(router: Router): void {
     sendJson(res, 200, { stories, limit, offset });
   });
 
+  // "Per-sequence Insights" (spec) — every currently-active Story the
+  // caller owns, at once. Same "mine/..." literal-path convention as
+  // above; always the caller's own, so no :id at all.
+  router.get("/api/v1/stories/mine/sequence-insights", async (req, res) => {
+    requireAuth(req);
+    const insights = await storiesService.getSequenceInsights(req.userId as string);
+    sendJson(res, 200, { insights });
+  });
+
   router.get("/api/v1/stories/:id", async (req, res) => {
     requireAuth(req);
     const story = await storiesService.getStoryDetailForViewer(req.params.id as string, req.userId as string);
@@ -65,6 +74,13 @@ export function registerStoriesRoutes(router: Router): void {
     const { limit, offset } = parsePagination(parseQueryString(req.url ?? ""));
     const viewers = await storiesService.getStoryViewers(req.userId as string, req.params.id as string, limit, offset);
     sendJson(res, 200, { viewers, limit, offset });
+  });
+
+  // Owner-only — completion %, following-vs-discovery, and profile-visit rate for this one Story.
+  router.get("/api/v1/stories/:id/insights", async (req, res) => {
+    requireAuth(req);
+    const insights = await storiesService.getStoryInsights(req.userId as string, req.params.id as string);
+    sendJson(res, 200, { insights });
   });
 
   router.get("/api/v1/stories/:id/owner", async (req, res) => {

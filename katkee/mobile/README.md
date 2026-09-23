@@ -42,7 +42,7 @@ both stores require in the listing itself.
   - A Story's view count is now visible to **any** viewer who can watch it
     (previously owner-only), while who's actually behind that number stays
     a strictly owner-only `GET /api/v1/stories/:id/viewers` door —
-    `src/components/StoryViewersSheet.tsx`, opened by tapping the count on
+    `src/components/StoryInsightsSheet.tsx`, opened by tapping the count on
     your own Story. Backend: `stories.repository.ts`'s new `listViewers`,
     `stories.service.ts`'s relaxed `getViewCount` + new `getStoryViewers`,
     both covered by new tests in `test/stories.test.ts`.
@@ -88,6 +88,22 @@ both stores require in the listing itself.
     strip, persisted through the existing `updateHighlight` storyIds
     order — no new endpoint needed there). See "Phase 13 specifically"
     below for a real tradeoff this technique has with a scrolling parent.
+  - **Story Insights, the deeper piece** (completion %, following-vs-
+    discovery split, profile-visit rate) — the last remaining gap from
+    this pass. `StoryInsightsSheet.tsx` (renamed from `StoryViewersSheet.tsx`,
+    which it supersedes) now shows real stats above the viewer list:
+    `GET /api/v1/stories/:id/insights` (owner-only, same door as the
+    viewer list). A new `src/screens/profile/SequenceInsightsScreen.tsx`,
+    reached from a new **Insights** link on your own `ProfileScreen.tsx`,
+    shows the same stats aggregated across every Story you currently have
+    active ("per-sequence Insights", spec) via
+    `GET /api/v1/stories/mine/sequence-insights`. Every number here is
+    real, computed from events this backend already records — see
+    `backend/README.md`'s Phase 13 section for exactly what each rate
+    means and the one honestly-disclosed approximation it makes
+    (following-vs-discovery reflects a viewer's *current* follow
+    relationship, not necessarily what it was at view time — this schema
+    has no historical snapshot of that).
 - `src/theme/` — the Katkee design system tokens: near-black background,
   off-white text, one amber/yellow accent (`colors.accent`) used for the
   Story ring, primary CTA, Follow, Create, and unread badges. No
@@ -332,14 +348,20 @@ both stores require in the listing itself.
   multi-row grid itself) — scrolling from anywhere else on the page still
   works normally. `HighlightEditorScreen.tsx`'s own strip isn't inside a
   ScrollView at all, so this doesn't affect it.
-- **Story Insights is the viewer list and the count, not the full spec.**
-  `getStoryViewers`/`StoryViewersSheet.tsx` give an owner the real "who
-  watched" list this session added, and the count is now public. What's
-  still missing: a Views-vs-Viewers distinction, completion %, and the
-  discovery/following/profile-visit source breakdown — real work exists
-  for all of it already (`recommendation_events` — see
-  `backend/README.md`'s Phase 6/7 notes) but assembling it into an
-  owner-facing Insights screen is future work, not done here.
+- **Story Insights' "following vs. discovery" split is a real but
+  disclosed approximation.** It's each viewer's *current* follow
+  relationship to the owner (a live `follows` table join) — this schema
+  keeps no historical snapshot of what that relationship was at the
+  moment they actually viewed the Story, so someone who viewed as a
+  stranger and followed you five minutes later counts as "following" now.
+  Similarly, "profile visits" reuses the existing creator-scoped
+  `profile_visit` event (a viewer counts if they ever visited your
+  profile, not provably *because of* this specific Story). Both are real,
+  computed numbers, not invented ones — just not perfectly causal.
+  `SequenceInsightsScreen.tsx` also has no viewer-identity list at all
+  (only `StoryInsightsSheet.tsx`, per-Story, does) — an aggregate
+  cross-Story identity list is a genuinely separate feature this pass
+  doesn't add.
 - **Archive has no full-screen viewer for an individual expired Story** —
   tapping a thumbnail selects it (for a Highlight or deletion) rather than
   opening playback. `StoryFeed.tsx`'s pipeline only ever fetches *active*

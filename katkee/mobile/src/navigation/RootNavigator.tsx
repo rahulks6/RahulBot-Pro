@@ -11,6 +11,7 @@ import { StoryViewerScreen } from "../screens/story/StoryViewerScreen";
 import { HighlightViewerScreen } from "../screens/highlight/HighlightViewerScreen";
 import { HighlightEditorScreen } from "../screens/highlight/HighlightEditorScreen";
 import { ArchiveScreen } from "../screens/profile/ArchiveScreen";
+import { SequenceInsightsScreen } from "../screens/profile/SequenceInsightsScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -42,6 +43,17 @@ function SignedInNavigator(): React.JSX.Element {
         options={{
           headerShown: true,
           title: "Archive",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="SequenceInsights"
+        component={SequenceInsightsScreen}
+        options={{
+          headerShown: true,
+          title: "Insights",
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.textPrimary,
           headerShadowVisible: false,

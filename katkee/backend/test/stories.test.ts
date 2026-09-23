@@ -331,3 +331,76 @@ describe("the 24-hour lifecycle", () => {
     assert.equal(ownerFetch.status, 200, "the owner can still fetch their own expired Story directly (Archive foundation)");
   });
 });
+
+describe("Story Insights", () => {
+  it("computes view count, completion rate, following-vs-discovery split, and profile-visit rate", async () => {
+    const owner = await signupUser();
+    const follower = await signupUser();
+    const stranger = await signupUser();
+    await client.post(`/api/v1/users/${owner.input.username}/follow`, undefined, authHeader(follower.accessToken));
+
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const story = await publishStory(owner.accessToken, mediaId);
+    const storyId = story.body.story.id;
+
+    // The follower watches it through to the end; the stranger only watches, but visits the profile.
+    await client.post(`/api/v1/stories/${storyId}/view`, undefined, authHeader(follower.accessToken));
+    await client.post("/api/v1/events", { eventType: "story_complete", storyId }, authHeader(follower.accessToken));
+    await client.post(`/api/v1/stories/${storyId}/view`, undefined, authHeader(stranger.accessToken));
+    await client.post("/api/v1/events", { eventType: "profile_visit", creatorId: story.body.story.ownerId }, authHeader(stranger.accessToken));
+
+    const asOwner = await client.get(`/api/v1/stories/${storyId}/insights`, authHeader(owner.accessToken));
+    assert.equal(asOwner.status, 200);
+    assert.deepEqual(asOwner.body.insights, {
+      viewCount: 2,
+      completionRate: 50,
+      followingViewRate: 50,
+      discoveryViewRate: 50,
+      profileVisitRate: 50,
+    });
+
+    const asNonOwner = await client.get(`/api/v1/stories/${storyId}/insights`, authHeader(follower.accessToken));
+    assert.equal(asNonOwner.status, 404, "Insights are owner-only, same door as the viewer list");
+  });
+
+  it("is all zeros for a Story nobody has viewed yet", async () => {
+    const owner = await signupUser();
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const story = await publishStory(owner.accessToken, mediaId);
+
+    const res = await client.get(`/api/v1/stories/${story.body.story.id}/insights`, authHeader(owner.accessToken));
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.insights, {
+      viewCount: 0,
+      completionRate: 0,
+      followingViewRate: 0,
+      discoveryViewRate: 0,
+      profileVisitRate: 0,
+    });
+  });
+
+  it("aggregates per-sequence Insights across every currently-active Story the caller owns", async () => {
+    const owner = await signupUser();
+    const viewer = await signupUser();
+    const storyA = await publishStory(owner.accessToken, await uploadPhoto(owner.accessToken));
+    const storyB = await publishStory(owner.accessToken, await uploadPhoto(owner.accessToken));
+
+    await client.post(`/api/v1/stories/${storyA.body.story.id}/view`, undefined, authHeader(viewer.accessToken));
+    await client.post(`/api/v1/stories/${storyB.body.story.id}/view`, undefined, authHeader(viewer.accessToken));
+    await client.post(
+      "/api/v1/events",
+      { eventType: "creator_sequence_completed", creatorId: storyA.body.story.ownerId },
+      authHeader(viewer.accessToken),
+    );
+
+    const res = await client.get("/api/v1/stories/mine/sequence-insights", authHeader(owner.accessToken));
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.insights, {
+      viewCount: 1, // one distinct viewer across both Stories, not two
+      completionRate: 100,
+      followingViewRate: 0,
+      discoveryViewRate: 100,
+      profileVisitRate: 0,
+    });
+  });
+});

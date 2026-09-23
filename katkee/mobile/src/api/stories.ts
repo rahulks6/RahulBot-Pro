@@ -88,6 +88,25 @@ export function getStoryViewers(storyId: string, accessToken: string): Promise<{
   return apiGet(`/api/v1/stories/${storyId}/viewers`, accessToken);
 }
 
+/** Mirrors backend/src/modules/stories/stories.service.ts's Insights. Every rate is 0-100, already rounded. */
+export interface StoryInsights {
+  viewCount: number;
+  completionRate: number;
+  followingViewRate: number;
+  discoveryViewRate: number;
+  profileVisitRate: number;
+}
+
+/** Owner-only — completion %, following-vs-discovery split, and profile-visit rate for one Story. */
+export function getStoryInsights(storyId: string, accessToken: string): Promise<{ insights: StoryInsights }> {
+  return apiGet(`/api/v1/stories/${storyId}/insights`, accessToken);
+}
+
+/** The same shape, aggregated across every currently-active Story the caller owns ("per-sequence Insights"). */
+export function getSequenceInsights(accessToken: string): Promise<{ insights: StoryInsights }> {
+  return apiGet("/api/v1/stories/mine/sequence-insights", accessToken);
+}
+
 /**
  * A Story's owner username, for deep-linking into StoryViewer (which
  * addresses creators by username) when only a storyId is on hand — a

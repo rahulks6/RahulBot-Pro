@@ -293,6 +293,40 @@ export async function getStoryViewers(
   return storiesRepo.listViewers(storyId, limit, offset);
 }
 
+export interface Insights {
+  viewCount: number;
+  completionRate: number; // 0-100
+  followingViewRate: number; // 0-100
+  discoveryViewRate: number; // 0-100 — always 100 - followingViewRate
+  profileVisitRate: number; // 0-100
+}
+
+function toInsights(counts: storiesRepo.InsightsCounts): Insights {
+  const rate = (n: number): number => (counts.totalViews === 0 ? 0 : Math.round((n / counts.totalViews) * 100));
+  const followingViewRate = rate(counts.followingViews);
+  return {
+    viewCount: counts.totalViews,
+    completionRate: rate(counts.completedViews),
+    followingViewRate,
+    discoveryViewRate: counts.totalViews === 0 ? 0 : 100 - followingViewRate,
+    profileVisitRate: rate(counts.profileVisitViews),
+  };
+}
+
+/** Owner-only, same door as getStoryViewers — completion %, following-vs-discovery, and profile-visit rate for one Story. */
+export async function getStoryInsights(ownerId: string, storyId: string): Promise<Insights> {
+  const story = await storiesRepo.findStoryById(storyId);
+  if (!story || story.ownerId !== ownerId || story.deletedAt !== null) throw new HttpError(404, "Story not found.");
+  const counts = await storiesRepo.getStoryInsights(storyId, ownerId);
+  return toInsights(counts);
+}
+
+/** The same, aggregated across every currently-active Story the caller owns — "per-sequence Insights" (spec), the run a viewer swipes through for one creator. */
+export async function getSequenceInsights(ownerId: string): Promise<Insights> {
+  const counts = await storiesRepo.getSequenceInsights(ownerId);
+  return toInsights(counts);
+}
+
 /**
  * A Story's owner *username* — mobile clients that only hold a storyId
  * (a DM's shared_story_id, a notification's story reference) need this to

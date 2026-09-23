@@ -517,6 +517,79 @@ delivered → read as the recipient first fetches, then explicitly marks
 read, while a message from someone else never carries a status field for
 the viewer at all).
 
+## Phase 13 continued: Highlights can be reordered
+
+The same spec pass called for drag-and-drop reordering, both of a
+Highlight's own contents and of Highlights themselves (spec). Content
+order already had a real answer — `highlight_items.position`, rewritten
+in full by `replaceHighlightItems` on every edit — so only Highlights'
+*own* display order needed new schema: migration `0013_highlight_order.sql`
+adds a `position` column to `highlights` itself, backfilled to each
+owner's existing creation order so the migration doesn't reshuffle anyone
+already-published on the day it runs. `createHighlight` now assigns a new
+Highlight `MAX(position) + 1` (joins the end, same idea as a fresh item
+joining the end of a Highlight's own contents), and `listForOwner` orders
+by `position` first.
+
+`reorderHighlights` (service) takes the client's *entire* new order and
+requires it to be exactly the caller's current Highlight set — same
+"full replace, not a diff/patch" shape as `replaceHighlightItems` one
+level down. A stale client, a missing id, or someone else's Highlight id
+smuggled into the array are all real bugs to catch immediately (422), not
+silently drop, duplicate, or reassign to the wrong owner.
+
+150/150 tests passing (2 new: a full reorder persists and a freshly-
+created Highlight still joins the end, not the start; a partial or
+foreign-id set is rejected outright).
+
+## Phase 13 continued: deeper Story Insights
+
+The mobile pass's own gap list called out "Views vs. Viewers, completion
+%, discovery/following/profile-visit breakdown, per-Story and per-
+sequence Insights" as still open after the view-count and viewer-list
+work earlier in Phase 13. This closes it with real numbers computed from
+events this backend already records — nothing invented, and every
+approximation this makes is disclosed rather than hidden (see
+`../mobile/README.md`'s Phase 13 caveats for the reader-facing version of
+the same tradeoffs).
+
+`stories.repository.ts`'s new `getStoryInsights`/`getSequenceInsights`
+are each a single SQL query (`story_views` joined against `follows`, and
+against two `recommendation_events` subqueries) rather than N round-trips
+per viewer:
+- **View count**: `story_views`, same table the existing viewer list
+  already uses (this *is* "Views" and "Viewers" together — the schema's
+  `(story_id, viewer_id)` primary key means a distinct viewer only ever
+  counts once, so there's no separate "raw views vs. unique viewers"
+  distinction to make here).
+- **Completion rate**: the fraction of a Story's viewers who also have a
+  `story_complete` event for it — the same recommendation-scoring signal
+  Phase 6 already records for every Story (spec section 13), reused
+  rather than inventing a second "did they finish" event type.
+- **Following vs. discovery**: each viewer's *current* row in `follows` —
+  disclosed, not hidden, as an approximation: this schema keeps no
+  historical snapshot of what the relationship was at view time.
+- **Profile-visit rate**: the fraction of a Story's viewers who have ever
+  fired a `profile_visit` event for the owner (creator-scoped, not
+  Story-scoped in the schema — same disclosed-approximation reasoning).
+
+`getSequenceInsights` is the same shape one level up — every currently-
+active Story the owner has, at once (spec: "per-sequence Insights", the
+run a viewer swipes through for one creator). Its "completed" reuses
+`creator_sequence_completed` (reached the end of the *whole* sequence)
+rather than `story_complete`, which would wrongly count someone who
+finished only the first Story of five as a completion.
+
+Both are owner-only, same door as the existing viewer list
+(`GET /api/v1/stories/:id/viewers`) — a non-owner gets 404, not partial
+data.
+
+153/153 tests passing (3 new: a full view/completion/following/discovery/
+profile-visit scenario computed correctly and rejected for a non-owner; a
+Story nobody has viewed yet returns all zeros rather than dividing by
+zero; a sequence aggregate across two Stories counts a viewer who watched
+both exactly once, not twice).
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -553,6 +626,8 @@ the viewer at all).
 | POST | `/api/v1/stories/:id/view` | Bearer | Records a view once per viewer; the owner's own view never counts |
 | GET | `/api/v1/stories/:id/views` | Bearer, any authorized viewer | View count — public to anyone who can watch the Story (Phase 13), not owner-only |
 | GET | `/api/v1/stories/:id/viewers` | Bearer, owner-only | The identities behind that count — strictly the Story's own owner (Phase 13) |
+| GET | `/api/v1/stories/:id/insights` | Bearer, owner-only | Completion %, following-vs-discovery split, profile-visit rate for this one Story (Phase 13) |
+| GET | `/api/v1/stories/mine/sequence-insights` | Bearer | The same, aggregated across every currently-active Story the caller owns — "per-sequence Insights" (Phase 13) |
 | GET | `/api/v1/stories/mine/active` | Bearer | Your own non-expired Stories, oldest first |
 | GET | `/api/v1/stories/feed/following` | Bearer | Owners you follow (+ yourself) with an active Story, most-recent-first — real, but plain follow-graph order, not ranked |
 | GET | `/api/v1/users/:username/stories` | Bearer | That user's active Stories visible to you |
@@ -580,6 +655,7 @@ the viewer at all).
 | GET | `/api/v1/highlights/:id` | Bearer | Detail with items; a followers-only item is hidden from a non-follower even on an otherwise-public account |
 | PATCH | `/api/v1/highlights/:id` | Bearer, owner-only | `{title?, storyIds?}`; `storyIds`, if given, replaces the full ordered item set and can't be emptied (delete the Highlight instead) |
 | DELETE | `/api/v1/highlights/:id` | Bearer, owner-only | Deletes the Highlight; the Stories inside it remain in the owner's Archive |
+| POST | `/api/v1/highlights/reorder` | Bearer, owner-only | `{highlightIds}` — must be exactly the caller's current Highlight set, in the new order; rejects a partial/stale/foreign set with 422 (Phase 13) |
 | GET | `/api/v1/highlights/:id/items/:storyId` | Bearer | Full Story detail (engagement counts included) for one member Story — the one endpoint that bypasses the normal 24h expiry, and only for a Story confirmed to actually be in this Highlight |
 | POST | `/api/v1/reports` | Bearer | `{targetType: "story"\|"comment"\|"user", targetId, reason, details?}` → `{report}`; 400 on a self-report, 404 if the target doesn't exist (or is already deleted) |
 | GET | `/api/v1/moderation/reports` | Bearer, moderator-only | `?status=pending\|dismissed\|actioned` (default `pending`), paginated, oldest first; each row denormalizes the reporter and the target (owner username for a Story, author + body for a comment, username + isActive for a user) |

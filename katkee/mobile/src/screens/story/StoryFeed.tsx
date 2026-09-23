@@ -11,7 +11,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { CommentsSheet } from "../../components/CommentsSheet";
 import { ShareSheet } from "../../components/ShareSheet";
 import { StoryMoreMenu } from "../../components/StoryMoreMenu";
-import { StoryViewersSheet } from "../../components/StoryViewersSheet";
+import { StoryInsightsSheet } from "../../components/StoryInsightsSheet";
 
 const PHOTO_DURATION_MS = 5000;
 const HOLD_DELAY_MS = 250;
@@ -68,7 +68,7 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [viewersOpen, setViewersOpen] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
 
   const progress = useRef(new Animated.Value(0)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -80,7 +80,7 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
   const currentStoryIndex = currentUsername ? (storyIndexByCreator[currentUsername] ?? 0) : 0;
   const currentStory = currentStories?.[currentStoryIndex] ?? null;
 
-  const sheetOpen = commentsOpen || shareOpen || moreOpen || viewersOpen;
+  const sheetOpen = commentsOpen || shareOpen || moreOpen || insightsOpen;
 
   // Every analytics call is fire-and-forget on purpose (spec section 12: real,
   // server-validated events — but a dropped one must never interrupt viewing).
@@ -468,9 +468,9 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
             </Text>
           ) : null}
         </View>
-        {/* Visible to any authorized viewer — who's behind the number is owner-only (StoryViewersSheet). */}
+        {/* Visible to any authorized viewer — who's behind the number, and the rest of Insights, is owner-only (StoryInsightsSheet). */}
         {isOwnStory ? (
-          <Pressable onPress={() => setViewersOpen(true)} hitSlop={8} style={styles.viewCountButton}>
+          <Pressable onPress={() => setInsightsOpen(true)} hitSlop={8} style={styles.viewCountButton}>
             <Text style={styles.viewCount}>👁 {viewCount ?? "—"}</Text>
           </Pressable>
         ) : (
@@ -516,7 +516,7 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
         }}
       />
       {isOwnStory ? (
-        <StoryViewersSheet visible={viewersOpen} storyId={currentStory.id} onClose={() => setViewersOpen(false)} />
+        <StoryInsightsSheet visible={insightsOpen} storyId={currentStory.id} onClose={() => setInsightsOpen(false)} />
       ) : null}
     </View>
   );

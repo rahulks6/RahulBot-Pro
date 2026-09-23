@@ -77,9 +77,14 @@ export function ProfileScreen(): React.JSX.Element {
         </View>
       </View>
 
-      <Pressable style={styles.archiveLink} onPress={() => navigation.navigate("Archive")}>
-        <Text style={styles.archiveLinkLabel}>Archive</Text>
-      </Pressable>
+      <View style={styles.linkRow}>
+        <Pressable style={styles.archiveLink} onPress={() => navigation.navigate("Archive")}>
+          <Text style={styles.archiveLinkLabel}>Archive</Text>
+        </Pressable>
+        <Pressable style={styles.archiveLink} onPress={() => navigation.navigate("SequenceInsights")}>
+          <Text style={styles.archiveLinkLabel}>Insights</Text>
+        </Pressable>
+      </View>
 
       <HighlightsRow username={user.username} isOwner />
 
@@ -146,8 +151,8 @@ const styles = StyleSheet.create({
   },
   deleteAccountLink: { marginTop: spacing.md },
   deleteAccountLabel: { ...typography.caption, color: colors.textDisabled },
+  linkRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
   archiveLink: {
-    marginTop: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radii.md,

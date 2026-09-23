@@ -186,3 +186,88 @@ export async function listViewers(storyId: string, limit: number, offset: number
     viewedAt: String(r.viewed_at),
   }));
 }
+
+export interface InsightsCounts {
+  totalViews: number;
+  followingViews: number;
+  completedViews: number;
+  profileVisitViews: number;
+}
+
+function mapInsightsRow(row: Row | null): InsightsCounts {
+  return {
+    totalViews: Number(row?.total_views ?? 0),
+    followingViews: Number(row?.following_views ?? 0),
+    completedViews: Number(row?.completed_views ?? 0),
+    profileVisitViews: Number(row?.profile_visit_views ?? 0),
+  };
+}
+
+/**
+ * Real, honestly-scoped Insights (spec): everything here comes from data
+ * this backend actually has, not invented numbers.
+ * - "Following" vs "discovery" is each viewer's *current* follow
+ *   relationship to the owner — not necessarily what it was at view time
+ *   (this schema has no historical follow-state snapshot), which is a
+ *   reasonable, disclosed approximation, not a fabricated one.
+ * - "Completed" reuses story_complete, the same recommendation-scoring
+ *   event Phase 6 already records for every Story (spec section 13).
+ * - "Profile visit" reuses profile_visit, already creator-scoped (not
+ *   story-scoped) — a viewer counts if they ever visited this creator's
+ *   profile, not provably *because* of this specific Story.
+ */
+export async function getStoryInsights(storyId: string, ownerId: string): Promise<InsightsCounts> {
+  const row = await queryOne(
+    `SELECT
+       COUNT(*) AS total_views,
+       COUNT(*) FILTER (WHERE f.follower_id IS NOT NULL) AS following_views,
+       COUNT(*) FILTER (WHERE sc.viewer_id IS NOT NULL) AS completed_views,
+       COUNT(*) FILTER (WHERE pv.viewer_id IS NOT NULL) AS profile_visit_views
+     FROM story_views sv
+     LEFT JOIN follows f ON f.follower_id = sv.viewer_id AND f.followee_id = :'owner_id'
+     LEFT JOIN (
+       SELECT DISTINCT viewer_id FROM recommendation_events WHERE story_id = :'story_id' AND event_type = 'story_complete'
+     ) sc ON sc.viewer_id = sv.viewer_id
+     LEFT JOIN (
+       SELECT DISTINCT viewer_id FROM recommendation_events WHERE creator_id = :'owner_id' AND event_type = 'profile_visit'
+     ) pv ON pv.viewer_id = sv.viewer_id
+     WHERE sv.story_id = :'story_id'`,
+    { story_id: storyId, owner_id: ownerId },
+  );
+  return mapInsightsRow(row);
+}
+
+/**
+ * The same shape, one level up: every currently-active Story the owner
+ * has, at once (spec: "per-sequence Insights", the run of Stories a
+ * viewer swipes through for one creator — see StoryFeed.tsx). "Completed"
+ * here means creator_sequence_completed (reached the end of the whole
+ * sequence), the sequence-level counterpart to story_complete above —
+ * not "completed at least one Story in it", which would count someone
+ * who bailed after the first as a completion.
+ */
+export async function getSequenceInsights(ownerId: string): Promise<InsightsCounts> {
+  const row = await queryOne(
+    `SELECT
+       COUNT(*) AS total_views,
+       COUNT(*) FILTER (WHERE f.follower_id IS NOT NULL) AS following_views,
+       COUNT(*) FILTER (WHERE sc.viewer_id IS NOT NULL) AS completed_views,
+       COUNT(*) FILTER (WHERE pv.viewer_id IS NOT NULL) AS profile_visit_views
+     FROM (
+       SELECT DISTINCT viewer_id
+       FROM story_views
+       WHERE story_id IN (
+         SELECT id FROM stories WHERE owner_id = :'owner_id' AND deleted_at IS NULL AND expires_at > now()
+       )
+     ) sv
+     LEFT JOIN follows f ON f.follower_id = sv.viewer_id AND f.followee_id = :'owner_id'
+     LEFT JOIN (
+       SELECT DISTINCT viewer_id FROM recommendation_events WHERE creator_id = :'owner_id' AND event_type = 'creator_sequence_completed'
+     ) sc ON sc.viewer_id = sv.viewer_id
+     LEFT JOIN (
+       SELECT DISTINCT viewer_id FROM recommendation_events WHERE creator_id = :'owner_id' AND event_type = 'profile_visit'
+     ) pv ON pv.viewer_id = sv.viewer_id`,
+    { owner_id: ownerId },
+  );
+  return mapInsightsRow(row);
+}
