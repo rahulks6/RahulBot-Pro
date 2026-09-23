@@ -3,7 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from "r
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
-import { colors, radii, spacing, typography } from "../theme";
+import { colors, radii, spacing, typography, ICONS } from "../theme";
 import { useAuth } from "../state/AuthContext";
 import { listHighlightsForUser, reorderHighlights, type HighlightSummary } from "../api/highlights";
 import { mediaFileUrl } from "../api/stories";
@@ -120,7 +120,7 @@ export function HighlightsRow({ username, isOwner, onReorderModeChange }: Props)
               style={[styles.card, styles.newCard, { width: cardWidth, height: cardHeight, left: 0, top: 0 }]}
               onPress={() => navigation.navigate("HighlightEditor", {})}
             >
-              <Text style={styles.newGlyph}>+</Text>
+              <Text style={styles.newGlyph}>{ICONS.add}</Text>
               <Text style={styles.newLabel}>New</Text>
             </Pressable>
           ) : null

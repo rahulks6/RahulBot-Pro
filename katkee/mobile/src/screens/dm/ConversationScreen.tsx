@@ -13,7 +13,7 @@ import {
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { DMStackParamList, RootStackParamList } from "../../navigation/types";
-import { colors, radii, spacing, typography } from "../../theme";
+import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { useDM } from "../../state/DMContext";
 import { listMessages, markConversationRead, sendMessage, type Message } from "../../api/conversations";
@@ -241,7 +241,7 @@ export function ConversationScreen({ route }: Props): React.JSX.Element {
                   }}
                 >
                   {row.kind === "sent" && row.sharedStoryId ? (
-                    <Text style={mine ? styles.bubbleTextMine : styles.bubbleTextTheirs}>📎 Shared a Story — tap to view</Text>
+                    <Text style={mine ? styles.bubbleTextMine : styles.bubbleTextTheirs}>{ICONS.attach} Shared a Story — tap to view</Text>
                   ) : null}
                   {row.body ? <Text style={mine ? styles.bubbleTextMine : styles.bubbleTextTheirs}>{row.body}</Text> : null}
                 </Pressable>
@@ -266,8 +266,14 @@ export function ConversationScreen({ route }: Props): React.JSX.Element {
           onChangeText={setDraft}
           multiline
         />
-        <Pressable style={[styles.sendButton, !draft.trim() && styles.sendButtonDisabled]} disabled={!draft.trim()} onPress={onSend}>
-          <Text style={styles.sendButtonText}>Send</Text>
+        <Pressable
+          style={[styles.sendButton, !draft.trim() && styles.sendButtonDisabled]}
+          disabled={!draft.trim()}
+          onPress={onSend}
+          accessibilityRole="button"
+          accessibilityLabel="Send"
+        >
+          <Text style={styles.sendButtonText}>{ICONS.send}</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>

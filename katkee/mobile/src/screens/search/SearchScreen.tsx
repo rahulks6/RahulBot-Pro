@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SearchStackParamList } from "../../navigation/types";
-import { colors, radii, spacing, typography } from "../../theme";
+import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { searchUsers, type SearchResult } from "../../api/users";
 import { ApiError } from "../../api/client";
@@ -48,15 +48,23 @@ export function SearchScreen({ navigation }: Props): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <TextInput
-        style={styles.input}
-        placeholder="Search people"
-        placeholderTextColor={colors.textDisabled}
-        autoCapitalize="none"
-        autoCorrect={false}
-        value={query}
-        onChangeText={setQuery}
-      />
+      <View style={styles.inputWrapper}>
+        <Text style={styles.inputIcon}>{ICONS.search}</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Search people"
+          placeholderTextColor={colors.textDisabled}
+          autoCapitalize="none"
+          autoCorrect={false}
+          value={query}
+          onChangeText={setQuery}
+        />
+        {query.length > 0 ? (
+          <Pressable onPress={() => setQuery("")} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
+            <Text style={styles.inputIcon}>{ICONS.clear}</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {loading ? <ActivityIndicator color={colors.accent} style={styles.spinner} /> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -89,16 +97,23 @@ export function SearchScreen({ navigation }: Props): React.JSX.Element {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.md, paddingTop: spacing.md },
-  input: {
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: colors.surface,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: spacing.xs,
+  },
+  inputIcon: { color: colors.textDisabled, fontSize: 16 },
+  input: {
+    flex: 1,
     paddingVertical: spacing.sm,
     color: colors.textPrimary,
     fontSize: 15,
-    marginBottom: spacing.sm,
   },
   spinner: { marginTop: spacing.md },
   error: { color: colors.danger, marginTop: spacing.sm },

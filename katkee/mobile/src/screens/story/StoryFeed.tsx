@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Dimensions, Image, PanResponder, Pressable, StyleSheet, Text, Vibration, View } from "react-native";
 import Video from "react-native-video";
-import { colors, radii, spacing, typography } from "../../theme";
+import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { getMyActiveStories, getUserActiveStories, getViewCount, mediaFileUrl, recordStoryView, type PublicStory } from "../../api/stories";
 import { getMedia } from "../../api/media";
@@ -438,7 +438,7 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
         pointerEvents="none"
         style={[styles.heartBurst, { opacity: heartPulse, transform: [{ scale: heartPulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.4] }) }] }]}
       >
-        <Text style={styles.heartBurstIcon}>♥</Text>
+        <Text style={styles.heartBurstIcon}>{ICONS.liked}</Text>
       </Animated.View>
 
       <View style={styles.progressRow}>
@@ -462,8 +462,8 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
       </View>
 
       <View style={styles.actionRail}>
-        <Pressable onPress={toggleLike} hitSlop={10} style={styles.actionButton}>
-          <Text style={[styles.actionIcon, detail?.viewerHasLiked && styles.actionIconLiked]}>♥</Text>
+        <Pressable onPress={toggleLike} hitSlop={10} style={styles.actionButton} accessibilityRole="button" accessibilityLabel={detail?.viewerHasLiked ? "Unlike" : "Like"}>
+          <Text style={[styles.actionIcon, detail?.viewerHasLiked && styles.actionIconLiked]}>{detail?.viewerHasLiked ? ICONS.liked : ICONS.like}</Text>
           <Text style={styles.actionCount}>{detail?.likeCount ?? "—"}</Text>
         </Pressable>
         <Pressable
@@ -473,15 +473,17 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
           }}
           hitSlop={10}
           style={styles.actionButton}
+          accessibilityRole="button"
+          accessibilityLabel="Comments"
         >
-          <Text style={styles.actionIcon}>◯</Text>
+          <Text style={styles.actionIcon}>{ICONS.comment}</Text>
           <Text style={styles.actionCount}>{detail?.commentCount ?? "—"}</Text>
         </Pressable>
-        <Pressable onPress={() => setShareOpen(true)} hitSlop={10} style={styles.actionButton}>
-          <Text style={styles.actionIcon}>↗</Text>
+        <Pressable onPress={() => setShareOpen(true)} hitSlop={10} style={styles.actionButton} accessibilityRole="button" accessibilityLabel="Share">
+          <Text style={styles.actionIcon}>{ICONS.share}</Text>
         </Pressable>
-        <Pressable onPress={() => setMoreOpen(true)} hitSlop={10} style={styles.actionButton}>
-          <Text style={styles.actionIcon}>•••</Text>
+        <Pressable onPress={() => setMoreOpen(true)} hitSlop={10} style={styles.actionButton} accessibilityRole="button" accessibilityLabel="More">
+          <Text style={styles.actionIcon}>{ICONS.more}</Text>
         </Pressable>
       </View>
 
@@ -500,17 +502,17 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
         </View>
         {/* Visible to any authorized viewer — who's behind the number, and the rest of Insights, is owner-only (StoryInsightsSheet). */}
         {isOwnStory ? (
-          <Pressable onPress={() => setInsightsOpen(true)} hitSlop={8} style={styles.viewCountButton}>
-            <Text style={styles.viewCount}>👁 {viewCount ?? "—"}</Text>
+          <Pressable onPress={() => setInsightsOpen(true)} hitSlop={8} style={styles.viewCountButton} accessibilityRole="button" accessibilityLabel="Viewers and Insights">
+            <Text style={styles.viewCount}>{ICONS.viewers} {viewCount ?? "—"}</Text>
           </Pressable>
         ) : (
-          <Text style={styles.viewCount}>👁 {viewCount ?? "—"}</Text>
+          <Text style={styles.viewCount}>{ICONS.viewers} {viewCount ?? "—"}</Text>
         )}
       </View>
 
       {onClose ? (
-        <Pressable style={styles.closeButton} onPress={onClose} hitSlop={12}>
-          <Text style={styles.closeIcon}>✕</Text>
+        <Pressable style={styles.closeButton} onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+          <Text style={styles.closeIcon}>{ICONS.close}</Text>
         </Pressable>
       ) : null}
 

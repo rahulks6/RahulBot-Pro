@@ -10,7 +10,7 @@ import {
 import { launchImageLibrary } from "react-native-image-picker";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CreateStackParamList } from "../../navigation/types";
-import { colors, radii, spacing } from "../../theme";
+import { colors, radii, spacing, ICONS } from "../../theme";
 import { useTapGesture } from "../../hooks/useTapGesture";
 import { EmptyState } from "../../components/EmptyState";
 import { guessMimeTypeFromUri } from "../../utils/mime";
@@ -302,7 +302,7 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
 
       <View style={styles.topBar}>
         <Pressable onPress={() => navigation.goBack()} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close camera">
-          <Text style={styles.topIcon}>✕</Text>
+          <Text style={styles.topIcon}>{ICONS.close}</Text>
         </Pressable>
         <View style={styles.topRight}>
           <Pressable
@@ -312,7 +312,7 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
             accessibilityLabel="Flash"
             accessibilityState={{ selected: flash === "on" }}
           >
-            <Text style={[styles.topIcon, flash === "on" && styles.topIconActive]}>⚡</Text>
+            <Text style={[styles.topIcon, flash === "on" && styles.topIconActive]}>{ICONS.flash}</Text>
           </Pressable>
           <Pressable
             onPress={() => setTimerSeconds((t) => (t === 0 ? 3 : t === 3 ? 10 : 0))}
@@ -322,7 +322,8 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
             accessibilityLabel={timerSeconds === 0 ? "Timer off" : `Timer, ${timerSeconds} seconds`}
           >
             <Text style={[styles.topIcon, timerSeconds > 0 && styles.topIconActive]}>
-              {timerSeconds === 0 ? "Timer" : `${timerSeconds}s`}
+              {ICONS.timer}
+              {timerSeconds > 0 ? ` ${timerSeconds}s` : ""}
             </Text>
           </Pressable>
         </View>
@@ -340,7 +341,7 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
 
       <View style={styles.bottomBar}>
         <Pressable onPress={openGallery} hitSlop={12} style={styles.sideButton} accessibilityRole="button" accessibilityLabel="Choose from gallery">
-          <Text style={styles.sideButtonLabel}>Gallery</Text>
+          <Text style={styles.sideButtonIcon}>{ICONS.gallery}</Text>
         </Pressable>
 
         {/*
@@ -379,7 +380,7 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
           accessibilityRole="button"
           accessibilityLabel="Flip camera"
         >
-          <Text style={styles.sideButtonLabel}>Flip</Text>
+          <Text style={styles.sideButtonIcon}>{ICONS.flip}</Text>
         </Pressable>
       </View>
     </View>
@@ -436,7 +437,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   sideButton: { width: 56, alignItems: "center" },
-  sideButtonLabel: { color: colors.textPrimary, fontSize: 13 },
+  sideButtonIcon: { color: colors.textPrimary, fontSize: 24 },
   captureButton: {
     width: 76,
     height: 76,

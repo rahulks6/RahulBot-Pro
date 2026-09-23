@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from "react-native";
-import { colors, radii, spacing } from "../theme";
+import { colors, radii, spacing, ICONS } from "../theme";
 import type { DrawStroke, DrawTool } from "../models/storyDraft";
 import { DrawingStrokes } from "./DrawingStrokes";
 
@@ -150,10 +150,10 @@ export function DrawingCanvas({ containerWidth, containerHeight, strokes, onChan
             </Pressable>
           ))}
           <Pressable onPress={undo} hitSlop={8} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Undo">
-            <Text style={styles.iconLabel}>↺</Text>
+            <Text style={styles.iconLabel}>{ICONS.undo}</Text>
           </Pressable>
           <Pressable onPress={redo} hitSlop={8} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Redo">
-            <Text style={styles.iconLabel}>↻</Text>
+            <Text style={styles.iconLabel}>{ICONS.redo}</Text>
           </Pressable>
           <Pressable onPress={onDone} style={styles.doneButton} accessibilityRole="button" accessibilityLabel="Done drawing">
             <Text style={styles.doneLabel}>Done</Text>

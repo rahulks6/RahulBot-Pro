@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Image, Pressable, SectionList, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../navigation/types";
-import { colors, radii, spacing, typography } from "../../theme";
+import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { deleteStory, getMyArchivedStories, mediaFileUrl, type PublicStory } from "../../api/stories";
 import { EmptyState } from "../../components/EmptyState";
@@ -173,7 +173,7 @@ export function ArchiveScreen({ navigation }: Props): React.JSX.Element {
                     {isSelected ? (
                       <View style={styles.selectedOverlay}>
                         <View style={styles.selectedCheck}>
-                          <Text style={styles.selectedCheckGlyph}>✓</Text>
+                          <Text style={styles.selectedCheckGlyph}>{ICONS.check}</Text>
                         </View>
                       </View>
                     ) : null}
@@ -193,10 +193,10 @@ export function ArchiveScreen({ navigation }: Props): React.JSX.Element {
           <Text style={typography.caption}>{selected.length} selected</Text>
           <View style={styles.actionButtons}>
             <Pressable onPress={onDelete} disabled={deleting} hitSlop={8} style={styles.actionButton}>
-              {deleting ? <ActivityIndicator color={colors.danger} /> : <Text style={styles.actionDelete}>Delete</Text>}
+              {deleting ? <ActivityIndicator color={colors.danger} /> : <Text style={styles.actionDelete}>{ICONS.trash} Delete</Text>}
             </Pressable>
             <Pressable onPress={onCreateHighlight} hitSlop={8} style={styles.actionButton}>
-              <Text style={styles.actionCreate}>Create Highlight</Text>
+              <Text style={styles.actionCreate}>{ICONS.add} Create Highlight</Text>
             </Pressable>
           </View>
         </View>

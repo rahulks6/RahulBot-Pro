@@ -897,3 +897,47 @@ instead of `onAdd`. Reachable two ways, matching the text pattern exactly:
 double-tapping the object directly, or "Edit Location"/"Edit Date/Time" in
 OverlayAdjustSheet — so it's available through the accessible,
 non-gesture path too, not just the double-tap gesture.
+
+## Icon set pass
+
+Against a supplied "Katkee Icon Set" reference sheet (bottom nav, story
+actions, camera, story editor, owner controls, search, activity, DM,
+profile, highlights, archive). There's no vector icon font or SVG icon
+library installed (same network-blocked-npm-install constraint as
+everywhere else in this project), so every icon is a plain Unicode glyph
+rendered through `Text` — now centralized in `theme/icons.ts` (`ICONS`)
+instead of each screen inlining its own "✕"/"⚡"/etc., which is what every
+file below was doing before this pass.
+
+**Updated to match the reference:**
+- **Bottom navigation** — real icons (⌂/🔍/+/♡/💬/◉) above each label;
+  previously text-only labels with a focus dot.
+- **Story action rail** — like/liked/comment/share/more, plus the owner's
+  viewer-count button and the close button.
+- **Camera screen** — Gallery and Flip were plain text buttons ("Gallery",
+  "Flip"); Timer showed only a number. All three are icons now (Close and
+  Flash already were).
+- **Story editor top bar** — Text/Stickers/Draw/Crop/Audio were plain text
+  buttons; now Aa/☺/✎/⛶/🔊 icons, and the trash-zone glyph and drawing
+  tool's undo/redo now pull from the same shared constants.
+- **Search** — added a leading search icon and a clear (✕) button to the
+  existing input, which had neither.
+- **DM conversation** — the "shared a Story" attachment marker and the
+  Send button are icons now.
+- **Highlights / Archive** — the "New Highlight" card, the Archive
+  multi-select checkmark, and the Delete/Create Highlight actions now
+  carry icons alongside their labels. Log out gets an exit icon.
+
+**Deliberately not touched — the reference depicts a feature this app
+doesn't have yet, and an icon with nothing behind it is a fake button, not
+a real one:** a dedicated Settings screen (Privacy/Notifications/Data &
+Storage/Help/About all as their own screens); Edit Profile / Share Profile
+buttons; Activity split into Likes/Comments/Follows/Mentions tabs (it's one
+merged feed by design — see ActivityScreen.tsx); Search filters; a DM
+attach/emoji/new-chat/back toolbar (there's no file-attach or emoji-picker
+feature, and conversations are only reached from the existing inbox list
+or a Story's Share sheet, not a dedicated "new chat" composer); and
+Highlights' "Change Cover" (a Highlight's cover is its first item's own
+media — see `HighlightsRow.tsx`'s own comment on why there's no separate
+cover-image upload/crop flow). Building any of these would be new feature
+work, not an icon update.

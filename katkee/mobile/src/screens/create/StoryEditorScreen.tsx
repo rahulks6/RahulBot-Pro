@@ -18,7 +18,7 @@ import Video from "react-native-video";
 import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import type { CreateStackParamList, RootStackParamList } from "../../navigation/types";
-import { colors, radii, spacing, typography } from "../../theme";
+import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { uploadPhoto, uploadVideo } from "../../api/media";
 import { publishStory } from "../../api/stories";
@@ -413,7 +413,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
 
         {isDraggingOverlay ? (
           <View style={[styles.trashZone, { width: TRASH_ZONE_SIZE, height: TRASH_ZONE_SIZE }]}>
-            <Text style={styles.trashIcon}>🗑</Text>
+            <Text style={styles.trashIcon}>{ICONS.trash}</Text>
           </View>
         ) : null}
       </View>
@@ -436,11 +436,11 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
       {!drawMode && !cropMode ? (
         <View style={styles.topBar}>
           <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close editor">
-            <Text style={styles.topIcon}>✕</Text>
+            <Text style={styles.topIcon}>{ICONS.close}</Text>
           </Pressable>
           <View style={styles.topRight}>
             <Pressable onPress={() => setCropMode(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Crop">
-              <Text style={styles.topIcon}>Crop</Text>
+              <Text style={styles.topIcon}>{ICONS.crop}</Text>
             </Pressable>
             <Pressable
               onPress={() => {
@@ -451,7 +451,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
               accessibilityRole="button"
               accessibilityLabel="Add text"
             >
-              <Text style={styles.topIcon}>Text</Text>
+              <Text style={styles.topIcon}>{ICONS.text}</Text>
             </Pressable>
             <Pressable
               onPress={() => {
@@ -462,10 +462,10 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
               accessibilityRole="button"
               accessibilityLabel="Add sticker, emoji, mention, location, or date and time"
             >
-              <Text style={styles.topIcon}>Stickers</Text>
+              <Text style={styles.topIcon}>{ICONS.sticker}</Text>
             </Pressable>
             <Pressable onPress={() => setDrawMode(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Draw">
-              <Text style={styles.topIcon}>Draw</Text>
+              <Text style={styles.topIcon}>{ICONS.draw}</Text>
             </Pressable>
             {kind === "video" ? (
               <Pressable
@@ -474,7 +474,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
                 accessibilityRole="button"
                 accessibilityLabel={draft.audioMuted ? "Audio muted, tap to turn on" : "Audio on, tap to mute"}
               >
-                <Text style={styles.topIcon}>{draft.audioMuted ? "Muted" : "Audio on"}</Text>
+                <Text style={styles.topIcon}>{draft.audioMuted ? ICONS.audioMuted : ICONS.audioOn}</Text>
               </Pressable>
             ) : null}
           </View>

@@ -1,7 +1,7 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { colors, radii, spacing, typography } from "../theme";
+import { colors, radii, spacing, typography, ICONS } from "../theme";
 import { useNotifications } from "../state/NotificationsContext";
 import { useDM } from "../state/DMContext";
 
@@ -12,6 +12,14 @@ const TAB_LABELS: Record<string, string> = {
   Activity: "Activity",
   DM: "DM",
   Profile: "Profile",
+};
+
+const TAB_ICONS: Record<string, string> = {
+  Home: ICONS.home,
+  Search: ICONS.search,
+  Activity: ICONS.activity,
+  DM: ICONS.dm,
+  Profile: ICONS.profile,
 };
 
 /**
@@ -47,7 +55,7 @@ export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               style={styles.createButtonWrapper}
             >
               <View style={styles.createButton}>
-                <Text style={styles.createButtonGlyph}>+</Text>
+                <Text style={styles.createButtonGlyph}>{ICONS.create}</Text>
               </View>
             </Pressable>
           );
@@ -69,15 +77,15 @@ export function BottomTabBar({ state, descriptors, navigation }: BottomTabBarPro
             onPress={onPress}
             style={styles.tabItem}
           >
-            <View>
-              <Text style={[typography.caption, isFocused && styles.labelFocused]}>{label}</Text>
+            <View style={styles.tabContent}>
+              <Text style={[styles.tabIcon, isFocused && styles.labelFocused]}>{TAB_ICONS[route.name] ?? ""}</Text>
               {showUnreadBadge ? (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadBadgeText}>{badgeCount > 99 ? "99+" : badgeCount}</Text>
                 </View>
               ) : null}
             </View>
-            {isFocused ? <View style={styles.focusDot} /> : null}
+            <Text style={[typography.caption, styles.tabLabel, isFocused && styles.labelFocused]}>{label}</Text>
           </Pressable>
         );
       })}
@@ -99,18 +107,15 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
+    gap: 2,
     paddingVertical: spacing.xs,
   },
+  tabContent: { alignItems: "center", justifyContent: "center" },
+  tabIcon: { fontSize: 22, color: colors.textSecondary },
+  tabLabel: { color: colors.textSecondary, fontSize: 11 },
   labelFocused: {
     color: colors.accent,
     fontWeight: "700",
-  },
-  focusDot: {
-    width: 4,
-    height: 4,
-    borderRadius: radii.pill,
-    backgroundColor: colors.accent,
   },
   unreadBadge: {
     position: "absolute",

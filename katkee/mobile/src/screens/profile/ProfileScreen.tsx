@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
-import { colors, radii, spacing, typography } from "../../theme";
+import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
 import { getProfile } from "../../api/users";
 import { getMyActiveStories } from "../../api/stories";
@@ -89,8 +89,8 @@ export function ProfileScreen(): React.JSX.Element {
 
       <HighlightsRow username={user.username} isOwner onReorderModeChange={(active) => setScrollEnabled(!active)} />
 
-      <Pressable style={styles.logoutButton} onPress={() => void logout()}>
-        <Text style={styles.logoutLabel}>Log out</Text>
+      <Pressable style={styles.logoutButton} onPress={() => void logout()} accessibilityRole="button" accessibilityLabel="Log out">
+        <Text style={styles.logoutLabel}>{ICONS.logout} Log out</Text>
       </Pressable>
 
       <Pressable style={styles.deleteAccountLink} onPress={() => setDeleteOpen(true)}>
