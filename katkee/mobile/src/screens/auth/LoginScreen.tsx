@@ -26,8 +26,12 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <Text style={[typography.displayLarge, styles.brand]}>KATKEE</Text>
-      <Text style={[typography.body, styles.subtitle]}>Discover people you want to see again.</Text>
+      {/* Mixed-case wordmark, "Kat" off-white + "kee" amber — matches the brand logo (see ../../../BRAND.md). */}
+      <Text style={[typography.displayLarge, styles.brand]}>
+        <Text style={styles.brandKat}>Kat</Text>
+        <Text style={styles.brandKee}>kee</Text>
+      </Text>
+      <Text style={[typography.body, styles.subtitle]}>Story that connects.</Text>
 
       {error ? <Text style={styles.errorBanner}>{error}</Text> : null}
 
@@ -83,7 +87,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     gap: spacing.sm,
   },
-  brand: { textAlign: "center", color: colors.accent, letterSpacing: 2 },
+  brand: { textAlign: "center", letterSpacing: 1 },
+  brandKat: { color: colors.textPrimary },
+  brandKee: { color: colors.accent },
   subtitle: { textAlign: "center", color: colors.textSecondary, marginBottom: spacing.lg },
   input: {
     backgroundColor: colors.surface,

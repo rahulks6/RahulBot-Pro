@@ -1,4 +1,6 @@
-# KATKEE
+# Katkee
+
+*Story that connects.*
 
 Story-first social network: discover people you want to see again.
 
@@ -24,6 +26,10 @@ screenshots, listing copy, the privacy/data-safety forms).
 **[`legal/`](./legal/)** — draft Privacy Policy and Terms of Service,
 written to match what this app actually collects and does (not generic
 boilerplate) — both need real legal review before you publish them.
+
+**[`BRAND.md`](./BRAND.md)** — the name, tagline, and color tokens, and
+where each is already wired into the running app vs. what still needs a
+real designer (app icon, splash screen, store graphics).
 
 ## Status: Phase 1-13 (foundation → auth → social graph → camera/media → Stories → engagement → recommendations → notifications → DMs → Highlights → Moderation → production hardening → deployment readiness → spec realignment)
 

@@ -62,6 +62,11 @@ both stores require in the listing itself.
     `like` notifications for the same Story into one row ("Rahul, Priya
     and 12 others liked your Story" — spec's own example), instead of one
     row per like. Every other notification type is unaffected.
+  - `LoginScreen.tsx`'s wordmark now matches the real brand logo — mixed
+    case ("Kat" off-white + "kee" amber), not all-caps solid amber — and
+    its subtitle is the real tagline ("Story that connects."), not a
+    placeholder. See `../BRAND.md` for the full name/tagline/color
+    reference this reads from.
   - Still open after this pass (see "Phase 13 specifically" below): DM
     per-message delivery states (Sending/Sent/Delivered/Read/Failed), and
     drag-and-drop reordering of Highlights or their contents.
