@@ -19,14 +19,14 @@ const MAX_TITLE_LENGTH = 30;
  * is exactly the point of an Archive existing at all.
  */
 export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.Element {
-  const { highlightId } = route.params;
+  const { highlightId, initialStoryIds } = route.params;
   const isEditing = highlightId !== undefined;
   const { accessToken } = useAuth();
 
   const [archive, setArchive] = useState<PublicStory[] | null>(null);
   const [title, setTitle] = useState("");
   // Selection order matters (it becomes the Highlight's item order), so this is an ordered array, not a Set.
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(initialStoryIds ?? []);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

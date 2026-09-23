@@ -27,6 +27,44 @@ both stores require in the listing itself.
 
 ## What exists here
 
+- **Phase 13 (spec realignment):** a pass against the full 123-section
+  KATKEE master spec found real daylight between it and what Phases 1-12
+  had built, and closed the highest-impact gaps:
+  - `src/screens/story/StoryFeed.tsx` — the gesture/engagement core
+    extracted from `StoryViewerScreen.tsx` so **Home can be the Story feed
+    itself** (spec sections 4-6: zero-tap, full-screen, auto-advancing —
+    not a tray you tap into, which is what Phase 6 actually shipped).
+    `HomeScreen.tsx` now renders it directly; `StoryViewerScreen.tsx` is a
+    thin wrapper used when a specific creator's Stories are opened from
+    somewhere with a real "back" (a profile, a notification, a DM share).
+    Reaching either edge of Home's feed shows a "you're all caught up" end
+    state instead of navigating away, since Home has nowhere to go back to.
+  - A Story's view count is now visible to **any** viewer who can watch it
+    (previously owner-only), while who's actually behind that number stays
+    a strictly owner-only `GET /api/v1/stories/:id/viewers` door —
+    `src/components/StoryViewersSheet.tsx`, opened by tapping the count on
+    your own Story. Backend: `stories.repository.ts`'s new `listViewers`,
+    `stories.service.ts`'s relaxed `getViewCount` + new `getStoryViewers`,
+    both covered by new tests in `test/stories.test.ts`.
+  - `src/components/HighlightsRow.tsx` rebuilt as an exactly-3-per-row grid
+    of rectangular/portrait cards — spec section 62 explicitly rules out
+    the circular Instagram-style bubbles this rendered as before.
+    `ProfileScreen.tsx`/`UserProfileScreen.tsx` are now `ScrollView`s so a
+    multi-row grid can't overflow off-screen.
+  - `src/screens/profile/ArchiveScreen.tsx` (new) — a dedicated, private,
+    month-grouped, multi-select grid over every Story you've ever
+    published (`GET /api/v1/stories/mine/archive`, previously only fed the
+    Highlight-creation picker). Multi-select feeds straight into creating
+    a Highlight (`HighlightEditorScreen.tsx` gained an `initialStoryIds`
+    preselect param) or bulk-deleting. Reached from a new **Archive** link
+    on your own `ProfileScreen.tsx`.
+  - `src/screens/activity/ActivityScreen.tsx` now groups consecutive
+    `like` notifications for the same Story into one row ("Rahul, Priya
+    and 12 others liked your Story" — spec's own example), instead of one
+    row per like. Every other notification type is unaffected.
+  - Still open after this pass (see "Phase 13 specifically" below): DM
+    per-message delivery states (Sending/Sent/Delivered/Read/Failed), and
+    drag-and-drop reordering of Highlights or their contents.
 - `src/theme/` — the Katkee design system tokens: near-black background,
   off-white text, one amber/yellow accent (`colors.accent`) used for the
   Story ring, primary CTA, Follow, Create, and unread badges. No
@@ -78,16 +116,23 @@ both stores require in the listing itself.
   segment), and double-tap ensures a like — never unlikes, and single-tap
   navigation is deliberately delayed behind the double-tap window so a
   double-tap is never misread as two single taps first. Each view is
-  recorded through `POST /api/v1/stories/:id/view`. It's reached from
-  three real places: the Story ring on your own Profile and on another
-  user's profile (both tappable only when they actually have an active
-  Story — checked via a real API call, not assumed), and a horizontal
-  tray of followed creators at the top of Home, which now opens the
-  viewer with that whole tray as the swipe order (not just one person).
-- `src/screens/home/HomeScreen.tsx` — no longer only an empty state: it
-  fetches `GET /api/v1/stories/feed/home` (Phase 6's ranked endpoint, not
-  just the follow graph) and shows a real tray ordered by the backend's
-  actual score, with a "Discover" badge on entries you don't yet follow.
+  recorded through `POST /api/v1/stories/:id/view`, and the resulting
+  count is shown live (visible to any authorized viewer, not just the
+  owner) — who's actually behind that number is a separate, strictly
+  owner-only door (`GET /api/v1/stories/:id/viewers`, surfaced as a tap
+  target only on your own Story). The gesture set and engagement rail
+  live in `src/screens/story/StoryFeed.tsx`, shared by two callers: this
+  screen (reached from a Story ring on your own or another user's
+  profile, a notification, or a DM share — each has a real "back" to
+  return to) and Home itself.
+- `src/screens/home/HomeScreen.tsx` — Home *is* the Story feed (spec
+  sections 4-6): it fetches `GET /api/v1/stories/feed/home` (Phase 6's
+  ranked endpoint — followed creators plus real discovery, not just the
+  follow graph) and renders `StoryFeed` directly, full-screen and
+  auto-advancing from the moment Home opens — zero taps needed, not a
+  tray you tap into. Swiping/tapping past the last creator shows a
+  "you're all caught up" end state instead of navigating away, since
+  Home has nowhere to go back to.
 - `RootNavigator.tsx` wraps the tab navigator in a root-level stack so
   `StoryViewer` is reachable from any tab (Profile, Search, Home) without
   each tab's own stack needing to know about it.
@@ -232,6 +277,33 @@ both stores require in the listing itself.
   local tokens and returns to signed-out on success — the same ending
   state as `logout()`, reached by a genuinely different, irreversible
   action.
+
+### Phase 13 specifically
+
+- **DM delivery states (Sending/Sent/Delivered/Read/Failed) aren't built.**
+  `ConversationScreen.tsx` still has only a local `sending` busy flag and
+  read-tracking — a real per-message status model needs a backend schema
+  change (a `status` column plus a way to observe delivery, not just
+  send/read), which is a bigger, separate slice than this pass covers.
+- **Drag-and-drop reordering isn't built** — neither reordering
+  Highlights themselves nor reordering content within one.
+  `HighlightEditorScreen.tsx`'s selection order (tap order → numbered
+  badge) is the only ordering control that exists; picking it up and
+  dropping it elsewhere needs real gesture-drag code this pass doesn't
+  add.
+- **Story Insights is the viewer list and the count, not the full spec.**
+  `getStoryViewers`/`StoryViewersSheet.tsx` give an owner the real "who
+  watched" list this session added, and the count is now public. What's
+  still missing: a Views-vs-Viewers distinction, completion %, and the
+  discovery/following/profile-visit source breakdown — real work exists
+  for all of it already (`recommendation_events` — see
+  `backend/README.md`'s Phase 6/7 notes) but assembling it into an
+  owner-facing Insights screen is future work, not done here.
+- **Archive has no full-screen viewer for an individual expired Story** —
+  tapping a thumbnail selects it (for a Highlight or deletion) rather than
+  opening playback. `StoryFeed.tsx`'s pipeline only ever fetches *active*
+  Stories (see `getMyActiveStories`/`getUserActiveStories`); a real
+  expired-Story viewer is a separate feature this pass doesn't build.
 
 ### Phase 12 specifically
 
@@ -429,11 +501,6 @@ Two things are honestly scoped down rather than faked:
   Story you've already finished" affordance in this viewer (tapping left
   only moves to the previous Story in the sequence, never re-plays the
   current one from 0) — nothing to attach the event to yet.
-- **The Home tray is still a horizontal row you tap into, not the
-  spec's full-bleed auto-advancing vertical feed.** Phase 6 changed what
-  populates and orders that tray (real ranking, real discovery) but
-  didn't change its layout — see "Phase 4 specifically" above for the
-  same simplification applied to cross-creator navigation.
 - **Every event call is fire-and-forget** (`recordEvent(...).catch(() =>
   undefined)`) — a dropped analytics call degrades ranking quality over
   time, never the viewing experience in the moment. That's a deliberate

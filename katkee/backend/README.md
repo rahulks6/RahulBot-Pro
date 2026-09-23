@@ -457,6 +457,33 @@ smoke-tested against a live server: wrong password → 401 with nothing
 touched, correct password → 204, then profile/login/refresh all
 confirmed genuinely blocked afterward.
 
+## Phase 13: a Story's view count is public; who's behind it isn't
+
+A pass of the mobile app against the full 123-section KATKEE master spec
+(driven from the mobile side — see `../mobile/README.md`'s Phase 13
+section for the fuller list of what that pass changed) turned up one real
+backend gap: `GET /api/v1/stories/:id/views` rejected anyone but the
+Story's own owner outright, but the spec (and the product owner, directly)
+wants the count itself visible to *any* viewer while they're watching —
+same as how many people can watch it in the first place — while the
+identities behind that number stay private to the owner alone.
+
+`stories.service.ts`'s `getViewCount` now reuses `getStoryForViewer`'s
+full access-check rule set (audience, blocks, private-account gating)
+instead of an ownership check — anyone who could watch the Story can see
+its count. The identities are a genuinely separate door: a new
+`getStoryViewers(ownerId, storyId, limit, offset)` + `stories.repository.ts`'s
+new `listViewers` (joins `story_views` to `users`, ordered most-recent
+first), reachable only via the new owner-only `GET
+/api/v1/stories/:id/viewers` route — anyone else gets a 404, same as
+fetching a Story they have no business seeing at all.
+
+147/147 tests passing (2 new: a follower can now see a public view count
+they wouldn't previously have been allowed to, while both a non-owner
+follower and a stranger are still rejected from the identity-list
+endpoint; a stranger with no access to the Story at all still can't see
+even the count).
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -491,7 +518,8 @@ confirmed genuinely blocked afterward.
 | GET | `/api/v1/stories/:id` | Bearer | Owner always; others need it active + visible per audience/privacy/block rules; includes `likeCount`/`commentCount`/`viewerHasLiked` |
 | DELETE | `/api/v1/stories/:id` | Bearer, owner-only | Soft-deletes; gone even to the owner afterward (unlike natural expiry) |
 | POST | `/api/v1/stories/:id/view` | Bearer | Records a view once per viewer; the owner's own view never counts |
-| GET | `/api/v1/stories/:id/views` | Bearer, owner-only | View count |
+| GET | `/api/v1/stories/:id/views` | Bearer, any authorized viewer | View count — public to anyone who can watch the Story (Phase 13), not owner-only |
+| GET | `/api/v1/stories/:id/viewers` | Bearer, owner-only | The identities behind that count — strictly the Story's own owner (Phase 13) |
 | GET | `/api/v1/stories/mine/active` | Bearer | Your own non-expired Stories, oldest first |
 | GET | `/api/v1/stories/feed/following` | Bearer | Owners you follow (+ yourself) with an active Story, most-recent-first — real, but plain follow-graph order, not ranked |
 | GET | `/api/v1/users/:username/stories` | Bearer | That user's active Stories visible to you |

@@ -46,12 +46,20 @@ export type RootStackParamList = {
   /**
    * `creators` is the ordered list of usernames swipe up/down moves
    * through (spec section 4) — a single-element list when opened from a
-   * profile's Story ring (nowhere to swipe to), the full Home tray order
-   * when opened from there. `startIndex` is which one to open on.
+   * profile's Story ring or a notification (nowhere to swipe to). Home
+   * itself renders the same StoryFeed core directly (see HomeScreen.tsx),
+   * not through this route — there's nothing to return to from there.
+   * `startIndex` is which one to open on.
    */
   StoryViewer: { creators: string[]; startIndex: number; initialStoryId?: string };
   /** Sequential, view-only playback of one Highlight's items — see HighlightViewerScreen.tsx for why it's a separate, simpler viewer from StoryViewer. */
   HighlightViewer: { highlightId: string; title: string };
-  /** Create when `highlightId` is omitted, edit (rename/replace items/delete) when it's given. Always the caller's own Highlight. */
-  HighlightEditor: { highlightId?: string };
+  /**
+   * Create when `highlightId` is omitted, edit (rename/replace items/delete)
+   * when it's given. Always the caller's own Highlight. `initialStoryIds`
+   * (create only) preselects Stories chosen via multi-select in Archive.
+   */
+  HighlightEditor: { highlightId?: string; initialStoryIds?: string[] };
+  /** Every Story you've ever published, expired or not — private, owner-only, grouped by month (spec: a dedicated Archive, not just the Highlight picker). */
+  Archive: undefined;
 };

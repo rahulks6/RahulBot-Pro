@@ -110,6 +110,42 @@ describe("viewing and audience rules", () => {
     assert.equal(views.body.views, 0);
   });
 
+  it("the view count is visible to any viewer who can watch the Story, not just its owner — but who they are is owner-only", async () => {
+    const owner = await signupUser();
+    const viewer = await signupUser();
+    const stranger = await signupUser();
+    await client.post(`/api/v1/users/${owner.input.username}/follow`, undefined, authHeader(viewer.accessToken));
+
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const story = await publishStory(owner.accessToken, mediaId);
+    const storyId = story.body.story.id;
+    await client.post(`/api/v1/stories/${storyId}/view`, undefined, authHeader(viewer.accessToken));
+
+    const asViewer = await client.get(`/api/v1/stories/${storyId}/views`, authHeader(viewer.accessToken));
+    assert.equal(asViewer.status, 200);
+    assert.equal(asViewer.body.views, 1);
+
+    const viewersAsViewer = await client.get(`/api/v1/stories/${storyId}/viewers`, authHeader(viewer.accessToken));
+    assert.equal(viewersAsViewer.status, 404);
+    const viewersAsStranger = await client.get(`/api/v1/stories/${storyId}/viewers`, authHeader(stranger.accessToken));
+    assert.equal(viewersAsStranger.status, 404);
+
+    const viewersAsOwner = await client.get(`/api/v1/stories/${storyId}/viewers`, authHeader(owner.accessToken));
+    assert.equal(viewersAsOwner.status, 200);
+    assert.equal(viewersAsOwner.body.viewers.length, 1);
+    assert.equal(viewersAsOwner.body.viewers[0].username, viewer.input.username);
+  });
+
+  it("a stranger can't see the view count of a Story they aren't allowed to watch", async () => {
+    const owner = await signupUser();
+    const stranger = await signupUser();
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const story = await publishStory(owner.accessToken, mediaId, { audience: "followers" });
+
+    const res = await client.get(`/api/v1/stories/${story.body.story.id}/views`, authHeader(stranger.accessToken));
+    assert.equal(res.status, 403);
+  });
+
   it("a private account gates every Story regardless of its own audience setting, until followed", async () => {
     const owner = await signupUser();
     const viewer = await signupUser();

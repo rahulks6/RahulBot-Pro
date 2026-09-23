@@ -10,6 +10,7 @@ import { MainTabs } from "./MainTabs";
 import { StoryViewerScreen } from "../screens/story/StoryViewerScreen";
 import { HighlightViewerScreen } from "../screens/highlight/HighlightViewerScreen";
 import { HighlightEditorScreen } from "../screens/highlight/HighlightEditorScreen";
+import { ArchiveScreen } from "../screens/profile/ArchiveScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -34,6 +35,17 @@ function SignedInNavigator(): React.JSX.Element {
           headerTintColor: colors.textPrimary,
           headerShadowVisible: false,
         })}
+      />
+      <Stack.Screen
+        name="Archive"
+        component={ArchiveScreen}
+        options={{
+          headerShown: true,
+          title: "Archive",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
       />
     </Stack.Navigator>
   );

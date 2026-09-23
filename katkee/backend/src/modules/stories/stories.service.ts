@@ -262,10 +262,35 @@ export async function listMyArchivedStories(ownerId: string, limit: number, offs
   return stories.map(toPublicStory);
 }
 
-export async function getViewCount(ownerId: string, storyId: string): Promise<number> {
-  const story = await storiesRepo.findStoryById(storyId);
-  if (!story || story.ownerId !== ownerId) throw new HttpError(404, "Story not found.");
+/**
+ * The count is public to anyone who can view the Story at all (spec: "how
+ * many people watched" is shown while watching, same as who can watch it) —
+ * reuses getStoryForViewer's full access rule set rather than restricting
+ * to the owner. The identities behind that number are a separate, strictly
+ * owner-only door — see getStoryViewers below.
+ */
+export async function getViewCount(viewerId: string, storyId: string): Promise<number> {
+  await getStoryForViewer(storyId, viewerId);
   return storiesRepo.countViews(storyId);
+}
+
+export interface StoryViewer {
+  id: string;
+  username: string;
+  displayName: string;
+  viewedAt: string;
+}
+
+/** Who actually watched — only the Story's own owner may ever see this list (spec: viewer identity is private, unlike the count itself). */
+export async function getStoryViewers(
+  ownerId: string,
+  storyId: string,
+  limit: number,
+  offset: number,
+): Promise<StoryViewer[]> {
+  const story = await storiesRepo.findStoryById(storyId);
+  if (!story || story.ownerId !== ownerId || story.deletedAt !== null) throw new HttpError(404, "Story not found.");
+  return storiesRepo.listViewers(storyId, limit, offset);
 }
 
 /**

@@ -160,3 +160,29 @@ export async function countViews(storyId: string): Promise<number> {
   });
   return Number(row?.n ?? 0);
 }
+
+export interface StoryViewerRow {
+  id: string;
+  username: string;
+  displayName: string;
+  viewedAt: string;
+}
+
+/** Owner-only (enforced in stories.service.ts) — the actual identities behind countViews' number. */
+export async function listViewers(storyId: string, limit: number, offset: number): Promise<StoryViewerRow[]> {
+  const rows = await query(
+    `SELECT u.id, u.username, u.display_name, sv.viewed_at
+     FROM story_views sv
+     JOIN users u ON u.id = sv.viewer_id
+     WHERE sv.story_id = :'story_id'
+     ORDER BY sv.viewed_at DESC
+     LIMIT :'limit' OFFSET :'offset'`,
+    { story_id: storyId, limit, offset },
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    username: String(r.username),
+    displayName: String(r.display_name),
+    viewedAt: String(r.viewed_at),
+  }));
+}

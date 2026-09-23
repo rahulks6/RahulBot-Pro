@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import type { SearchStackParamList, RootStackParamList } from "../../navigation/types";
@@ -127,7 +127,7 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
       : "Follow";
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Pressable
         onPress={openStoryViewer}
         disabled={!hasActiveStory}
@@ -187,16 +187,17 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
 
       <HighlightsRow username={username} isOwner={profile.isSelf} />
       <ReportSheet visible={reportOpen} targetType="user" targetId={profile.id} onClose={() => setReportOpen(false)} />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: "center",
     paddingTop: spacing.xxl,
     paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
     backgroundColor: colors.background,
     gap: spacing.xs,
   },

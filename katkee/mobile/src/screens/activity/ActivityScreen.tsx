@@ -52,6 +52,82 @@ function messageFor(notification: NotificationRecord): string {
   }
 }
 
+interface GroupedLikeRow {
+  kind: "grouped-like";
+  key: string;
+  unreadIds: string[];
+  storyId: string;
+  actorNames: string[]; // up to 2, most recent first
+  totalCount: number;
+  createdAt: string;
+  anyUnread: boolean;
+}
+
+interface SingleRow {
+  kind: "single";
+  key: string;
+  notification: NotificationRecord;
+}
+
+type ActivityRow = GroupedLikeRow | SingleRow;
+
+function messageForGroup(row: GroupedLikeRow): string {
+  const [first, second] = row.actorNames;
+  if (row.totalCount <= 1) return `${first ?? "Someone"} liked your Story.`;
+  if (row.totalCount === 2) return `${first} and ${second} liked your Story.`;
+  const others = row.totalCount - 2;
+  return `${first}, ${second} and ${others} other${others === 1 ? "" : "s"} liked your Story.`;
+}
+
+/**
+ * Merges consecutive-by-story `like` notifications into one row — spec:
+ * "Rahul, Priya and 12 others liked your Story" rather than a dozen
+ * identical individual rows. Every other notification type (comment has
+ * its own body per row; follow/follow_request/mention are each about a
+ * distinct relationship or reference) stays one row per notification.
+ * Grouping happens per Today/Earlier bucket, keyed by story id, keeping
+ * each group's position at its most recent like (the list arrives
+ * newest-first from the backend).
+ */
+function groupNotifications(notifications: NotificationRecord[]): ActivityRow[] {
+  const rows: ActivityRow[] = [];
+  const groupIndexByStoryId = new Map<string, number>();
+
+  for (const notification of notifications) {
+    if (notification.type === "like" && notification.story) {
+      const storyId = notification.story.id;
+      const existingIndex = groupIndexByStoryId.get(storyId);
+      const actorName = notification.actor?.displayName ?? "Someone";
+      if (existingIndex !== undefined) {
+        const group = rows[existingIndex] as GroupedLikeRow;
+        if (notification.readAt === null) {
+          group.unreadIds.push(notification.id);
+          group.anyUnread = true;
+        }
+        group.totalCount += 1;
+        if (group.actorNames.length < 2) group.actorNames.push(actorName);
+        continue;
+      }
+      const group: GroupedLikeRow = {
+        kind: "grouped-like",
+        key: `like-group-${storyId}`,
+        unreadIds: notification.readAt === null ? [notification.id] : [],
+        storyId,
+        actorNames: [actorName],
+        totalCount: 1,
+        createdAt: notification.createdAt,
+        anyUnread: notification.readAt === null,
+      };
+      groupIndexByStoryId.set(storyId, rows.length);
+      rows.push(group);
+      continue;
+    }
+    rows.push({ kind: "single", key: notification.id, notification });
+  }
+
+  return rows;
+}
+
 /**
  * Real notification list (spec section 31), grouped into Today/Earlier.
  * Tapping a like/comment/mention notification you own the Story for opens
@@ -114,22 +190,38 @@ export function ActivityScreen(): React.JSX.Element {
     const today = notifications.filter((n) => isToday(n.createdAt));
     const earlier = notifications.filter((n) => !isToday(n.createdAt));
     return [
-      ...(today.length ? [{ title: "Today", data: today }] : []),
-      ...(earlier.length ? [{ title: "Earlier", data: earlier }] : []),
+      ...(today.length ? [{ title: "Today", data: groupNotifications(today) }] : []),
+      ...(earlier.length ? [{ title: "Earlier", data: groupNotifications(earlier) }] : []),
     ];
   }, [notifications]);
 
   const unreadInList = notifications?.some((n) => n.readAt === null) ?? false;
 
-  const markLocalRead = (id: string) => {
+  const markLocalRead = (ids: string[]) => {
     setNotifications((current) =>
-      current ? current.map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString() } : n)) : current,
+      current ? current.map((n) => (ids.includes(n.id) ? { ...n, readAt: n.readAt ?? new Date().toISOString() } : n)) : current,
     );
   };
 
-  const onPressNotification = async (notification: NotificationRecord) => {
+  const onPressRow = async (row: ActivityRow) => {
+    if (row.kind === "grouped-like") {
+      if (row.unreadIds.length > 0 && accessToken) {
+        markLocalRead(row.unreadIds);
+        Promise.all(row.unreadIds.map((id) => markNotificationRead(id, accessToken)))
+          .then(() => refreshUnreadCount())
+          .catch(() => {});
+      }
+      if (user) {
+        // Same reasoning as the single-like case below: the recipient of a
+        // like is always the Story's own owner.
+        navigation.navigate("StoryViewer", { creators: [user.username], startIndex: 0, initialStoryId: row.storyId });
+      }
+      return;
+    }
+
+    const notification = row.notification;
     if (notification.readAt === null && accessToken) {
-      markLocalRead(notification.id);
+      markLocalRead([notification.id]);
       markNotificationRead(notification.id, accessToken)
         .then(() => refreshUnreadCount())
         .catch(() => {});
@@ -204,25 +296,31 @@ export function ActivityScreen(): React.JSX.Element {
       </View>
       <SectionList
         sections={sections}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(row) => row.key}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         onEndReachedThreshold={0.4}
         onEndReached={() => void loadMore()}
         renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
-        renderItem={({ item }) => (
-          <Pressable style={styles.row} onPress={() => void onPressNotification(item)}>
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarInitial}>{(item.actor?.displayName ?? "?").charAt(0).toUpperCase()}</Text>
-            </View>
-            <View style={styles.rowText}>
-              <Text style={typography.body} numberOfLines={2}>
-                {messageFor(item)}
-              </Text>
-              <Text style={typography.caption}>{new Date(item.createdAt).toLocaleString()}</Text>
-            </View>
-            {item.readAt === null ? <View style={styles.unreadDot} /> : null}
-          </Pressable>
-        )}
+        renderItem={({ item: row }) => {
+          const avatarLetter = (row.kind === "grouped-like" ? row.actorNames[0] : row.notification.actor?.displayName) ?? "?";
+          const message = row.kind === "grouped-like" ? messageForGroup(row) : messageFor(row.notification);
+          const createdAt = row.kind === "grouped-like" ? row.createdAt : row.notification.createdAt;
+          const unread = row.kind === "grouped-like" ? row.anyUnread : row.notification.readAt === null;
+          return (
+            <Pressable style={styles.row} onPress={() => void onPressRow(row)}>
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitial}>{avatarLetter.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View style={styles.rowText}>
+                <Text style={typography.body} numberOfLines={2}>
+                  {message}
+                </Text>
+                <Text style={typography.caption}>{new Date(createdAt).toLocaleString()}</Text>
+              </View>
+              {unread ? <View style={styles.unreadDot} /> : null}
+            </Pressable>
+          );
+        }}
         ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.accent} style={styles.footerSpinner} /> : null}
       />
     </View>

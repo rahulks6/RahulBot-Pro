@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 import { colors, radii, spacing, typography } from "../../theme";
@@ -52,7 +52,7 @@ export function ProfileScreen(): React.JSX.Element {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Pressable
         onPress={() => {
           if (hasActiveStory) navigation.navigate("StoryViewer", { creators: [user.username], startIndex: 0 });
@@ -77,6 +77,10 @@ export function ProfileScreen(): React.JSX.Element {
         </View>
       </View>
 
+      <Pressable style={styles.archiveLink} onPress={() => navigation.navigate("Archive")}>
+        <Text style={styles.archiveLinkLabel}>Archive</Text>
+      </Pressable>
+
       <HighlightsRow username={user.username} isOwner />
 
       <Pressable style={styles.logoutButton} onPress={() => void logout()}>
@@ -88,16 +92,17 @@ export function ProfileScreen(): React.JSX.Element {
       </Pressable>
 
       <DeleteAccountSheet visible={deleteOpen} onClose={() => setDeleteOpen(false)} />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: "center",
     paddingTop: spacing.xxl,
     paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
     backgroundColor: colors.background,
     gap: spacing.xs,
   },
@@ -141,4 +146,13 @@ const styles = StyleSheet.create({
   },
   deleteAccountLink: { marginTop: spacing.md },
   deleteAccountLabel: { ...typography.caption, color: colors.textDisabled },
+  archiveLink: {
+    marginTop: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+  },
+  archiveLinkLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: "600" },
 });

@@ -59,6 +59,14 @@ export function registerStoriesRoutes(router: Router): void {
     sendJson(res, 200, { views: count });
   });
 
+  // Owner-only — the identities behind /views' count (see stories.service.ts's getStoryViewers).
+  router.get("/api/v1/stories/:id/viewers", async (req, res) => {
+    requireAuth(req);
+    const { limit, offset } = parsePagination(parseQueryString(req.url ?? ""));
+    const viewers = await storiesService.getStoryViewers(req.userId as string, req.params.id as string, limit, offset);
+    sendJson(res, 200, { viewers, limit, offset });
+  });
+
   router.get("/api/v1/stories/:id/owner", async (req, res) => {
     requireAuth(req);
     const username = await storiesService.getStoryOwnerUsername(req.params.id as string, req.userId as string);

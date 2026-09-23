@@ -76,6 +76,18 @@ export function getViewCount(storyId: string, accessToken: string): Promise<{ vi
   return apiGet(`/api/v1/stories/${storyId}/views`, accessToken);
 }
 
+export interface StoryViewer {
+  id: string;
+  username: string;
+  displayName: string;
+  viewedAt: string;
+}
+
+/** Owner-only — who's actually behind getViewCount's number (backend rejects this for anyone else). */
+export function getStoryViewers(storyId: string, accessToken: string): Promise<{ viewers: StoryViewer[] }> {
+  return apiGet(`/api/v1/stories/${storyId}/viewers`, accessToken);
+}
+
 /**
  * A Story's owner username, for deep-linking into StoryViewer (which
  * addresses creators by username) when only a storyId is on hand — a
