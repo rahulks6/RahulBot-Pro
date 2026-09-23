@@ -21,9 +21,12 @@ import { uploadPhoto, uploadVideo } from "../../api/media";
 import { publishStory } from "../../api/stories";
 import { ApiError } from "../../api/client";
 import { FILTER_PREVIEWS } from "../../models/filterPreviews";
-import { createEmptyDraft, hasMeaningfulEdits, type Overlay } from "../../models/storyDraft";
-import { DraggableTextOverlay } from "../../components/DraggableTextOverlay";
+import { createEmptyDraft, hasMeaningfulEdits, filterKey, type Overlay, type TextOverlayProperties } from "../../models/storyDraft";
+import { DraggableCanvasObject } from "../../components/DraggableCanvasObject";
+import { OverlayBody } from "../../components/OverlayBody";
 import { TextToolModal } from "../../components/TextToolModal";
+import { StickerSheet, type StickerAddPayload } from "../../components/StickerSheet";
+import { DrawingCanvas } from "../../components/DrawingCanvas";
 
 type Props = NativeStackScreenProps<CreateStackParamList, "StoryEditor">;
 type Audience = "public" | "followers";
@@ -31,10 +34,12 @@ type Audience = "public" | "followers";
 const TRASH_ZONE_SIZE = 80;
 
 /**
- * Story editor (spec section 19-27): text overlays, filters (preview-only —
- * see models/filterPreviews.ts for why), discard protection, and now real
- * publishing (spec section 28) now that Phase 4's backend exists: upload
- * the media, then attach it to a Story with the chosen audience.
+ * Story editor (spec sections 19-30): text/emoji/mention/location/datetime/
+ * sticker overlays sharing one gesture model, freehand drawing, filters,
+ * discard protection, and real publishing that actually sends every one of
+ * those edits to the backend (see onShare — this used to silently drop
+ * overlays and the chosen filter on publish, the single most important
+ * correctness bug this module closes; see backend migration 0015).
  */
 export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Element {
   const { mediaUri, kind, mimeType } = route.params;
@@ -45,6 +50,8 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
   const [draft, setDraft] = useState(() => createEmptyDraft({ uri: mediaUri, kind, width: route.params.width, height: route.params.height }));
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [textModalVisible, setTextModalVisible] = useState(false);
+  const [stickerSheetVisible, setStickerSheetVisible] = useState(false);
+  const [drawMode, setDrawMode] = useState(false);
   const [editingOverlayId, setEditingOverlayId] = useState<string | null>(null);
   const [isDraggingOverlay, setIsDraggingOverlay] = useState(false);
   const [videoMuted, setVideoMuted] = useState(false);
@@ -71,11 +78,11 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     [containerSize],
   );
 
-  const addOrUpdateOverlay = (text: string, properties: Overlay["properties"]) => {
+  const addOrUpdateText = (text: string, properties: TextOverlayProperties) => {
     if (editingOverlayId) {
       setDraft((d) => ({
         ...d,
-        overlays: d.overlays.map((o) => (o.id === editingOverlayId ? { ...o, text, properties } : o)),
+        overlays: d.overlays.map((o) => (o.id === editingOverlayId && o.type === "text" ? { ...o, properties } : o)),
       }));
     } else {
       const overlay: Overlay = {
@@ -86,7 +93,6 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
         scale: 1,
         rotation: 0,
         zIndex: nextZIndex.current++,
-        text,
         properties,
       };
       setDraft((d) => ({ ...d, overlays: [...d.overlays, overlay] }));
@@ -94,6 +100,19 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     setEditingOverlayId(null);
     setTextModalVisible(false);
   };
+
+  const addSticker = useCallback((payload: StickerAddPayload) => {
+    const overlay = {
+      id: `${payload.type}-${Date.now()}`,
+      x: 0.5,
+      y: 0.5,
+      scale: 1,
+      rotation: 0,
+      zIndex: nextZIndex.current++,
+      ...payload,
+    } as Overlay;
+    setDraft((d) => ({ ...d, overlays: [...d.overlays, overlay] }));
+  }, []);
 
   const updateOverlay = useCallback((id: string, patch: Partial<Pick<Overlay, "x" | "y" | "scale" | "rotation">>) => {
     setDraft((d) => ({ ...d, overlays: d.overlays.map((o) => (o.id === id ? { ...o, ...patch } : o)) }));
@@ -103,7 +122,9 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     setDraft((d) => ({ ...d, overlays: d.overlays.filter((o) => o.id !== id) }));
   }, []);
 
-  const editingOverlay = draft.overlays.find((o) => o.id === editingOverlayId) ?? null;
+  const editingOverlay = draft.overlays.find((o) => o.id === editingOverlayId && o.type === "text") as
+    | (Overlay & { type: "text" })
+    | undefined;
 
   const activeFilter = useMemo(() => FILTER_PREVIEWS.find((f) => f.name === draft.filter) ?? FILTER_PREVIEWS[0], [draft.filter]);
 
@@ -130,12 +151,24 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     try {
       const media = kind === "photo" ? await uploadPhoto(mediaUri, mimeType, accessToken) : await uploadVideo(mediaUri, mimeType, accessToken);
       await publishStory(
-        { mediaId: media.id, caption: draft.caption, audience, allowComments: "everyone", allowSharing: true },
+        {
+          mediaId: media.id,
+          caption: draft.caption,
+          audience,
+          allowComments: "everyone",
+          allowSharing: true,
+          overlays: draft.overlays,
+          drawing: draft.drawing,
+          filter: filterKey(draft.filter),
+        },
         accessToken,
       );
       setUploadState("done");
       rootNavigation.reset({ index: 0, routes: [{ name: "Main" }] });
     } catch (err) {
+      // Nothing is lost on failure — `draft` (media uri, overlays, drawing,
+      // filter, caption, audience) stays exactly as it was so Retry can
+      // simply call onShare again (spec section 43).
       setUploadState("error");
       setUploadError(err instanceof ApiError ? err.message : "Sharing failed — check your connection and try again.");
     }
@@ -164,9 +197,9 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           />
         ) : null}
 
-        {containerSize.width > 0
+        {containerSize.width > 0 && !drawMode
           ? draft.overlays.map((overlay) => (
-              <DraggableTextOverlay
+              <DraggableCanvasObject
                 key={overlay.id}
                 overlay={overlay}
                 containerWidth={containerSize.width}
@@ -176,12 +209,43 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
                 onDeleted={deleteOverlay}
                 onDragStateChange={setIsDraggingOverlay}
                 onDoubleTap={(id) => {
-                  setEditingOverlayId(id);
-                  setTextModalVisible(true);
+                  const o = draft.overlays.find((x) => x.id === id);
+                  if (o?.type === "text") {
+                    setEditingOverlayId(id);
+                    setTextModalVisible(true);
+                  }
                 }}
               />
             ))
-          : null}
+          : containerSize.width > 0
+            ? // While drawing, overlays render statically (no gesture handlers) so drag/pinch never fights with the drawing gesture.
+              draft.overlays.map((overlay) => (
+                <View
+                  key={overlay.id}
+                  pointerEvents="none"
+                  style={[
+                    styles.staticOverlay,
+                    {
+                      left: overlay.x * containerSize.width,
+                      top: overlay.y * containerSize.height,
+                      transform: [{ scale: overlay.scale }, { rotate: `${overlay.rotation}deg` }],
+                    },
+                  ]}
+                >
+                  <OverlayBody overlay={overlay} containerWidth={containerSize.width} containerHeight={containerSize.height} />
+                </View>
+              ))
+            : null}
+
+        {containerSize.width > 0 && drawMode ? (
+          <DrawingCanvas
+            containerWidth={containerSize.width}
+            containerHeight={containerSize.height}
+            strokes={draft.drawing}
+            onChangeStrokes={(strokes) => setDraft((d) => ({ ...d, drawing: strokes }))}
+            onDone={() => setDrawMode(false)}
+          />
+        ) : null}
 
         {isDraggingOverlay ? (
           <View style={[styles.trashZone, { width: TRASH_ZONE_SIZE, height: TRASH_ZONE_SIZE }]}>
@@ -190,89 +254,107 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
         ) : null}
       </View>
 
-      <View style={styles.topBar}>
-        <Pressable onPress={onClose} hitSlop={12}>
-          <Text style={styles.topIcon}>✕</Text>
-        </Pressable>
-        <View style={styles.topRight}>
-          <Pressable
-            onPress={() => {
-              setEditingOverlayId(null);
-              setTextModalVisible(true);
-            }}
-            hitSlop={12}
-          >
-            <Text style={styles.topIcon}>Text</Text>
+      {!drawMode ? (
+        <View style={styles.topBar}>
+          <Pressable onPress={onClose} hitSlop={12}>
+            <Text style={styles.topIcon}>✕</Text>
           </Pressable>
-          {kind === "video" ? (
-            <Pressable onPress={() => setVideoMuted((m) => !m)} hitSlop={12}>
-              <Text style={styles.topIcon}>{videoMuted ? "Muted" : "Audio on"}</Text>
+          <View style={styles.topRight}>
+            <Pressable
+              onPress={() => {
+                setEditingOverlayId(null);
+                setTextModalVisible(true);
+              }}
+              hitSlop={12}
+            >
+              <Text style={styles.topIcon}>Text</Text>
             </Pressable>
+            <Pressable onPress={() => setStickerSheetVisible(true)} hitSlop={12}>
+              <Text style={styles.topIcon}>Stickers</Text>
+            </Pressable>
+            <Pressable onPress={() => setDrawMode(true)} hitSlop={12}>
+              <Text style={styles.topIcon}>Draw</Text>
+            </Pressable>
+            {kind === "video" ? (
+              <Pressable onPress={() => setVideoMuted((m) => !m)} hitSlop={12}>
+                <Text style={styles.topIcon}>{videoMuted ? "Muted" : "Audio on"}</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
+      {!drawMode ? (
+        <View style={styles.bottomArea}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterStrip}>
+            {FILTER_PREVIEWS.map((f) => (
+              <Pressable
+                key={f.name}
+                onPress={() => setDraft((d) => ({ ...d, filter: f.name }))}
+                style={[styles.filterChip, draft.filter === f.name && styles.filterChipActive]}
+              >
+                <Text style={[styles.filterChipLabel, draft.filter === f.name && styles.filterChipLabelActive]}>{f.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <TextInput
+            style={styles.captionInput}
+            placeholder="Add a caption…"
+            placeholderTextColor="rgba(255,255,255,0.5)"
+            value={draft.caption}
+            onChangeText={(text) => setDraft((d) => ({ ...d, caption: text }))}
+            maxLength={280}
+          />
+
+          <View style={styles.audienceRow}>
+            {(["public", "followers"] as Audience[]).map((a) => (
+              <Pressable
+                key={a}
+                onPress={() => setAudience(a)}
+                style={[styles.audienceChip, audience === a && styles.audienceChipActive]}
+              >
+                <Text style={[styles.audienceLabel, audience === a && styles.audienceLabelActive]}>
+                  {a === "public" ? "Public" : "Followers"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {uploadError ? (
+            <View>
+              <Text style={styles.uploadError}>{uploadError}</Text>
+              <Pressable style={styles.retryButton} onPress={onShare}>
+                <Text style={styles.retryButtonLabel}>Retry</Text>
+              </Pressable>
+            </View>
           ) : null}
+
+          <Pressable
+            style={[styles.uploadButton, uploadState === "uploading" && styles.uploadButtonDisabled]}
+            disabled={uploadState === "uploading" || uploadState === "done"}
+            onPress={onShare}
+          >
+            {uploadState === "uploading" ? (
+              <ActivityIndicator color={colors.onAccent} />
+            ) : (
+              <Text style={styles.uploadButtonLabel}>{uploadState === "done" ? "Story published ✓" : "Share Story"}</Text>
+            )}
+          </Pressable>
         </View>
-      </View>
-
-      <View style={styles.bottomArea}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterStrip}>
-          {FILTER_PREVIEWS.map((f) => (
-            <Pressable
-              key={f.name}
-              onPress={() => setDraft((d) => ({ ...d, filter: f.name }))}
-              style={[styles.filterChip, draft.filter === f.name && styles.filterChipActive]}
-            >
-              <Text style={[styles.filterChipLabel, draft.filter === f.name && styles.filterChipLabelActive]}>{f.name}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        <TextInput
-          style={styles.captionInput}
-          placeholder="Add a caption…"
-          placeholderTextColor="rgba(255,255,255,0.5)"
-          value={draft.caption}
-          onChangeText={(text) => setDraft((d) => ({ ...d, caption: text }))}
-          maxLength={280}
-        />
-
-        <View style={styles.audienceRow}>
-          {(["public", "followers"] as Audience[]).map((a) => (
-            <Pressable
-              key={a}
-              onPress={() => setAudience(a)}
-              style={[styles.audienceChip, audience === a && styles.audienceChipActive]}
-            >
-              <Text style={[styles.audienceLabel, audience === a && styles.audienceLabelActive]}>
-                {a === "public" ? "Public" : "Followers"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {uploadError ? <Text style={styles.uploadError}>{uploadError}</Text> : null}
-
-        <Pressable
-          style={[styles.uploadButton, uploadState === "uploading" && styles.uploadButtonDisabled]}
-          disabled={uploadState === "uploading" || uploadState === "done"}
-          onPress={onShare}
-        >
-          {uploadState === "uploading" ? (
-            <ActivityIndicator color={colors.onAccent} />
-          ) : (
-            <Text style={styles.uploadButtonLabel}>{uploadState === "done" ? "Shared ✓" : "Share Story"}</Text>
-          )}
-        </Pressable>
-      </View>
+      ) : null}
 
       <TextToolModal
         visible={textModalVisible}
-        initialText={editingOverlay?.text}
+        initialText={editingOverlay?.properties.text}
         initialProperties={editingOverlay?.properties}
         onCancel={() => {
           setTextModalVisible(false);
           setEditingOverlayId(null);
         }}
-        onDone={addOrUpdateOverlay}
+        onDone={addOrUpdateText}
       />
+      <StickerSheet visible={stickerSheetVisible} onClose={() => setStickerSheetVisible(false)} onAdd={addSticker} />
     </View>
   );
 }
@@ -280,6 +362,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
   mediaContainer: { flex: 1 },
+  staticOverlay: { position: "absolute" },
   topBar: {
     position: "absolute",
     top: spacing.xl,
@@ -331,6 +414,8 @@ const styles = StyleSheet.create({
   audienceLabel: { color: colors.textPrimary, fontSize: 13 },
   audienceLabelActive: { color: colors.background, fontWeight: "700" },
   uploadError: { ...typography.caption, color: colors.danger, textAlign: "center" },
+  retryButton: { alignSelf: "center", marginTop: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: 4 },
+  retryButtonLabel: { color: colors.accent, fontWeight: "700" },
   uploadButton: {
     backgroundColor: colors.accent,
     borderRadius: radii.md,

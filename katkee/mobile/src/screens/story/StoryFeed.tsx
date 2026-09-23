@@ -12,6 +12,8 @@ import { CommentsSheet } from "../../components/CommentsSheet";
 import { ShareSheet } from "../../components/ShareSheet";
 import { StoryMoreMenu } from "../../components/StoryMoreMenu";
 import { StoryInsightsSheet } from "../../components/StoryInsightsSheet";
+import { StoryOverlayLayer, useContainerLayout } from "../../components/StoryOverlayLayer";
+import { filterNameFromKey } from "../../models/filterPreviews";
 
 const PHOTO_DURATION_MS = 5000;
 const HOLD_DELAY_MS = 250;
@@ -33,6 +35,8 @@ export interface StoryFeedProps {
    */
   onClose?: () => void;
   onOpenDM: (params: { storyId: string; ownerUsername: string }) => void;
+  /** A mention overlay was tapped — navigate to that user's live profile (spec section 30). */
+  onOpenProfile: (username: string) => void;
 }
 
 /**
@@ -49,8 +53,9 @@ export interface StoryFeedProps {
  * opened from their profile, a notification, or a DM share — `onClose`
  * provided so there's something to return to).
  */
-export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpenDM }: StoryFeedProps): React.JSX.Element {
+export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpenDM, onOpenProfile }: StoryFeedProps): React.JSX.Element {
   const { user: authUser, accessToken } = useAuth();
+  const [containerSize, onContainerLayout] = useContainerLayout();
 
   const [creatorIndex, setCreatorIndex] = useState(startIndex);
   const [storiesByCreator, setStoriesByCreator] = useState<Record<string, PublicStory[]>>({});
@@ -387,7 +392,7 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
   const isOwnStory = authUser?.username === currentUsername;
 
   return (
-    <View style={styles.container} {...gesture.panHandlers}>
+    <View style={styles.container} onLayout={onContainerLayout} {...gesture.panHandlers}>
       {mediaKind === "video" ? (
         <Video
           source={{ uri: mediaUrl, headers: authHeaders }}
@@ -402,6 +407,17 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
         />
       ) : mediaKind === "photo" ? (
         <Image source={{ uri: mediaUrl, headers: authHeaders }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : null}
+
+      {detail && containerSize.width > 0 ? (
+        <StoryOverlayLayer
+          overlays={detail.overlays}
+          drawing={detail.drawing}
+          filter={filterNameFromKey(detail.filter)}
+          containerWidth={containerSize.width}
+          containerHeight={containerSize.height}
+          onMentionPress={onOpenProfile}
+        />
       ) : null}
 
       <Animated.View

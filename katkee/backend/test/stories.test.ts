@@ -309,7 +309,7 @@ describe("the 24-hour lifecycle", () => {
     const me = await client.get("/api/v1/auth/me", authHeader(owner.accessToken));
     const published = await storiesService.publishStory(
       me.body.user.id,
-      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true },
+      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true, overlays: [], drawing: [], filter: "original" },
       { ttlSecondsOverride: 1 },
     );
 
@@ -421,5 +421,93 @@ describe("Story Insights", () => {
     const afterFollow = await client.get(`/api/v1/stories/${storyId}/insights`, authHeader(owner.accessToken));
     assert.equal(afterFollow.body.insights.followingViewRate, 0, "still a stranger at the moment they actually viewed it");
     assert.equal(afterFollow.body.insights.discoveryViewRate, 100);
+  });
+});
+
+describe("Camera + Editor: overlays, filter, and drawing survive publish", () => {
+  it("a published Story returns exactly the overlays, filter, and drawing it was published with", async () => {
+    const owner = await signupUser();
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const overlays = [
+      { id: "t1", type: "text", x: 0.5, y: 0.3, scale: 1.2, rotation: 15, zIndex: 1, properties: { text: "hello", style: "Bold", color: "#FFFFFF", backgroundColor: null, align: "center", fontSize: 0.05 } },
+      { id: "e1", type: "emoji", x: 0.2, y: 0.8, scale: 1, rotation: 0, zIndex: 2, properties: { emoji: "🔥" } },
+    ];
+    const drawing = [{ id: "s1", tool: "pen", color: "#FCB020", width: 0.01, points: [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }] }];
+    const res = await publishStory(owner.accessToken, mediaId, { overlays, filter: "cinema", drawing });
+    assert.equal(res.status, 201);
+    assert.deepEqual(res.body.story.overlays, overlays);
+    assert.deepEqual(res.body.story.drawing, drawing);
+    assert.equal(res.body.story.filter, "cinema");
+
+    const fetched = await client.get(`/api/v1/stories/${res.body.story.id}`, authHeader(owner.accessToken));
+    assert.deepEqual(fetched.body.story.overlays, overlays);
+    assert.equal(fetched.body.story.filter, "cinema");
+  });
+
+  it("drops malformed overlay entries instead of rejecting the whole publish", async () => {
+    const owner = await signupUser();
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const overlays = [
+      { id: "bad", type: "text", x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, properties: { text: "" } }, // empty text
+      { id: "unknown-type", type: "not-a-real-type", x: 0, y: 0, scale: 1, rotation: 0, zIndex: 1, properties: {} },
+      { id: "good", type: "emoji", x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, properties: { emoji: "✨" } },
+    ];
+    const res = await publishStory(owner.accessToken, mediaId, { overlays });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.story.overlays.length, 1);
+    assert.equal(res.body.story.overlays[0].id, "good");
+  });
+
+  it("resolves a mention to the mentioned user's live username, unresolved by whoever posted it", async () => {
+    const owner = await signupUser();
+    const mentioned = await signupUser();
+    const viewer = await signupUser();
+    const me = await client.get("/api/v1/auth/me", authHeader(mentioned.accessToken));
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const overlays = [
+      { id: "m1", type: "mention", x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, properties: { userId: me.body.user.id } },
+    ];
+    const published = await publishStory(owner.accessToken, mediaId, { overlays });
+    assert.equal(published.status, 201);
+
+    const fetched = await client.get(`/api/v1/stories/${published.body.story.id}`, authHeader(viewer.accessToken));
+    assert.equal(fetched.body.story.overlays.length, 1);
+    assert.equal(fetched.body.story.overlays[0].properties.userId, me.body.user.id);
+    assert.equal(fetched.body.story.overlays[0].properties.username, mentioned.input.username);
+  });
+
+  it("hides a mention from a viewer who has blocked (or is blocked by) the mentioned user", async () => {
+    const owner = await signupUser();
+    const mentioned = await signupUser();
+    const viewer = await signupUser();
+    const me = await client.get("/api/v1/auth/me", authHeader(mentioned.accessToken));
+    await client.post(`/api/v1/users/${mentioned.input.username}/block`, undefined, authHeader(viewer.accessToken));
+
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const overlays = [
+      { id: "m1", type: "mention", x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, properties: { userId: me.body.user.id } },
+    ];
+    const published = await publishStory(owner.accessToken, mediaId, { overlays });
+
+    const fetched = await client.get(`/api/v1/stories/${published.body.story.id}`, authHeader(viewer.accessToken));
+    assert.equal(fetched.body.story.overlays.length, 0, "the mention is dropped, not just left unresolved");
+  });
+
+  it("drops a mention of an account that has since been deleted", async () => {
+    const owner = await signupUser();
+    const mentioned = await signupUser();
+    const viewer = await signupUser();
+    const me = await client.get("/api/v1/auth/me", authHeader(mentioned.accessToken));
+
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const overlays = [
+      { id: "m1", type: "mention", x: 0.5, y: 0.5, scale: 1, rotation: 0, zIndex: 1, properties: { userId: me.body.user.id } },
+    ];
+    const published = await publishStory(owner.accessToken, mediaId, { overlays });
+
+    await client.deleteWithBody("/api/v1/users/me", { password: mentioned.input.password }, authHeader(mentioned.accessToken));
+
+    const fetched = await client.get(`/api/v1/stories/${published.body.story.id}`, authHeader(viewer.accessToken));
+    assert.equal(fetched.body.story.overlays.length, 0);
   });
 });

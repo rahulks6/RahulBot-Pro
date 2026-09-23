@@ -177,7 +177,7 @@ describe("Highlights survive a Story's normal 24h expiry", () => {
     const me = await client.get("/api/v1/auth/me", authHeader(owner.accessToken));
     const published = await storiesService.publishStory(
       me.body.user.id,
-      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true },
+      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true, overlays: [], drawing: [], filter: "original" },
       { ttlSecondsOverride: 1 },
     );
 

@@ -1,4 +1,5 @@
 import { API_BASE_URL, apiDelete, apiGet, apiPost } from "./client";
+import type { Overlay, DrawStroke } from "../models/storyDraft";
 
 /** Mirrors backend/src/modules/stories/stories.service.ts's PublicStory — kept in lockstep by hand, same as the rest of src/api/. */
 export interface PublicStory {
@@ -11,6 +12,10 @@ export interface PublicStory {
   allowSharing: boolean;
   createdAt: string;
   expiresAt: string;
+  overlays: Overlay[];
+  drawing: DrawStroke[];
+  /** Lowercase key (e.g. "cinema") — see models/storyDraft.ts's filterKey/filterNameFromKey. */
+  filter: string;
 }
 
 export interface FeedEntry {
@@ -29,6 +34,10 @@ export interface PublishStoryInput {
   audience?: "public" | "followers";
   allowComments?: "everyone" | "followers" | "disabled";
   allowSharing?: boolean;
+  overlays?: Overlay[];
+  drawing?: DrawStroke[];
+  /** Lowercase key — see models/storyDraft.ts's filterKey. */
+  filter?: string;
 }
 
 export function publishStory(input: PublishStoryInput, accessToken: string): Promise<{ story: PublicStory }> {

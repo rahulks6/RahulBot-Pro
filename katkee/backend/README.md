@@ -802,3 +802,31 @@ shortcut. Both notifications and DMs are delivered by polling (`GET
 in this sandbox, so a real client has to poll or a later phase has to add
 one; see mobile/README.md for the polling intervals this build settled on
 (20s for both unread badges, 4s for an actively open conversation thread).
+
+## Camera + Editor module: overlay/filter/drawing storage (migration 0015)
+
+A Story now carries three new columns — `overlays JSONB`, `drawing JSONB`,
+`filter TEXT` — added by `migrations/0015_story_overlays.sql`. This closes
+a real, previously-shipped bug: `POST /api/v1/stories` accepted a
+`caption`/`audience`/etc. body but had nowhere to put the text overlays or
+filter choice the mobile editor already let a user build, so every edit
+silently vanished on publish. `dto.ts`'s `parsePublishStoryInput` now
+validates `overlays` (one of `text`/`emoji`/`mention`/`location`/
+`datetime`/`sticker`, each with clamped geometry and type-specific
+properties — see `overlays.ts`) and `drawing` (bounded stroke/point
+counts) the same way it validates everything else in that body: a
+malformed individual overlay is silently dropped, not a 422 for the whole
+publish.
+
+The one overlay type that isn't fully self-contained is `mention`: it's
+stored as `{userId}` only (spec: never bake `@username` permanently into
+what's stored), and `stories.service.ts`'s `resolveOverlaysForViewer`
+re-resolves it against that user's *current* identity on every single
+read — dropping the overlay outright if the account has since been
+deleted, or if either side has blocked the other since the Story was
+published, and refreshing `username`/`displayName` otherwise. A username
+change or a block made an hour after publish takes effect on the very next
+fetch, with no edit to the Story itself. Five tests in
+`test/stories.test.ts`'s "Camera + Editor" describe block cover this:
+round-trip fidelity, malformed-overlay dropping, live mention resolution,
+block-hides-mention, and deletion-hides-mention.

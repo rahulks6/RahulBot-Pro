@@ -9,6 +9,7 @@ import * as commentsRepo from "./comments.repository";
 import * as highlightsRepo from "../highlights/highlights.repository";
 import type { StoryRecord } from "./stories.repository";
 import type { PublishStoryInput } from "./dto";
+import type { StoryOverlay, DrawStroke, FilterKey } from "./overlays";
 
 export interface PublicStory {
   id: string;
@@ -20,9 +21,45 @@ export interface PublicStory {
   allowSharing: boolean;
   createdAt: string;
   expiresAt: string;
+  overlays: StoryOverlay[];
+  drawing: DrawStroke[];
+  filter: FilterKey;
 }
 
-function toPublicStory(story: StoryRecord): PublicStory {
+/**
+ * Mentions are the one overlay type that isn't self-contained — everything
+ * else (text, emoji, location label, datetime, sticker) renders from data
+ * already sitting in the overlay itself. A mention is only ever stored as
+ * `{userId}` (spec: never merely render @username into pixels), so every
+ * read re-resolves it against that user's identity *right now*: dropped
+ * outright if the account no longer exists or either side has blocked the
+ * other since the Story was published, and refreshed with whatever their
+ * current username/displayName actually is otherwise — a rename or a block
+ * made an hour after publish takes effect immediately, with no edit to the
+ * Story itself.
+ */
+async function resolveOverlaysForViewer(overlays: StoryOverlay[], viewerId: string): Promise<StoryOverlay[]> {
+  const resolved: StoryOverlay[] = [];
+  for (const overlay of overlays) {
+    if (overlay.type !== "mention") {
+      resolved.push(overlay);
+      continue;
+    }
+    const mentioned = await usersRepo.findUserById(overlay.properties.userId);
+    if (!mentioned) continue;
+    if (mentioned.id !== viewerId) {
+      const blocked = await socialRepo.anyBlockBetween(viewerId, mentioned.id);
+      if (blocked) continue;
+    }
+    resolved.push({
+      ...overlay,
+      properties: { userId: mentioned.id, username: mentioned.username, displayName: mentioned.displayName },
+    });
+  }
+  return resolved;
+}
+
+async function toPublicStory(story: StoryRecord, viewerId: string): Promise<PublicStory> {
   return {
     id: story.id,
     ownerId: story.ownerId,
@@ -33,6 +70,9 @@ function toPublicStory(story: StoryRecord): PublicStory {
     allowSharing: story.allowSharing,
     createdAt: story.createdAt,
     expiresAt: story.expiresAt,
+    overlays: await resolveOverlaysForViewer(story.overlays, viewerId),
+    drawing: story.drawing,
+    filter: story.filter,
   };
 }
 
@@ -68,8 +108,11 @@ export async function publishStory(
     allowComments: input.allowComments,
     allowSharing: input.allowSharing,
     expiresAt,
+    overlays: input.overlays,
+    drawing: input.drawing,
+    filter: input.filter as FilterKey,
   });
-  return toPublicStory(story);
+  return toPublicStory(story, ownerId);
 }
 
 /**
@@ -88,7 +131,7 @@ async function checkStoryAccess(
 ): Promise<PublicStory> {
   const story = await storiesRepo.findStoryById(storyId);
   if (!story || story.deletedAt !== null) throw new HttpError(404, "Story not found.");
-  if (story.ownerId === viewerId) return toPublicStory(story);
+  if (story.ownerId === viewerId) return toPublicStory(story, viewerId);
 
   if (!options.ignoreExpiry && !isActive(story)) throw new HttpError(404, "Story not found.");
 
@@ -105,7 +148,7 @@ async function checkStoryAccess(
     throw new HttpError(403, "This Story is visible to followers only.");
   }
 
-  return toPublicStory(story);
+  return toPublicStory(story, viewerId);
 }
 
 /** Owner can always fetch their own (even expired, as the foundation Archive/Highlights use) — anyone else needs an active, visible Story. */
@@ -180,7 +223,7 @@ export async function canAccessMediaViaStory(mediaId: string, viewerId: string):
 
 export async function listMyActiveStories(ownerId: string): Promise<PublicStory[]> {
   const stories = await storiesRepo.listActiveStoriesForOwner(ownerId);
-  return stories.map(toPublicStory);
+  return Promise.all(stories.map((s) => toPublicStory(s, ownerId)));
 }
 
 export async function listUserActiveStories(username: string, viewerId: string): Promise<PublicStory[]> {
@@ -201,7 +244,7 @@ export async function listUserActiveStories(username: string, viewerId: string):
 
   const stories = await storiesRepo.listActiveStoriesForOwner(owner.id);
   const visible = stories.filter((s) => s.audience === "public" || relationship.isFollowing);
-  return visible.map(toPublicStory);
+  return Promise.all(visible.map((s) => toPublicStory(s, viewerId)));
 }
 
 export interface FeedEntry {
@@ -218,7 +261,7 @@ export async function getFollowingFeed(viewerId: string): Promise<FeedEntry[]> {
     const stories = await storiesRepo.listActiveStoriesForOwner(ownerId);
     entries.push({
       owner: { id: owner.id, username: owner.username, displayName: owner.displayName },
-      stories: stories.map(toPublicStory),
+      stories: await Promise.all(stories.map((s) => toPublicStory(s, viewerId))),
     });
   }
   // Own Stories, if any, lead the feed — consistent with listActiveStoryOwnersForViewer's ordering intent.
@@ -259,7 +302,7 @@ export async function moderatorDeleteStory(storyId: string): Promise<void> {
 /** Every non-deleted Story an owner has ever published — the private Archive (spec), not shown to anyone else. */
 export async function listMyArchivedStories(ownerId: string, limit: number, offset: number): Promise<PublicStory[]> {
   const stories = await storiesRepo.listArchivedStoriesForOwner(ownerId, limit, offset);
-  return stories.map(toPublicStory);
+  return Promise.all(stories.map((s) => toPublicStory(s, ownerId)));
 }
 
 /**

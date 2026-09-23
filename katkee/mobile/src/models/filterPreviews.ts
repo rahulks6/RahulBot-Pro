@@ -16,6 +16,12 @@ export interface FilterPreview {
   overlayOpacity: number;
 }
 
+/** The backend stores/returns filter names lowercased (see storyDraft.ts's filterKey) — this is the read-side inverse. */
+export function filterNameFromKey(key: string): FilterName {
+  const match = FILTER_PREVIEWS.find((f) => f.name.toLowerCase() === key.toLowerCase());
+  return match?.name ?? "Original";
+}
+
 export const FILTER_PREVIEWS: FilterPreview[] = [
   { name: "Original", overlayColor: "transparent", overlayOpacity: 0 },
   { name: "Warm", overlayColor: "#FF8A34", overlayOpacity: 0.12 },

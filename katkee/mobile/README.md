@@ -647,8 +647,96 @@ Phase 3 additionally needs, once the native projects exist:
   tweak per its own install docs (frame processors, if ever used, need
   `react-native-worklets-core` — not added here since nothing in this
   pass uses frame processors).
+- **Location sticker** (`@react-native-community/geolocation`, added for
+  the Camera + Editor module below) additionally needs, once the native
+  projects exist: iOS `NSLocationWhenInUseUsageDescription` in `Info.plist`,
+  and Android's `ACCESS_FINE_LOCATION` permission in the manifest (the app
+  also requests it at runtime via `PermissionsAndroid`, but the manifest
+  entry is what makes that request possible at all).
 
-Camera capture, the pinch/rotate multitouch handling in
-`DraggableTextOverlay.tsx`, and video playback are exactly the kind of
-code that most needs real-device testing (spec section 56) before
-trusting it — none of that happened in this session.
+Camera capture, the pinch/rotate/drag-to-zoom multitouch handling, and
+video playback are exactly the kind of code that most needs real-device
+testing (spec section 56) before trusting it — none of that happened in
+this session.
+
+## Camera + Editor module: what's real, what's approximated, what needs a device
+
+A full rewrite of Story capture and editing (mobile/src/screens/create/,
+mobile/src/components/Draggable*, OverlayBody.tsx, StickerSheet.tsx,
+DrawingCanvas.tsx, StoryOverlayLayer.tsx) against a big, explicit spec —
+here's an honest accounting.
+
+**Real, and now actually persists (the headline bug fix):** overlays and
+the chosen filter used to vanish on publish — `StoryEditorScreen.onShare`
+built a `StoryDraft` the editor could preview but never sent any of it to
+the backend. Every canvas object type (text, emoji, mention, location,
+date/time, sticker) is now stored as structured JSON on the Story
+(`backend` migration `0015_story_overlays.sql`), round-trips through
+publish, and renders live — with the same `OverlayBody` component the
+editor itself uses, so what you see while editing is what actually
+publishes — in every viewer (`StoryFeed.tsx`, `ArchivedStoryViewerScreen.tsx`,
+`HighlightViewerScreen.tsx`) via the shared `StoryOverlayLayer.tsx`.
+
+**Real: one gesture model for every object type.** `DraggableCanvasObject.tsx`
+(the file that used to be `DraggableTextOverlay.tsx` — same technique,
+generalized) drives drag/pinch/rotate/double-tap/drag-to-delete for text,
+emoji, mentions, location and date/time chips, and stickers alike, still
+on hand-rolled `PanResponder` math with zero new gesture dependencies.
+`CameraScreen.tsx`'s own pinch-to-zoom was rewritten the same way to close
+a real bug: it previously imported `PinchGestureHandler` from
+`react-native-gesture-handler`, a package never actually declared in
+`package.json` — it would have failed to resolve on a real build. Rather
+than add that (and `react-native-reanimated`, `react-native-svg`) as new
+native dependencies, this pass stayed consistent with the rest of the
+project's zero-dependency multitouch pattern: two-finger pinch-zoom on the
+preview and a new one-finger record-and-drag-to-zoom on the capture button
+itself (spec section 18) are both hand-rolled `PanResponder`s, with a
+temporary "Nx" zoom badge.
+
+**Real: mentions are structural, not baked-in text.** A mention overlay
+stores only `{userId}`; the backend re-resolves it to a live
+`username`/`displayName` on every read, dropping it entirely if the
+account was deleted or either side has blocked the other since publish —
+verified by five backend tests (`backend/test/stories.test.ts`'s "Camera +
+Editor" describe block), not just asserted. Tapping a published mention
+navigates to that user's real profile.
+
+**Real: drawing, with undo/redo, no SVG library.** `DrawingCanvas.tsx`
+samples touch points into normalized strokes; `DrawingStrokes.tsx` renders
+them as chains of thin rotated `View`s between consecutive points (the
+standard SVG-free polyline technique), shared between the live editor and
+the read-only viewer. Undo/redo is a local stack, not a full history
+system, per spec. The eraser is real but simplified: it removes whole
+strokes your finger passes over rather than trimming them pixel-by-pixel —
+there's no pixel layer under this component for a paint-over eraser to
+work with, and whole-stroke erase is a normal, honest interpretation of
+"undo what you drew here."
+
+**Real but a deliberate simplification: location.** Device location is
+requested only when you explicitly tap "Location" in the sticker sheet —
+never on the editor simply opening — using the real, newly-declared
+`@react-native-community/geolocation` API (same "declared, not yet
+installed or run in this sandbox" status as vision-camera, image-picker,
+and video). There's no Maps/Places API key configured anywhere in this
+project, so there's no reverse-geocoding: "Use current location" fills in
+a coarse, rounded coordinate label (~1km precision, never the raw
+full-precision reading) that you can edit or replace with your own text
+before it's ever attached to the Story.
+
+**Approximated, disclosed, and unchanged from before this module:** the 11
+named filters are still semi-transparent color-tint overlays
+(`models/filterPreviews.ts`), not real pixel-level color grading — that
+needs either a native image-processing module or a server-side pass
+(ffmpeg), neither available in this sandbox. What changed is that the
+chosen filter now actually reaches the backend and renders at view time
+instead of being silently dropped; what didn't change is that it's still
+an approximation of the real effect, exactly as before.
+
+**Not attempted:** custom illustrated sticker artwork (the "Katkee
+original stickers" are Unicode glyphs, not drawn assets — a real illustration
+pipeline is outside what a text-only sandbox session can produce);
+frame-accurate audio sync verification for zoom-while-recording (the
+recording/zoom code path is real, but only on-device testing can confirm
+audio actually stays in sync — see spec section 45's own test plan,
+unrun here); and, as with the rest of this project, any of it actually
+running on a device.

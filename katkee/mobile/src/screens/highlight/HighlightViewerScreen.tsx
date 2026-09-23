@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import Video from "react-native-video";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
 import type { RootStackParamList } from "../../navigation/types";
 import { colors, spacing } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
@@ -10,6 +11,9 @@ import { getMedia } from "../../api/media";
 import { mediaFileUrl } from "../../api/stories";
 import { ApiError } from "../../api/client";
 import { EmptyState } from "../../components/EmptyState";
+import { StoryOverlayLayer, useContainerLayout } from "../../components/StoryOverlayLayer";
+import { filterNameFromKey } from "../../models/filterPreviews";
+import type { StoryDetail } from "../../api/engagement";
 
 type Props = NativeStackScreenProps<RootStackParamList, "HighlightViewer">;
 
@@ -32,13 +36,16 @@ const PHOTO_DURATION_MS = 5000;
 export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.Element {
   const { highlightId, title } = route.params;
   const { accessToken, user } = useAuth();
+  const rootNavigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const [items, setItems] = useState<HighlightItem[] | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [mediaKind, setMediaKind] = useState<"photo" | "video" | null>(null);
   const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
+  const [detail, setDetail] = useState<StoryDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [containerSize, onContainerLayout] = useContainerLayout();
   const progress = useRef(new Animated.Value(0)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -67,13 +74,17 @@ export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.E
     let cancelled = false;
     setMediaKind(null);
     setVideoDurationMs(null);
+    setDetail(null);
     setError(null);
     Promise.all([
       getHighlightItemDetail(highlightId, currentItem.storyId, accessToken),
       getMedia(currentItem.mediaId, accessToken),
     ])
-      .then(([, media]) => {
-        if (!cancelled) setMediaKind(media.kind);
+      .then(([{ story }, media]) => {
+        if (!cancelled) {
+          setDetail(story);
+          setMediaKind(media.kind);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -128,7 +139,7 @@ export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.E
   const authHeaders = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={onContainerLayout}>
       {mediaKind === "video" ? (
         <Video
           source={{ uri: mediaUrl, headers: authHeaders }}
@@ -182,6 +193,19 @@ export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.E
         <Pressable style={styles.tapZone} onPress={goPrevious} />
         <Pressable style={styles.tapZone} onPress={goNext} />
       </View>
+
+      {detail && containerSize.width > 0 ? (
+        <StoryOverlayLayer
+          overlays={detail.overlays}
+          drawing={detail.drawing}
+          filter={filterNameFromKey(detail.filter)}
+          containerWidth={containerSize.width}
+          containerHeight={containerSize.height}
+          onMentionPress={(username) =>
+            rootNavigation.navigate("Main", { screen: "Search", params: { screen: "UserProfile", params: { username } } })
+          }
+        />
+      ) : null}
     </View>
   );
 }

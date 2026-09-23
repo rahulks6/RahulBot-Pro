@@ -76,6 +76,9 @@ export function HomeScreen(): React.JSX.Element {
       onOpenDM={({ storyId, ownerUsername }) => {
         navigation.navigate("DM", { screen: "SendStory", params: { storyId, ownerUsername } });
       }}
+      onOpenProfile={(username) => {
+        navigation.navigate("Search", { screen: "UserProfile", params: { username } });
+      }}
     />
   );
 }

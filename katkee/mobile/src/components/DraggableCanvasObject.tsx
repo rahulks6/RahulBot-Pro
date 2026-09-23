@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
-import { PanResponder, StyleSheet, Text, View, type GestureResponderEvent, type PanResponderGestureState } from "react-native";
+import { PanResponder, StyleSheet, View, type GestureResponderEvent, type PanResponderGestureState } from "react-native";
 import type { Overlay } from "../models/storyDraft";
-import { colors, radii } from "../theme";
+import { OverlayBody } from "./OverlayBody";
 
 interface Props {
   overlay: Overlay;
@@ -26,16 +26,22 @@ const DOUBLE_TAP_MS = 250;
 const TAP_MOVE_THRESHOLD = 6;
 
 /**
- * A movable/resizable/rotatable text overlay (spec section 20): one-finger
- * drag to move, two-finger pinch+twist to scale and rotate, double-tap to
- * edit, drag onto the trash zone to delete. Built on React Native's core
- * `PanResponder` reading `nativeEvent.touches` directly (no gesture library
- * dependency) — this is the standard technique for multitouch without
- * react-native-gesture-handler, but hand-rolled multitouch math like this
- * is exactly the kind of code that most needs on-device verification,
- * which this sandbox can't do (see mobile/README.md).
+ * The one gesture model shared by every canvas object type — text, emoji,
+ * mention, location, datetime, sticker (spec section 21: "a single unified
+ * gesture model for ALL object types"): one-finger drag to move (1:1,
+ * attached to the finger), two-finger pinch+twist to scale and rotate
+ * simultaneously, tap-then-tap-again within DOUBLE_TAP_MS to edit, drag onto
+ * the trash zone to delete. Only the rendered body differs per type — see
+ * OverlayBody.tsx, shared with the read-only viewer so editor and published
+ * Story render identically (spec section 47).
+ *
+ * Built on React Native's core `PanResponder` reading `nativeEvent.touches`
+ * directly — no gesture library dependency, the same technique this file
+ * used when it only handled text. Hand-rolled multitouch math like this is
+ * exactly the kind of code that most needs on-device verification, which
+ * this sandbox can't do (see mobile/README.md).
  */
-export function DraggableTextOverlay({
+export function DraggableCanvasObject({
   overlay,
   containerWidth,
   containerHeight,
@@ -53,8 +59,6 @@ export function DraggableTextOverlay({
     rotation: overlay.rotation,
     pinchDistance: 0,
     pinchAngle: 0,
-    singleTouchX: 0,
-    singleTouchY: 0,
   });
   const lastTapTime = useRef(0);
 
@@ -81,9 +85,6 @@ export function DraggableTextOverlay({
             const [a, b] = touches;
             gestureStart.current.pinchDistance = distance(a.pageX, a.pageY, b.pageX, b.pageY);
             gestureStart.current.pinchAngle = angleDeg(a.pageX, a.pageY, b.pageX, b.pageY);
-          } else if (touches.length === 1) {
-            gestureStart.current.singleTouchX = touches[0].pageX;
-            gestureStart.current.singleTouchY = touches[0].pageY;
           }
         },
         onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
@@ -122,10 +123,6 @@ export function DraggableTextOverlay({
     [overlay, containerWidth, containerHeight, dragging, onChange, onDoubleTap, onDragStateChange, isOverTrash, onDeleted],
   );
 
-  const backgroundStyle = overlay.properties.hasBackground
-    ? { backgroundColor: "rgba(0,0,0,0.55)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: radii.sm }
-    : null;
-
   return (
     <View
       {...panResponder.panHandlers}
@@ -139,27 +136,11 @@ export function DraggableTextOverlay({
         },
       ]}
     >
-      <View style={backgroundStyle}>
-        <Text
-          style={[
-            styles.text,
-            { color: overlay.properties.color },
-            overlay.properties.style === "Bold" && styles.bold,
-            overlay.properties.style === "Outline" && styles.outline,
-            overlay.properties.style === "Typewriter" && styles.typewriter,
-          ]}
-        >
-          {overlay.text}
-        </Text>
-      </View>
+      <OverlayBody overlay={overlay} containerWidth={containerWidth} containerHeight={containerHeight} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrapper: { position: "absolute" },
-  text: { fontSize: 24, fontWeight: "600", color: colors.textPrimary },
-  bold: { fontWeight: "800" },
-  outline: { textShadowColor: "#000", textShadowRadius: 4, textShadowOffset: { width: 1, height: 1 } },
-  typewriter: { fontFamily: "Courier" },
 });

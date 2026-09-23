@@ -1,7 +1,11 @@
 import { query, queryOne, type Row } from "../../db/psql";
+import type { StoryOverlay, DrawStroke, FilterKey } from "./overlays";
 
 export type Audience = "public" | "followers";
 export type CommentSetting = "everyone" | "followers" | "disabled";
+
+const STORY_COLUMNS =
+  "id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at, overlays, drawing, filter";
 
 export interface StoryRecord {
   id: string;
@@ -14,6 +18,19 @@ export interface StoryRecord {
   createdAt: string;
   expiresAt: string;
   deletedAt: string | null;
+  overlays: StoryOverlay[];
+  drawing: DrawStroke[];
+  filter: FilterKey;
+}
+
+function parseJsonArray<T>(raw: string | null | undefined): T[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 function mapRow(row: Row): StoryRecord {
@@ -28,6 +45,9 @@ function mapRow(row: Row): StoryRecord {
     createdAt: row.created_at as string,
     expiresAt: row.expires_at as string,
     deletedAt: row.deleted_at ?? null,
+    overlays: parseJsonArray<StoryOverlay>(row.overlays),
+    drawing: parseJsonArray<DrawStroke>(row.drawing),
+    filter: (row.filter as FilterKey) ?? "original",
   };
 }
 
@@ -39,11 +59,14 @@ export async function createStory(input: {
   allowComments: CommentSetting;
   allowSharing: boolean;
   expiresAt: Date;
+  overlays: StoryOverlay[];
+  drawing: DrawStroke[];
+  filter: FilterKey;
 }): Promise<StoryRecord> {
   const row = await queryOne(
-    `INSERT INTO stories (owner_id, media_id, caption, audience, allow_comments, allow_sharing, expires_at)
-     VALUES (:'owner_id', :'media_id', :'caption', :'audience', :'allow_comments', :'allow_sharing', :'expires_at')
-     RETURNING id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at`,
+    `INSERT INTO stories (owner_id, media_id, caption, audience, allow_comments, allow_sharing, expires_at, overlays, drawing, filter)
+     VALUES (:'owner_id', :'media_id', :'caption', :'audience', :'allow_comments', :'allow_sharing', :'expires_at', :'overlays'::jsonb, :'drawing'::jsonb, :'filter')
+     RETURNING ${STORY_COLUMNS}`,
     {
       owner_id: input.ownerId,
       media_id: input.mediaId,
@@ -52,6 +75,9 @@ export async function createStory(input: {
       allow_comments: input.allowComments,
       allow_sharing: input.allowSharing,
       expires_at: input.expiresAt.toISOString(),
+      overlays: JSON.stringify(input.overlays),
+      drawing: JSON.stringify(input.drawing),
+      filter: input.filter,
     },
   );
   if (!row) throw new Error("Insert did not return a row");
@@ -59,20 +85,12 @@ export async function createStory(input: {
 }
 
 export async function findStoryById(id: string): Promise<StoryRecord | null> {
-  const row = await queryOne(
-    `SELECT id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at
-     FROM stories WHERE id = :'id'`,
-    { id },
-  );
+  const row = await queryOne(`SELECT ${STORY_COLUMNS} FROM stories WHERE id = :'id'`, { id });
   return row ? mapRow(row) : null;
 }
 
 export async function findStoryByMediaId(mediaId: string): Promise<StoryRecord | null> {
-  const row = await queryOne(
-    `SELECT id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at
-     FROM stories WHERE media_id = :'media_id'`,
-    { media_id: mediaId },
-  );
+  const row = await queryOne(`SELECT ${STORY_COLUMNS} FROM stories WHERE media_id = :'media_id'`, { media_id: mediaId });
   return row ? mapRow(row) : null;
 }
 
@@ -83,7 +101,7 @@ export async function softDeleteStory(id: string): Promise<void> {
 /** A user's currently-active (not expired, not deleted) Stories, oldest first — the day's sequence. */
 export async function listActiveStoriesForOwner(ownerId: string): Promise<StoryRecord[]> {
   const rows = await query(
-    `SELECT id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at
+    `SELECT ${STORY_COLUMNS}
      FROM stories
      WHERE owner_id = :'owner_id' AND deleted_at IS NULL AND expires_at > now()
      ORDER BY created_at ASC`,
@@ -136,7 +154,7 @@ export async function listActiveStoryOwnersForViewer(
  */
 export async function listArchivedStoriesForOwner(ownerId: string, limit: number, offset: number): Promise<StoryRecord[]> {
   const rows = await query(
-    `SELECT id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at
+    `SELECT ${STORY_COLUMNS}
      FROM stories
      WHERE owner_id = :'owner_id' AND deleted_at IS NULL
      ORDER BY created_at DESC

@@ -27,6 +27,12 @@ export function StoryViewerScreen({ route, navigation }: Props): React.JSX.Eleme
           params: { screen: "SendStory", params: { storyId, ownerUsername } },
         });
       }}
+      onOpenProfile={(username) => {
+        navigation.navigate("Main", {
+          screen: "Search",
+          params: { screen: "UserProfile", params: { username } },
+        });
+      }}
     />
   );
 }

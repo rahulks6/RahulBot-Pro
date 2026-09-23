@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPost } from "./client";
+import type { Overlay, DrawStroke } from "../models/storyDraft";
 
 export interface StoryDetail {
   id: string;
@@ -13,6 +14,10 @@ export interface StoryDetail {
   likeCount: number;
   commentCount: number;
   viewerHasLiked: boolean;
+  overlays: Overlay[];
+  drawing: DrawStroke[];
+  /** Lowercase key — see models/storyDraft.ts's filterKey/filterNameFromKey. */
+  filter: string;
 }
 
 export interface Comment {
