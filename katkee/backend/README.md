@@ -484,6 +484,39 @@ follower and a stranger are still rejected from the identity-list
 endpoint; a stranger with no access to the Story at all still can't see
 even the count).
 
+## Phase 13 continued: real per-message DM delivery states
+
+The same spec pass called for Sending/Sent/Delivered/Read/Failed
+per-message status (spec sections 32-33). Sending and Failed never reach
+the backend at all — they're purely client-local (an outgoing message
+that exists in this database is definitionally at least "sent"; see
+`../mobile/README.md`'s Phase 13 section for the client-side optimistic-
+send/retry mechanics). Sent, Delivered, and Read are the three states this
+backend can genuinely observe, and — same honesty standard as everything
+else this sandbox couldn't fully build (no npm registry, no Docker
+daemon, no image library) — "Delivered" here means what it can actually
+mean with no push/WebSocket channel available: the recipient's client
+performed a real fetch and received the message, not "pushed to their
+device while backgrounded."
+
+`conversation_reads` already tracked `last_read_at` per participant
+(Phase 8); migration `0012_message_delivery.sql` adds a second watermark,
+`last_delivered_at`, bumped by the new `markDelivered` (repository) every
+time a participant calls `GET .../messages` — any page, not just the
+first, since even loading older history proves the client is online and
+synced through now. `markRead` now bumps both watermarks together (reading
+obviously implies delivery too). `conversations.service.ts`'s `listMessages`
+computes a `status` field for the viewer's own messages only (comparing
+each message's `createdAt` against the *other* participant's watermarks —
+never the viewer's own) — a message from the other participant carries no
+`status` at all, since there's nothing to show a viewer about the delivery
+of a message they received themselves.
+
+148/148 tests passing (1 new: a message's status progresses sent →
+delivered → read as the recipient first fetches, then explicitly marks
+read, while a message from someone else never carries a status field for
+the viewer at all).
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |
@@ -538,7 +571,7 @@ even the count).
 | POST | `/api/v1/users/:username/conversation` | Bearer | Find-or-create the 1:1 conversation with that user → `{conversation}`; 400 for yourself, 404 if either side blocked the other |
 | GET | `/api/v1/conversations` | Bearer | Paginated, most-recently-active first; each row has the other participant, last message preview, and unread flag |
 | GET | `/api/v1/conversations/unread-count` | Bearer | → `{count}` of conversations with unread activity |
-| GET | `/api/v1/conversations/:id/messages` | Bearer | Paginated, **newest first** (unlike comments) — see the schema notes below for why; participant-only |
+| GET | `/api/v1/conversations/:id/messages` | Bearer | Paginated, **newest first** (unlike comments) — see the schema notes below for why; participant-only. Also marks the caller as having delivered-received messages (Phase 13); each of the caller's own messages carries a `status: "sent" \| "delivered" \| "read"` |
 | POST | `/api/v1/conversations/:id/messages` | Bearer | `{body?, storyId?}` (at least one required) → `{message}`; a `storyId` reuses `shareStory`'s access/`allowSharing` check; re-checks blocking at send time, not just at conversation creation |
 | POST | `/api/v1/conversations/:id/read` | Bearer | Marks the conversation read for the caller → 204; sending a message auto-marks the sender read too |
 | GET | `/api/v1/stories/mine/archive` | Bearer | Paginated; every non-deleted Story you've ever published, expired or not |

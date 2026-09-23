@@ -215,6 +215,34 @@ describe("unread count and mark-read", () => {
   });
 });
 
+describe("message delivery status", () => {
+  it("progresses sent -> delivered -> read as the recipient fetches, then reads", async () => {
+    const alice = await signupUser();
+    const bob = await signupUser();
+    const conversationId = (await openConversation(bob.input.username, alice.accessToken)).body.conversation.id;
+
+    await client.post(`/api/v1/conversations/${conversationId}/messages`, { body: "hey bob" }, authHeader(alice.accessToken));
+
+    // Bob hasn't fetched yet — Alice's own view of her message is still just "sent".
+    const beforeBobFetches = await client.get(`/api/v1/conversations/${conversationId}/messages`, authHeader(alice.accessToken));
+    assert.equal(beforeBobFetches.body.messages[0].status, "sent");
+
+    // Bob fetching at all is the real "delivered" signal — no read yet.
+    await client.get(`/api/v1/conversations/${conversationId}/messages`, authHeader(bob.accessToken));
+    const afterBobFetches = await client.get(`/api/v1/conversations/${conversationId}/messages`, authHeader(alice.accessToken));
+    assert.equal(afterBobFetches.body.messages[0].status, "delivered");
+
+    // A message from someone else carries no status field at all for the viewer.
+    assert.equal(afterBobFetches.body.messages[0].senderId, alice.id);
+    const bobsView = await client.get(`/api/v1/conversations/${conversationId}/messages`, authHeader(bob.accessToken));
+    assert.equal(bobsView.body.messages[0].status, undefined, "not my message — nothing to show me about its delivery");
+
+    await client.post(`/api/v1/conversations/${conversationId}/read`, undefined, authHeader(bob.accessToken));
+    const afterBobReads = await client.get(`/api/v1/conversations/${conversationId}/messages`, authHeader(alice.accessToken));
+    assert.equal(afterBobReads.body.messages[0].status, "read");
+  });
+});
+
 describe("conversation list", () => {
   it("lists conversations most-recently-active first with the other participant and last message", async () => {
     const alice = await signupUser();

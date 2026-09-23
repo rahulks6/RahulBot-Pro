@@ -106,13 +106,51 @@ export async function listMessages(conversationId: string, limit: number, offset
   return rows.map(mapMessageRow);
 }
 
+/** Reading obviously implies delivery too, so this bumps both watermarks. */
 export async function markRead(conversationId: string, userId: string): Promise<void> {
   await query(
-    `INSERT INTO conversation_reads (conversation_id, user_id, last_read_at)
-     VALUES (:'conversation_id', :'user_id', now())
-     ON CONFLICT (conversation_id, user_id) DO UPDATE SET last_read_at = now()`,
+    `INSERT INTO conversation_reads (conversation_id, user_id, last_read_at, last_delivered_at)
+     VALUES (:'conversation_id', :'user_id', now(), now())
+     ON CONFLICT (conversation_id, user_id) DO UPDATE SET
+       last_read_at = now(),
+       last_delivered_at = GREATEST(conversation_reads.last_delivered_at, now())`,
     { conversation_id: conversationId, user_id: userId },
   );
+}
+
+/**
+ * Bumped whenever a participant's client successfully fetches messages
+ * (see conversations.service.ts's listMessages) — the real, honestly-
+ * scoped "delivered" signal this backend can observe with no push/
+ * WebSocket channel: the recipient's app actually received the data on a
+ * real fetch, not just "the server has it" (that's `sent`, the default).
+ */
+export async function markDelivered(conversationId: string, userId: string): Promise<void> {
+  await query(
+    `INSERT INTO conversation_reads (conversation_id, user_id, last_delivered_at)
+     VALUES (:'conversation_id', :'user_id', now())
+     ON CONFLICT (conversation_id, user_id) DO UPDATE SET last_delivered_at = GREATEST(conversation_reads.last_delivered_at, now())`,
+    { conversation_id: conversationId, user_id: userId },
+  );
+}
+
+export interface ReadState {
+  lastReadAt: string;
+  lastDeliveredAt: string;
+}
+
+const EPOCH = new Date(0).toISOString();
+
+/** A participant's own read/delivered watermarks — defaults to epoch (never read, never delivered) if they've never fetched or read this conversation at all. */
+export async function getReadState(conversationId: string, userId: string): Promise<ReadState> {
+  const row = await queryOne(
+    `SELECT last_read_at, last_delivered_at FROM conversation_reads WHERE conversation_id = :'conversation_id' AND user_id = :'user_id'`,
+    { conversation_id: conversationId, user_id: userId },
+  );
+  return {
+    lastReadAt: (row?.last_read_at as string) ?? EPOCH,
+    lastDeliveredAt: (row?.last_delivered_at as string) ?? EPOCH,
+  };
 }
 
 export interface ConversationSummary {

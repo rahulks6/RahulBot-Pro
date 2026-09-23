@@ -67,8 +67,18 @@ both stores require in the listing itself.
     its subtitle is the real tagline ("Story that connects."), not a
     placeholder. See `../BRAND.md` for the full name/tagline/color
     reference this reads from.
-  - Still open after this pass (see "Phase 13 specifically" below): DM
-    per-message delivery states (Sending/Sent/Delivered/Read/Failed), and
+  - `ConversationScreen.tsx` now has real per-message delivery states
+    (spec: Sending/Sent/Delivered/Read/Failed), shown as a caption under
+    the single most recent message you sent (same convention as iMessage/
+    WhatsApp), not on every message. Sending/Failed are purely client-
+    local — an outgoing message is optimistically echoed into the thread
+    immediately, tappable to retry if the send fails. Sent/Delivered/Read
+    come from the backend's new per-message `status`, computed from a real
+    `last_delivered_at` watermark (bumped whenever a participant's client
+    actually fetches messages — the honest "delivered" signal available
+    with no push/WebSocket channel) alongside the existing `last_read_at`.
+    See `backend/README.md`'s Phase 13 section for the full mechanism.
+  - Still open after this pass (see "Phase 13 specifically" below):
     drag-and-drop reordering of Highlights or their contents.
 - `src/theme/` — the Katkee design system tokens: near-black background,
   off-white text, one amber/yellow accent (`colors.accent`) used for the
@@ -285,11 +295,17 @@ both stores require in the listing itself.
 
 ### Phase 13 specifically
 
-- **DM delivery states (Sending/Sent/Delivered/Read/Failed) aren't built.**
-  `ConversationScreen.tsx` still has only a local `sending` busy flag and
-  read-tracking — a real per-message status model needs a backend schema
-  change (a `status` column plus a way to observe delivery, not just
-  send/read), which is a bigger, separate slice than this pass covers.
+- **"Delivered" means "the recipient's client actually fetched it," not
+  "pushed to their device."** There's no push/WebSocket channel in this
+  build (see `backend/README.md`'s own sandbox-limitation notes for the
+  same class of constraint elsewhere) — `ConversationScreen.tsx`'s 4s
+  poll while a thread is open is the real-time approximation, and
+  `Delivered` reflects a real fetch having happened, honestly scoped
+  rather than faked as true push delivery. `pollForNew` only refreshes
+  status on the most recent `PAGE_SIZE` (30) messages — a status caption
+  older than that won't progress past whatever it showed on last fetch,
+  which is fine in practice since a status caption only ever renders on
+  the single most recent message anyway.
 - **Drag-and-drop reordering isn't built** — neither reordering
   Highlights themselves nor reordering content within one.
   `HighlightEditorScreen.tsx`'s selection order (tap order → numbered

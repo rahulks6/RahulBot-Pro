@@ -19,6 +19,8 @@ export interface ConversationSummary {
   createdAt: string;
 }
 
+export type MessageDeliveryStatus = "sent" | "delivered" | "read";
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -26,6 +28,8 @@ export interface Message {
   body: string | null;
   sharedStoryId: string | null;
   createdAt: string;
+  /** Only present on messages the viewer themselves sent — see backend/src/modules/conversations/conversations.service.ts's listMessages. */
+  status?: MessageDeliveryStatus;
 }
 
 export interface ConversationWithOtherUser {

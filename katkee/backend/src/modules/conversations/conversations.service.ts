@@ -78,14 +78,49 @@ export async function sendMessage(viewerId: string, conversationId: string, inpu
   return conversationsRepo.createMessage(conversationId, viewerId, input.body, input.storyId);
 }
 
+export type MessageDeliveryStatus = "sent" | "delivered" | "read";
+
+export interface MessageWithStatus extends MessageRow {
+  /** Only present on the viewer's OWN messages — spec: Sending/Failed are
+   * purely client-local (never reach here at all); a message that exists
+   * in the database is definitionally at least "sent". Absent entirely on
+   * messages from the other participant — there's nothing to show a
+   * viewer about the delivery status of a message they received. */
+  status?: MessageDeliveryStatus;
+}
+
 export async function listMessages(
   viewerId: string,
   conversationId: string,
   limit: number,
   offset: number,
-): Promise<MessageRow[]> {
-  await requireParticipant(conversationId, viewerId);
-  return conversationsRepo.listMessages(conversationId, limit, offset);
+): Promise<MessageWithStatus[]> {
+  const conversation = await requireParticipant(conversationId, viewerId);
+  const otherId = otherParticipant(conversation, viewerId);
+
+  const [rows] = await Promise.all([
+    conversationsRepo.listMessages(conversationId, limit, offset),
+    // Fetching messages at all is itself the real "my client received
+    // this" signal (see markDelivered's own comment) — every fetch, not
+    // just the first page, since even loading older history proves the
+    // client is online and synced up through now.
+    conversationsRepo.markDelivered(conversationId, viewerId),
+  ]);
+
+  const mine = rows.filter((m) => m.senderId === viewerId);
+  if (mine.length === 0) return rows;
+
+  const otherState = await conversationsRepo.getReadState(conversationId, otherId);
+  const lastReadMs = new Date(otherState.lastReadAt).getTime();
+  const lastDeliveredMs = new Date(otherState.lastDeliveredAt).getTime();
+
+  return rows.map((m) => {
+    if (m.senderId !== viewerId) return m;
+    const createdAtMs = new Date(m.createdAt).getTime();
+    const status: MessageDeliveryStatus =
+      createdAtMs <= lastReadMs ? "read" : createdAtMs <= lastDeliveredMs ? "delivered" : "sent";
+    return { ...m, status };
+  });
 }
 
 export async function markConversationRead(viewerId: string, conversationId: string): Promise<void> {
