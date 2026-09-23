@@ -8,6 +8,7 @@ import { searchUsers, type SearchResult } from "../api/users";
 import { STICKER_GLYPHS } from "./OverlayBody";
 import {
   STICKER_IDS,
+  type Overlay,
   type EmojiOverlayProperties,
   type MentionOverlayProperties,
   type LocationOverlayProperties,
@@ -49,6 +50,16 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onAdd: (payload: StickerAddPayload) => void;
+  /**
+   * When set, opening the sheet edits this overlay's content in place
+   * (its existing position/scale/rotation untouched) instead of adding a
+   * new one — the location/date-time counterpart to double-tapping text
+   * to re-edit it (only "location" and "datetime" have re-editable
+   * content; a mention or sticker has nothing to edit beyond geometry,
+   * which OverlayAdjustSheet already covers).
+   */
+  editingOverlay?: Overlay | null;
+  onEditDone?: (id: string, properties: LocationOverlayProperties | DateTimeOverlayProperties) => void;
 }
 
 /**
@@ -59,7 +70,7 @@ interface Props {
  * `onAdd` → DraggableCanvasObject path text already uses; this sheet only
  * ever hands back type-specific `properties`, never geometry.
  */
-export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Element {
+export function StickerSheet({ visible, onClose, onAdd, editingOverlay, onEditDone }: Props): React.JSX.Element {
   const { accessToken } = useAuth();
   const [tab, setTab] = useState<Tab>("emoji");
   const [mentionQuery, setMentionQuery] = useState("");
@@ -69,6 +80,18 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
   const [locationLabel, setLocationLabel] = useState("");
   const [locatingDevice, setLocatingDevice] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!visible) return;
+    if (editingOverlay?.type === "location") {
+      setTab("location");
+      setLocationLabel(editingOverlay.properties.label);
+    } else if (editingOverlay?.type === "datetime") {
+      setTab("datetime");
+      setPickerDate(new Date(editingOverlay.properties.value));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, editingOverlay]);
 
   React.useEffect(() => {
     if (!visible || tab !== "mention" || !accessToken || debouncedMentionQuery.trim().length < 2) {
@@ -113,7 +136,11 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
   const addLocation = () => {
     const label = locationLabel.trim();
     if (!label) return;
-    onAdd({ type: "location", properties: { label } });
+    if (editingOverlay && onEditDone) {
+      onEditDone(editingOverlay.id, { label });
+    } else {
+      onAdd({ type: "location", properties: { label } });
+    }
     close();
   };
 
@@ -175,7 +202,12 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
       mode === "date"
         ? pickerDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
         : pickerDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    onAdd({ type: "datetime", properties: { mode, value: pickerDate.toISOString(), display } });
+    const properties = { mode, value: pickerDate.toISOString(), display };
+    if (editingOverlay && onEditDone) {
+      onEditDone(editingOverlay.id, properties);
+    } else {
+      onAdd({ type: "datetime", properties });
+    }
     close();
   };
 
@@ -192,19 +224,23 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
           list the same way it used to cover TextToolModal's controls. */}
       <KeyboardAvoidingView style={styles.sheet} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.handle} />
-        <View style={styles.tabRow}>
-          {TABS.map((t) => (
-            <Pressable
-              key={t.key}
-              onPress={() => setTab(t.key)}
-              style={[styles.tab, tab === t.key && styles.tabActive]}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: tab === t.key }}
-            >
-              <Text style={[styles.tabLabel, tab === t.key && styles.tabLabelActive]}>{t.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        {editingOverlay ? (
+          <Text style={styles.editingHeader}>Editing {editingOverlay.type === "location" ? "location" : "date/time"}</Text>
+        ) : (
+          <View style={styles.tabRow}>
+            {TABS.map((t) => (
+              <Pressable
+                key={t.key}
+                onPress={() => setTab(t.key)}
+                style={[styles.tab, tab === t.key && styles.tabActive]}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: tab === t.key }}
+              >
+                <Text style={[styles.tabLabel, tab === t.key && styles.tabLabelActive]}>{t.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
 
         <View style={styles.body}>
           {tab === "emoji" ? (
@@ -268,7 +304,7 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
               </Pressable>
               {locationError ? <Text style={styles.errorText}>{locationError}</Text> : null}
               <Pressable style={[styles.primaryButton, !locationLabel.trim() && styles.primaryButtonDisabled]} disabled={!locationLabel.trim()} onPress={addLocation}>
-                <Text style={styles.primaryButtonLabel}>Add</Text>
+                <Text style={styles.primaryButtonLabel}>{editingOverlay ? "Save" : "Add"}</Text>
               </Pressable>
             </View>
           ) : null}
@@ -309,12 +345,16 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
                 </Pressable>
               </View>
 
-              <Pressable style={styles.primaryButton} onPress={() => addDateTime("date")}>
-                <Text style={styles.primaryButtonLabel}>Add as date sticker</Text>
-              </Pressable>
-              <Pressable style={styles.primaryButton} onPress={() => addDateTime("time")}>
-                <Text style={styles.primaryButtonLabel}>Add as time sticker</Text>
-              </Pressable>
+              {!editingOverlay || (editingOverlay.type === "datetime" && editingOverlay.properties.mode === "date") ? (
+                <Pressable style={styles.primaryButton} onPress={() => addDateTime("date")}>
+                  <Text style={styles.primaryButtonLabel}>{editingOverlay ? "Save date" : "Add as date sticker"}</Text>
+                </Pressable>
+              ) : null}
+              {!editingOverlay || (editingOverlay.type === "datetime" && editingOverlay.properties.mode === "time") ? (
+                <Pressable style={styles.primaryButton} onPress={() => addDateTime("time")}>
+                  <Text style={styles.primaryButtonLabel}>{editingOverlay ? "Save time" : "Add as time sticker"}</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
 
@@ -353,6 +393,7 @@ const styles = StyleSheet.create({
   },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: "center", marginVertical: spacing.sm },
   tabRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginBottom: spacing.sm },
+  editingHeader: { color: colors.textSecondary, textAlign: "center", marginBottom: spacing.sm, textTransform: "capitalize" },
   tab: { borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, paddingHorizontal: spacing.sm, paddingVertical: 6 },
   tabActive: { backgroundColor: colors.accent, borderColor: colors.accent },
   tabLabel: { color: colors.textSecondary, fontSize: 12 },

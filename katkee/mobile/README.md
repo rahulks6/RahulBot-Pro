@@ -883,3 +883,17 @@ no accessible button alternative (continuous autofocus makes it a bonus
 rather than the only path to a focused shot, but it's a real gap); and, as
 always, none of the above has actually run — the two test plans above are
 what "run" would mean.
+
+### Edit-in-place for location and date/time content
+
+Double-tap-to-re-edit (spec section 20) was explicitly a text-only
+requirement, but the same gap existed in spirit for location and date/time
+stickers: once placed, the only way to change a mistyped location label or
+a wrong date/time was delete-and-recreate. `StickerSheet` now accepts an
+`editingOverlay`, pre-fills the relevant tab from it, hides the other tabs
+while editing, and calls a new `onEditDone` (merging into the *existing*
+overlay's `properties`, leaving its position/scale/rotation untouched)
+instead of `onAdd`. Reachable two ways, matching the text pattern exactly:
+double-tapping the object directly, or "Edit Location"/"Edit Date/Time" in
+OverlayAdjustSheet — so it's available through the accessible,
+non-gesture path too, not just the double-tap gesture.

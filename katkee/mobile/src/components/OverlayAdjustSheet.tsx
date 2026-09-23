@@ -13,6 +13,8 @@ interface Props {
   overlay: Overlay | null;
   onChange: (id: string, patch: Partial<Pick<Overlay, "x" | "y" | "scale" | "rotation">>) => void;
   onEditText?: (id: string) => void;
+  /** Location and date/time are the other two overlay types with re-editable content — see StickerSheet's editingOverlay/onEditDone. */
+  onEditLocationOrDateTime?: (id: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }
@@ -32,7 +34,7 @@ function clamp(n: number, min: number, max: number): number {
  * buttons for position, +/- for scale and rotation, and a real Delete
  * button standing in for "drag onto the trash zone."
  */
-export function OverlayAdjustSheet({ overlay, onChange, onEditText, onDelete, onClose }: Props): React.JSX.Element {
+export function OverlayAdjustSheet({ overlay, onChange, onEditText, onEditLocationOrDateTime, onDelete, onClose }: Props): React.JSX.Element {
   // Keeps rendering the last-selected overlay's controls while the Modal
   // itself plays its closing animation (overlay only ever goes non-null →
   // null when a caller closes it) — returning null the instant `overlay`
@@ -108,6 +110,20 @@ export function OverlayAdjustSheet({ overlay, onChange, onEditText, onDelete, on
             accessibilityLabel="Edit text and style"
           >
             <Text style={styles.secondaryButtonLabel}>Edit Text</Text>
+          </Pressable>
+        ) : null}
+
+        {(shown.type === "location" || shown.type === "datetime") && onEditLocationOrDateTime ? (
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => {
+              onEditLocationOrDateTime(shown.id);
+              onClose();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={shown.type === "location" ? "Edit location" : "Edit date or time"}
+          >
+            <Text style={styles.secondaryButtonLabel}>{shown.type === "location" ? "Edit Location" : "Edit Date/Time"}</Text>
           </Pressable>
         ) : null}
 

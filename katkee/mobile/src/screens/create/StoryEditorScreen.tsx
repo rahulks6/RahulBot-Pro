@@ -24,7 +24,16 @@ import { uploadPhoto, uploadVideo } from "../../api/media";
 import { publishStory } from "../../api/stories";
 import { ApiError } from "../../api/client";
 import { FILTER_PREVIEWS } from "../../models/filterPreviews";
-import { createEmptyDraft, hasMeaningfulEdits, filterKey, mediaTransformStyle, type Overlay, type TextOverlayProperties } from "../../models/storyDraft";
+import {
+  createEmptyDraft,
+  hasMeaningfulEdits,
+  filterKey,
+  mediaTransformStyle,
+  type Overlay,
+  type TextOverlayProperties,
+  type LocationOverlayProperties,
+  type DateTimeOverlayProperties,
+} from "../../models/storyDraft";
 import { DraggableCanvasObject } from "../../components/DraggableCanvasObject";
 import { OverlayBody } from "../../components/OverlayBody";
 import { TextToolModal } from "../../components/TextToolModal";
@@ -60,6 +69,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
   const [drawMode, setDrawMode] = useState(false);
   const [cropMode, setCropMode] = useState(false);
   const [editingOverlayId, setEditingOverlayId] = useState<string | null>(null);
+  const [editingStickerOverlayId, setEditingStickerOverlayId] = useState<string | null>(null);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const [isDraggingOverlay, setIsDraggingOverlay] = useState(false);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
@@ -167,6 +177,14 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     setDraft((d) => ({ ...d, overlays: d.overlays.map((o) => (o.id === id ? { ...o, ...patch } : o)) }));
   }, []);
 
+  /** Location/date-time content edit — geometry (position/scale/rotation) stays exactly where it was. */
+  const updateOverlayContent = useCallback((id: string, properties: LocationOverlayProperties | DateTimeOverlayProperties) => {
+    setDraft((d) => ({
+      ...d,
+      overlays: d.overlays.map((o) => ((o.type === "location" || o.type === "datetime") && o.id === id ? ({ ...o, properties } as Overlay) : o)),
+    }));
+  }, []);
+
   const deleteOverlay = useCallback((id: string) => {
     setDraft((d) => ({ ...d, overlays: d.overlays.filter((o) => o.id !== id) }));
   }, []);
@@ -176,6 +194,13 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     | undefined;
 
   const selectedOverlay = draft.overlays.find((o) => o.id === selectedOverlayId) ?? null;
+
+  const editingStickerOverlay = draft.overlays.find((o) => o.id === editingStickerOverlayId) ?? null;
+
+  const openStickerEditor = useCallback((id: string) => {
+    setEditingStickerOverlayId(id);
+    setStickerSheetVisible(true);
+  }, []);
 
   const activeFilter = useMemo(() => FILTER_PREVIEWS.find((f) => f.name === draft.filter) ?? FILTER_PREVIEWS[0], [draft.filter]);
 
@@ -348,6 +373,8 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
                   if (o?.type === "text") {
                     setEditingOverlayId(id);
                     setTextModalVisible(true);
+                  } else if (o?.type === "location" || o?.type === "datetime") {
+                    openStickerEditor(id);
                   } else {
                     setSelectedOverlayId(id);
                   }
@@ -426,7 +453,15 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
             >
               <Text style={styles.topIcon}>Text</Text>
             </Pressable>
-            <Pressable onPress={() => setStickerSheetVisible(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Add sticker, emoji, mention, location, or date and time">
+            <Pressable
+              onPress={() => {
+                setEditingStickerOverlayId(null);
+                setStickerSheetVisible(true);
+              }}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Add sticker, emoji, mention, location, or date and time"
+            >
               <Text style={styles.topIcon}>Stickers</Text>
             </Pressable>
             <Pressable onPress={() => setDrawMode(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Draw">
@@ -520,7 +555,16 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
         }}
         onDone={addOrUpdateText}
       />
-      <StickerSheet visible={stickerSheetVisible} onClose={() => setStickerSheetVisible(false)} onAdd={addSticker} />
+      <StickerSheet
+        visible={stickerSheetVisible}
+        onClose={() => {
+          setStickerSheetVisible(false);
+          setEditingStickerOverlayId(null);
+        }}
+        onAdd={addSticker}
+        editingOverlay={editingStickerOverlay}
+        onEditDone={updateOverlayContent}
+      />
       <OverlayAdjustSheet
         overlay={selectedOverlay}
         onChange={updateOverlay}
@@ -528,6 +572,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           setEditingOverlayId(id);
           setTextModalVisible(true);
         }}
+        onEditLocationOrDateTime={openStickerEditor}
         onDelete={(id) => deleteOverlay(id)}
         onClose={() => setSelectedOverlayId(null)}
       />

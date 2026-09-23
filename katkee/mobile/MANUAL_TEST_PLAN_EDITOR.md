@@ -76,6 +76,15 @@ identically for all six:
       too and confirm the results list isn't hidden behind it.
 - [ ] Tap a search result → a mention chip is added showing that user's
       current display name/username.
+- [ ] Double-tap a placed location chip, or select it and tap "Edit
+      Location" in OverlayAdjustSheet → the sheet reopens on the Location
+      tab only (other tabs hidden), pre-filled with the exact current
+      label; saving updates that same chip's text in place without moving
+      it, resetting its size, or creating a duplicate.
+- [ ] Do the same for a placed date/time chip → the day/hour/minute
+      steppers open pre-set to its current value, and only the button
+      matching its existing mode (date vs. time) is shown; saving updates
+      it in place the same way.
 
 ### Mentions end-to-end (needs a second real account)
 
