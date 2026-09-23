@@ -24,13 +24,15 @@ import { uploadPhoto, uploadVideo } from "../../api/media";
 import { publishStory } from "../../api/stories";
 import { ApiError } from "../../api/client";
 import { FILTER_PREVIEWS } from "../../models/filterPreviews";
-import { createEmptyDraft, hasMeaningfulEdits, filterKey, type Overlay, type TextOverlayProperties } from "../../models/storyDraft";
+import { createEmptyDraft, hasMeaningfulEdits, filterKey, mediaTransformStyle, type Overlay, type TextOverlayProperties } from "../../models/storyDraft";
 import { DraggableCanvasObject } from "../../components/DraggableCanvasObject";
 import { OverlayBody } from "../../components/OverlayBody";
 import { TextToolModal } from "../../components/TextToolModal";
 import { StickerSheet, type StickerAddPayload } from "../../components/StickerSheet";
 import { DrawingCanvas } from "../../components/DrawingCanvas";
 import { OverlayAdjustSheet } from "../../components/OverlayAdjustSheet";
+import { CropGestureLayer } from "../../components/CropGestureLayer";
+import { savePendingDraft, loadPendingDraft, clearPendingDraft } from "../../state/draftStorage";
 
 type Props = NativeStackScreenProps<CreateStackParamList, "StoryEditor">;
 type Audience = "public" | "followers";
@@ -56,6 +58,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
   const [textModalVisible, setTextModalVisible] = useState(false);
   const [stickerSheetVisible, setStickerSheetVisible] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
+  const [cropMode, setCropMode] = useState(false);
   const [editingOverlayId, setEditingOverlayId] = useState<string | null>(null);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const [isDraggingOverlay, setIsDraggingOverlay] = useState(false);
@@ -65,12 +68,46 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
 
   const nextZIndex = useRef(1);
   const filterToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [restored, setRestored] = useState(false);
 
   useEffect(() => {
     return () => {
       if (filterToastTimer.current) clearTimeout(filterToastTimer.current);
     };
   }, []);
+
+  // Crash-safe autosave (spec section 42: "persist local draft" as its own
+  // step, not just React state). Restore-on-mount runs once, before the
+  // autosave effect below is allowed to write anything — otherwise the
+  // freshly-mounted empty draft would overwrite a real saved one before
+  // it's ever read.
+  useEffect(() => {
+    let cancelled = false;
+    loadPendingDraft(mediaUri).then((saved) => {
+      if (cancelled) return;
+      if (saved && hasMeaningfulEdits(saved.draft)) {
+        setDraft(saved.draft);
+        setAudience(saved.audience);
+      }
+      setRestored(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaUri]);
+
+  useEffect(() => {
+    if (!restored) return;
+    const timer = setTimeout(() => {
+      if (hasMeaningfulEdits(draft)) {
+        void savePendingDraft(mediaUri, { draft, audience, mimeType, savedAt: new Date().toISOString() });
+      } else {
+        void clearPendingDraft(mediaUri);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [restored, draft, audience, mediaUri, mimeType]);
 
   const onContainerLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -201,7 +238,11 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     [draft],
   );
 
-  const onClose = () => confirmDiscard(() => navigation.goBack());
+  const onClose = () =>
+    confirmDiscard(() => {
+      void clearPendingDraft(mediaUri);
+      navigation.goBack();
+    });
 
   const onShare = async () => {
     if (!accessToken) return;
@@ -220,10 +261,12 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           drawing: draft.drawing,
           filter: filterKey(draft.filter),
           audioMuted: draft.audioMuted,
+          crop: draft.crop,
         },
         accessToken,
       );
       setUploadState("done");
+      void clearPendingDraft(mediaUri);
       rootNavigation.reset({ index: 0, routes: [{ name: "Main" }] });
     } catch (err) {
       // Nothing is lost on failure — `draft` (media uri, overlays, drawing,
@@ -238,11 +281,15 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
     <View style={styles.container}>
       <View style={styles.mediaContainer} onLayout={onContainerLayout}>
         {kind === "photo" ? (
-          <Image source={{ uri: mediaUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <Image
+            source={{ uri: mediaUri }}
+            style={[StyleSheet.absoluteFill, mediaTransformStyle(draft.crop, containerSize.width, containerSize.height)]}
+            resizeMode="cover"
+          />
         ) : (
           <Video
             source={{ uri: mediaUri }}
-            style={StyleSheet.absoluteFill}
+            style={[StyleSheet.absoluteFill, mediaTransformStyle(draft.crop, containerSize.width, containerSize.height)]}
             resizeMode="cover"
             repeat
             muted={draft.audioMuted}
@@ -257,7 +304,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           />
         ) : null}
 
-        {!drawMode ? (
+        {!drawMode && !cropMode ? (
           <View
             style={StyleSheet.absoluteFill}
             {...filterSwipeGesture.panHandlers}
@@ -272,7 +319,16 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           </View>
         ) : null}
 
-        {containerSize.width > 0 && !drawMode
+        {containerSize.width > 0 && cropMode ? (
+          <CropGestureLayer
+            crop={draft.crop}
+            containerWidth={containerSize.width}
+            containerHeight={containerSize.height}
+            onChange={(crop) => setDraft((d) => ({ ...d, crop }))}
+          />
+        ) : null}
+
+        {containerSize.width > 0 && !drawMode && !cropMode
           ? draft.overlays.map((overlay) => (
               <DraggableCanvasObject
                 key={overlay.id}
@@ -299,7 +355,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
               />
             ))
           : containerSize.width > 0
-            ? // While drawing, overlays render statically (no gesture handlers) so drag/pinch never fights with the drawing gesture.
+            ? // While drawing or cropping, overlays render statically (no gesture handlers) so drag/pinch never fights with those gestures.
               draft.overlays.map((overlay) => (
                 <View
                   key={overlay.id}
@@ -335,12 +391,30 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
         ) : null}
       </View>
 
-      {!drawMode ? (
+      {cropMode ? (
+        <View style={styles.topBar}>
+          <Text style={styles.cropHint}>Pinch to zoom · Drag to reposition</Text>
+          <Pressable
+            onPress={() => setCropMode(false)}
+            hitSlop={12}
+            style={styles.cropDoneButton}
+            accessibilityRole="button"
+            accessibilityLabel="Done cropping"
+          >
+            <Text style={styles.cropDoneLabel}>Done</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {!drawMode && !cropMode ? (
         <View style={styles.topBar}>
           <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close editor">
             <Text style={styles.topIcon}>✕</Text>
           </Pressable>
           <View style={styles.topRight}>
+            <Pressable onPress={() => setCropMode(true)} hitSlop={12} accessibilityRole="button" accessibilityLabel="Crop">
+              <Text style={styles.topIcon}>Crop</Text>
+            </Pressable>
             <Pressable
               onPress={() => {
                 setEditingOverlayId(null);
@@ -372,7 +446,7 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
         </View>
       ) : null}
 
-      {!drawMode ? (
+      {!drawMode && !cropMode ? (
         <View style={styles.bottomArea}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterStrip}>
             {FILTER_PREVIEWS.map((f) => (
@@ -475,6 +549,9 @@ const styles = StyleSheet.create({
   },
   topRight: { flexDirection: "row", gap: spacing.lg },
   topIcon: { color: colors.textPrimary, fontSize: 16, fontWeight: "600" },
+  cropHint: { color: "rgba(255,255,255,0.85)", fontSize: 13 },
+  cropDoneButton: { backgroundColor: colors.accent, borderRadius: radii.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
+  cropDoneLabel: { color: colors.onAccent, fontWeight: "700" },
   trashZone: {
     position: "absolute",
     bottom: spacing.xl,

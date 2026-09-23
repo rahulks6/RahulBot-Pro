@@ -13,6 +13,7 @@ import { ApiError } from "../../api/client";
 import { EmptyState } from "../../components/EmptyState";
 import { StoryOverlayLayer, useContainerLayout } from "../../components/StoryOverlayLayer";
 import { filterNameFromKey } from "../../models/filterPreviews";
+import { mediaTransformStyle, DEFAULT_CROP } from "../../models/storyDraft";
 import type { StoryDetail } from "../../api/engagement";
 
 type Props = NativeStackScreenProps<RootStackParamList, "HighlightViewer">;
@@ -143,14 +144,18 @@ export function HighlightViewerScreen({ route, navigation }: Props): React.JSX.E
       {mediaKind === "video" ? (
         <Video
           source={{ uri: mediaUrl, headers: authHeaders }}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, mediaTransformStyle(detail?.crop ?? DEFAULT_CROP, containerSize.width, containerSize.height)]}
           resizeMode="cover"
           onLoad={(meta) => setVideoDurationMs(Math.max(1000, meta.duration * 1000))}
           paused={false}
           muted={detail?.audioMuted ?? false}
         />
       ) : mediaKind === "photo" ? (
-        <Image source={{ uri: mediaUrl, headers: authHeaders }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <Image
+          source={{ uri: mediaUrl, headers: authHeaders }}
+          style={[StyleSheet.absoluteFill, mediaTransformStyle(detail?.crop ?? DEFAULT_CROP, containerSize.width, containerSize.height)]}
+          resizeMode="cover"
+        />
       ) : (
         <View style={styles.centered}>
           {error ? <Text style={styles.errorText}>{error}</Text> : <ActivityIndicator color={colors.accent} />}

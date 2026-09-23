@@ -309,7 +309,7 @@ describe("the 24-hour lifecycle", () => {
     const me = await client.get("/api/v1/auth/me", authHeader(owner.accessToken));
     const published = await storiesService.publishStory(
       me.body.user.id,
-      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true, overlays: [], drawing: [], filter: "original", audioMuted: false },
+      { mediaId, caption: "", audience: "public", allowComments: "everyone", allowSharing: true, overlays: [], drawing: [], filter: "original", audioMuted: false, crop: { zoom: 1, offsetX: 0, offsetY: 0 } },
       { ttlSecondsOverride: 1 },
     );
 
@@ -452,6 +452,32 @@ describe("Camera + Editor: overlays, filter, and drawing survive publish", () =>
     const res = await publishStory(owner.accessToken, mediaId, {});
     assert.equal(res.status, 201);
     assert.equal(res.body.story.audioMuted, false);
+  });
+
+  it("crop defaults to no zoom/no pan, and a real crop round-trips exactly", async () => {
+    const owner = await signupUser();
+    const mediaId1 = await uploadPhoto(owner.accessToken);
+    const defaultRes = await publishStory(owner.accessToken, mediaId1, {});
+    assert.deepEqual(defaultRes.body.story.crop, { zoom: 1, offsetX: 0, offsetY: 0 });
+
+    const mediaId2 = await uploadPhoto(owner.accessToken);
+    const crop = { zoom: 2.5, offsetX: -0.6, offsetY: 0.3 };
+    const res = await publishStory(owner.accessToken, mediaId2, { crop });
+    assert.equal(res.status, 201);
+    assert.deepEqual(res.body.story.crop, crop);
+
+    const fetched = await client.get(`/api/v1/stories/${res.body.story.id}`, authHeader(owner.accessToken));
+    assert.deepEqual(fetched.body.story.crop, crop);
+  });
+
+  it("clamps an out-of-range crop instead of rejecting the publish", async () => {
+    const owner = await signupUser();
+    const mediaId = await uploadPhoto(owner.accessToken);
+    const res = await publishStory(owner.accessToken, mediaId, { crop: { zoom: 999, offsetX: -50, offsetY: 50 } });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.story.crop.zoom, 4);
+    assert.equal(res.body.story.crop.offsetX, -1);
+    assert.equal(res.body.story.crop.offsetY, 1);
   });
 
   it("drops malformed overlay entries instead of rejecting the whole publish", async () => {

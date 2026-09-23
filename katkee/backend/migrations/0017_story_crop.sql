@@ -1,0 +1,14 @@
+-- Camera + Editor module: "crop" is the one field in the spec's own
+-- StoryDraft shape (media, mediaType, crop, filter, overlays, ...) this
+-- project hadn't built yet. There's no native image-processing library in
+-- this sandbox to actually re-encode cropped pixels, so — same pattern as
+-- overlays/filter/drawing — crop is stored as structured metadata and
+-- applied as a live transform at both edit time and view time, never
+-- baked into the media file itself. See stories.repository.ts's StoryCrop.
+--
+-- {zoom, offsetX, offsetY}: zoom >= 1 (1 = the default resizeMode="cover"
+-- framing, no extra zoom); offsetX/offsetY are normalized to [-1, 1] —
+-- the fraction of the *maximum safe pan* at the current zoom level, not
+-- raw pixels, so the same stored value still means "panned all the way to
+-- the edge" however large the container it's rendered into actually is.
+ALTER TABLE stories ADD COLUMN crop JSONB NOT NULL DEFAULT '{"zoom":1,"offsetX":0,"offsetY":0}';

@@ -92,6 +92,51 @@ export interface SourceMedia {
   height: number | null;
 }
 
+export const MAX_CROP_ZOOM = 4;
+
+/**
+ * A live-applied crop, not a pixel one — there's no image-processing
+ * library in this sandbox to actually re-encode cropped pixels, so this
+ * is stored as structured metadata and applied as a transform at both
+ * edit time and view time (see components/CropGestureLayer.tsx and
+ * mediaTransformStyle below), the same architecture as filter/overlays/
+ * drawing. `zoom` 1 is the default resizeMode="cover" framing (no extra
+ * zoom); `offsetX`/`offsetY` are normalized to [-1, 1] — the fraction of
+ * the *maximum safe pan* at the current zoom, not raw pixels, so the
+ * value still means the same thing at any container size.
+ */
+export interface StoryCrop {
+  zoom: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export const DEFAULT_CROP: StoryCrop = { zoom: 1, offsetX: 0, offsetY: 0 };
+
+export function clampCrop(crop: StoryCrop): StoryCrop {
+  const zoom = Math.min(Math.max(crop.zoom, 1), MAX_CROP_ZOOM);
+  const clampOffset = (n: number) => Math.min(Math.max(n, -1), 1);
+  return { zoom, offsetX: clampOffset(crop.offsetX), offsetY: clampOffset(crop.offsetY) };
+}
+
+/**
+ * The transform that actually applies a crop to a `resizeMode="cover"`
+ * Image/Video: translate is listed before scale, so (per how RN/CSS
+ * compose a transform list) it's expressed in final, post-scale pixels —
+ * meaning `containerWidth * (zoom-1)/2` is exactly the room a `zoom`-times
+ * enlargement creates on each side, so offsetX/offsetY at ±1 pan exactly
+ * to the edge of what the zoomed image covers, never revealing a gap.
+ */
+export function mediaTransformStyle(crop: StoryCrop, containerWidth: number, containerHeight: number) {
+  return {
+    transform: [
+      { translateX: crop.offsetX * (containerWidth * (crop.zoom - 1)) / 2 },
+      { translateY: crop.offsetY * (containerHeight * (crop.zoom - 1)) / 2 },
+      { scale: crop.zoom },
+    ],
+  };
+}
+
 export interface StoryDraft {
   sourceMedia: SourceMedia;
   filter: FilterName;
@@ -100,10 +145,11 @@ export interface StoryDraft {
   caption: string;
   /** Video only — original recorded audio is kept by default (spec section 44). */
   audioMuted: boolean;
+  crop: StoryCrop;
 }
 
 export function createEmptyDraft(sourceMedia: SourceMedia): StoryDraft {
-  return { sourceMedia, filter: "Original", overlays: [], drawing: [], caption: "", audioMuted: false };
+  return { sourceMedia, filter: "Original", overlays: [], drawing: [], caption: "", audioMuted: false, crop: DEFAULT_CROP };
 }
 
 /** Used for the discard-protection prompt (spec section 27) — has the user actually changed anything? */
@@ -113,7 +159,10 @@ export function hasMeaningfulEdits(draft: StoryDraft): boolean {
     draft.overlays.length > 0 ||
     draft.drawing.length > 0 ||
     draft.caption.trim().length > 0 ||
-    draft.audioMuted
+    draft.audioMuted ||
+    draft.crop.zoom !== 1 ||
+    draft.crop.offsetX !== 0 ||
+    draft.crop.offsetY !== 0
   );
 }
 

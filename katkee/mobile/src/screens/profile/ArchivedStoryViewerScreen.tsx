@@ -12,6 +12,7 @@ import { mediaFileUrl } from "../../api/stories";
 import { ApiError } from "../../api/client";
 import { StoryOverlayLayer, useContainerLayout } from "../../components/StoryOverlayLayer";
 import { filterNameFromKey } from "../../models/filterPreviews";
+import { mediaTransformStyle } from "../../models/storyDraft";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ArchivedStoryViewer">;
 
@@ -104,14 +105,18 @@ export function ArchivedStoryViewerScreen({ route, navigation }: Props): React.J
       {mediaKind === "video" ? (
         <Video
           source={{ uri: mediaUrl, headers: authHeaders }}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, mediaTransformStyle(detail.crop, containerSize.width, containerSize.height)]}
           resizeMode="cover"
           onLoad={(meta) => setVideoDurationMs(Math.max(1000, meta.duration * 1000))}
           paused={false}
           muted={detail.audioMuted}
         />
       ) : mediaKind === "photo" ? (
-        <Image source={{ uri: mediaUrl, headers: authHeaders }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <Image
+          source={{ uri: mediaUrl, headers: authHeaders }}
+          style={[StyleSheet.absoluteFill, mediaTransformStyle(detail.crop, containerSize.width, containerSize.height)]}
+          resizeMode="cover"
+        />
       ) : (
         <ActivityIndicator color={colors.accent} style={styles.loadingSpinner} />
       )}

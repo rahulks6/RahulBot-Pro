@@ -844,3 +844,18 @@ original audio" is what happens if a caller sends nothing), and every
 viewer-facing read now returns it. Two tests cover it: a published Story
 returns exactly the `audioMuted` it was published with, and it defaults to
 `false` when omitted.
+
+## Crop metadata (migration 0017)
+
+The spec's own `StoryDraft` shape lists `crop` alongside `filter`/
+`overlays`/`drawing` — the one field of that shape this project hadn't
+built until now. `stories.crop JSONB NOT NULL DEFAULT '{"zoom":1,
+"offsetX":0,"offsetY":0}'` stores it the same way as overlays/drawing:
+structured metadata, not a pixel-level crop (no image-processing library
+in this sandbox to re-encode cropped pixels), applied as a live transform
+on the mobile side in both the editor and every viewer. `dto.ts`'s
+`parseCrop` clamps `zoom` to `[1, MAX_CROP_ZOOM]` and `offsetX`/`offsetY`
+to `[-1, 1]` rather than rejecting an out-of-range value — consistent
+with how every other overlay field in this body is validated. Three tests
+cover it: the default, an exact round-trip through publish and a
+subsequent fetch, and clamping of an out-of-range value.

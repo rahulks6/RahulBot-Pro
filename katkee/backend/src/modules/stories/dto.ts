@@ -1,7 +1,7 @@
 import { ValidationError } from "../auth/dto";
 import type { Audience, CommentSetting } from "./stories.repository";
-import type { StoryOverlay, DrawStroke } from "./overlays";
-import { OVERLAY_TYPES, TEXT_STYLES, STICKER_IDS, DATETIME_MODES, DRAW_TOOLS, FILTER_NAMES } from "./overlays";
+import type { StoryOverlay, DrawStroke, StoryCrop } from "./overlays";
+import { OVERLAY_TYPES, TEXT_STYLES, STICKER_IDS, DATETIME_MODES, DRAW_TOOLS, FILTER_NAMES, MAX_CROP_ZOOM } from "./overlays";
 
 const MAX_CAPTION_LENGTH = 280;
 const AUDIENCES: Audience[] = ["public", "followers"];
@@ -17,7 +17,10 @@ export interface PublishStoryInput {
   drawing: DrawStroke[];
   filter: string;
   audioMuted: boolean;
+  crop: StoryCrop;
 }
+
+const DEFAULT_CROP: StoryCrop = { zoom: 1, offsetX: 0, offsetY: 0 };
 
 const MAX_OVERLAYS = 40;
 const MAX_STROKES = 80;
@@ -150,6 +153,16 @@ function parseDrawing(raw: unknown): DrawStroke[] {
     .filter((s): s is DrawStroke => s !== null);
 }
 
+function parseCrop(raw: unknown): StoryCrop {
+  if (typeof raw !== "object" || raw === null) return DEFAULT_CROP;
+  const c = raw as Record<string, unknown>;
+  return {
+    zoom: isFiniteNumber(c.zoom) ? clamp(c.zoom, 1, MAX_CROP_ZOOM) : 1,
+    offsetX: isFiniteNumber(c.offsetX) ? clamp(c.offsetX, -1, 1) : 0,
+    offsetY: isFiniteNumber(c.offsetY) ? clamp(c.offsetY, -1, 1) : 0,
+  };
+}
+
 export function parsePublishStoryInput(body: unknown): PublishStoryInput {
   const errors: Record<string, string> = {};
   const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
@@ -186,6 +199,7 @@ export function parsePublishStoryInput(body: unknown): PublishStoryInput {
     drawing: parseDrawing(b.drawing),
     filter,
     audioMuted: audioMuted as boolean,
+    crop: parseCrop(b.crop),
   };
 }
 

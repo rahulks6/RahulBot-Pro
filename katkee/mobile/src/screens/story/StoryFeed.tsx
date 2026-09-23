@@ -14,6 +14,7 @@ import { StoryMoreMenu } from "../../components/StoryMoreMenu";
 import { StoryInsightsSheet } from "../../components/StoryInsightsSheet";
 import { StoryOverlayLayer, useContainerLayout } from "../../components/StoryOverlayLayer";
 import { filterNameFromKey } from "../../models/filterPreviews";
+import { mediaTransformStyle } from "../../models/storyDraft";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
 
 const PHOTO_DURATION_MS = 5000;
@@ -404,7 +405,7 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
       {mediaKind === "video" ? (
         <Video
           source={{ uri: mediaUrl, headers: authHeaders }}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, mediaTransformStyle(detail?.crop ?? currentStory.crop, containerSize.width, containerSize.height)]}
           resizeMode="cover"
           muted={detail?.audioMuted ?? currentStory.audioMuted}
           paused={paused || sheetOpen}
@@ -415,7 +416,11 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
           }}
         />
       ) : mediaKind === "photo" ? (
-        <Image source={{ uri: mediaUrl, headers: authHeaders }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <Image
+          source={{ uri: mediaUrl, headers: authHeaders }}
+          style={[StyleSheet.absoluteFill, mediaTransformStyle(detail?.crop ?? currentStory.crop, containerSize.width, containerSize.height)]}
+          resizeMode="cover"
+        />
       ) : null}
 
       {detail && containerSize.width > 0 ? (

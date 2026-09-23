@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ActivityIndicator, FlatList, Modal, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Geolocation from "@react-native-community/geolocation";
 import { colors, radii, spacing, typography } from "../theme";
 import { useAuth } from "../state/AuthContext";
@@ -154,10 +154,28 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
     }
   };
 
+  // A real picker (spec's own date/time sticker, not locked to "right
+  // now"): +/- steppers on day/hour/minute, hand-rolled rather than a
+  // native calendar widget — no such library is declared in this project,
+  // and steppers are a reasonable, fully-functional stand-in for a Story
+  // sticker (which only ever needs "some date", not scheduling precision).
+  const [pickerDate, setPickerDate] = useState(() => new Date());
+  const adjustPicker = (unit: "day" | "hour" | "minute", delta: number) => {
+    setPickerDate((d) => {
+      const next = new Date(d);
+      if (unit === "day") next.setDate(next.getDate() + delta);
+      if (unit === "hour") next.setHours(next.getHours() + delta);
+      if (unit === "minute") next.setMinutes(next.getMinutes() + delta * 5);
+      return next;
+    });
+  };
+
   const addDateTime = (mode: "date" | "time") => {
-    const now = new Date();
-    const display = mode === "date" ? now.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    onAdd({ type: "datetime", properties: { mode, value: now.toISOString(), display } });
+    const display =
+      mode === "date"
+        ? pickerDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+        : pickerDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    onAdd({ type: "datetime", properties: { mode, value: pickerDate.toISOString(), display } });
     close();
   };
 
@@ -169,7 +187,10 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
       <Pressable style={styles.backdrop} onPress={close} accessibilityRole="button" accessibilityLabel="Close" />
-      <View style={styles.sheet}>
+      {/* Mention search's TextInput/FlatList sit inside this sheet — without
+          keyboard avoidance, an opening keyboard would cover the results
+          list the same way it used to cover TextToolModal's controls. */}
+      <KeyboardAvoidingView style={styles.sheet} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.handle} />
         <View style={styles.tabRow}>
           {TABS.map((t) => (
@@ -254,11 +275,45 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
 
           {tab === "datetime" ? (
             <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimePreview}>
+                {pickerDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                {"  ·  "}
+                {pickerDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+              </Text>
+
+              <View style={styles.stepperRow}>
+                <Text style={styles.stepperLabel}>Day</Text>
+                <Pressable style={styles.stepperButton} onPress={() => adjustPicker("day", -1)} accessibilityRole="button" accessibilityLabel="Previous day">
+                  <Text style={styles.stepperIcon}>−</Text>
+                </Pressable>
+                <Pressable style={styles.stepperButton} onPress={() => adjustPicker("day", 1)} accessibilityRole="button" accessibilityLabel="Next day">
+                  <Text style={styles.stepperIcon}>+</Text>
+                </Pressable>
+              </View>
+              <View style={styles.stepperRow}>
+                <Text style={styles.stepperLabel}>Hour</Text>
+                <Pressable style={styles.stepperButton} onPress={() => adjustPicker("hour", -1)} accessibilityRole="button" accessibilityLabel="Decrease hour">
+                  <Text style={styles.stepperIcon}>−</Text>
+                </Pressable>
+                <Pressable style={styles.stepperButton} onPress={() => adjustPicker("hour", 1)} accessibilityRole="button" accessibilityLabel="Increase hour">
+                  <Text style={styles.stepperIcon}>+</Text>
+                </Pressable>
+              </View>
+              <View style={styles.stepperRow}>
+                <Text style={styles.stepperLabel}>Minute</Text>
+                <Pressable style={styles.stepperButton} onPress={() => adjustPicker("minute", -1)} accessibilityRole="button" accessibilityLabel="Decrease minute by 5">
+                  <Text style={styles.stepperIcon}>−</Text>
+                </Pressable>
+                <Pressable style={styles.stepperButton} onPress={() => adjustPicker("minute", 1)} accessibilityRole="button" accessibilityLabel="Increase minute by 5">
+                  <Text style={styles.stepperIcon}>+</Text>
+                </Pressable>
+              </View>
+
               <Pressable style={styles.primaryButton} onPress={() => addDateTime("date")}>
-                <Text style={styles.primaryButtonLabel}>Add today's date</Text>
+                <Text style={styles.primaryButtonLabel}>Add as date sticker</Text>
               </Pressable>
               <Pressable style={styles.primaryButton} onPress={() => addDateTime("time")}>
-                <Text style={styles.primaryButtonLabel}>Add current time</Text>
+                <Text style={styles.primaryButtonLabel}>Add as time sticker</Text>
               </Pressable>
             </View>
           ) : null}
@@ -281,7 +336,7 @@ export function StickerSheet({ visible, onClose, onAdd }: Props): React.JSX.Elem
             />
           ) : null}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -326,4 +381,9 @@ const styles = StyleSheet.create({
   primaryButtonDisabled: { opacity: 0.5 },
   primaryButtonLabel: { color: colors.onAccent, fontWeight: "700" },
   dateTimeRow: { gap: spacing.sm },
+  dateTimePreview: { color: colors.textPrimary, fontSize: 18, fontWeight: "700", textAlign: "center", marginBottom: spacing.xs },
+  stepperRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  stepperLabel: { color: colors.textSecondary, width: 60 },
+  stepperButton: { width: 40, height: 40, borderRadius: radii.md, backgroundColor: colors.surfaceElevated, alignItems: "center", justifyContent: "center" },
+  stepperIcon: { color: colors.textPrimary, fontSize: 18, fontWeight: "700" },
 });

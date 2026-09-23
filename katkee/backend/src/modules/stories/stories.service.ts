@@ -9,7 +9,7 @@ import * as commentsRepo from "./comments.repository";
 import * as highlightsRepo from "../highlights/highlights.repository";
 import type { StoryRecord } from "./stories.repository";
 import type { PublishStoryInput } from "./dto";
-import type { StoryOverlay, DrawStroke, FilterKey } from "./overlays";
+import type { StoryOverlay, DrawStroke, FilterKey, StoryCrop } from "./overlays";
 
 export interface PublicStory {
   id: string;
@@ -25,6 +25,7 @@ export interface PublicStory {
   drawing: DrawStroke[];
   filter: FilterKey;
   audioMuted: boolean;
+  crop: StoryCrop;
 }
 
 /**
@@ -75,6 +76,7 @@ async function toPublicStory(story: StoryRecord, viewerId: string): Promise<Publ
     drawing: story.drawing,
     filter: story.filter,
     audioMuted: story.audioMuted,
+    crop: story.crop,
   };
 }
 
@@ -114,6 +116,7 @@ export async function publishStory(
     drawing: input.drawing,
     filter: input.filter as FilterKey,
     audioMuted: input.audioMuted,
+    crop: input.crop,
   });
   return toPublicStory(story, ownerId);
 }

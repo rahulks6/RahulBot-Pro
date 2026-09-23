@@ -1,11 +1,13 @@
 import { query, queryOne, type Row } from "../../db/psql";
-import type { StoryOverlay, DrawStroke, FilterKey } from "./overlays";
+import type { StoryOverlay, DrawStroke, FilterKey, StoryCrop } from "./overlays";
 
 export type Audience = "public" | "followers";
 export type CommentSetting = "everyone" | "followers" | "disabled";
 
 const STORY_COLUMNS =
-  "id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at, overlays, drawing, filter, audio_muted";
+  "id, owner_id, media_id, caption, audience, allow_comments, allow_sharing, created_at, expires_at, deleted_at, overlays, drawing, filter, audio_muted, crop";
+
+const DEFAULT_CROP: StoryCrop = { zoom: 1, offsetX: 0, offsetY: 0 };
 
 export interface StoryRecord {
   id: string;
@@ -22,6 +24,7 @@ export interface StoryRecord {
   drawing: DrawStroke[];
   filter: FilterKey;
   audioMuted: boolean;
+  crop: StoryCrop;
 }
 
 function parseJsonArray<T>(raw: string | null | undefined): T[] {
@@ -31,6 +34,19 @@ function parseJsonArray<T>(raw: string | null | undefined): T[] {
     return Array.isArray(parsed) ? (parsed as T[]) : [];
   } catch {
     return [];
+  }
+}
+
+function parseCropJson(raw: string | null | undefined): StoryCrop {
+  if (!raw) return DEFAULT_CROP;
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return DEFAULT_CROP;
+    const { zoom, offsetX, offsetY } = parsed as Record<string, unknown>;
+    if (typeof zoom !== "number" || typeof offsetX !== "number" || typeof offsetY !== "number") return DEFAULT_CROP;
+    return { zoom, offsetX, offsetY };
+  } catch {
+    return DEFAULT_CROP;
   }
 }
 
@@ -50,6 +66,7 @@ function mapRow(row: Row): StoryRecord {
     drawing: parseJsonArray<DrawStroke>(row.drawing),
     filter: (row.filter as FilterKey) ?? "original",
     audioMuted: row.audio_muted === "t",
+    crop: parseCropJson(row.crop),
   };
 }
 
@@ -65,10 +82,11 @@ export async function createStory(input: {
   drawing: DrawStroke[];
   filter: FilterKey;
   audioMuted: boolean;
+  crop: StoryCrop;
 }): Promise<StoryRecord> {
   const row = await queryOne(
-    `INSERT INTO stories (owner_id, media_id, caption, audience, allow_comments, allow_sharing, expires_at, overlays, drawing, filter, audio_muted)
-     VALUES (:'owner_id', :'media_id', :'caption', :'audience', :'allow_comments', :'allow_sharing', :'expires_at', :'overlays'::jsonb, :'drawing'::jsonb, :'filter', :'audio_muted')
+    `INSERT INTO stories (owner_id, media_id, caption, audience, allow_comments, allow_sharing, expires_at, overlays, drawing, filter, audio_muted, crop)
+     VALUES (:'owner_id', :'media_id', :'caption', :'audience', :'allow_comments', :'allow_sharing', :'expires_at', :'overlays'::jsonb, :'drawing'::jsonb, :'filter', :'audio_muted', :'crop'::jsonb)
      RETURNING ${STORY_COLUMNS}`,
     {
       owner_id: input.ownerId,
@@ -82,6 +100,7 @@ export async function createStory(input: {
       drawing: JSON.stringify(input.drawing),
       filter: input.filter,
       audio_muted: input.audioMuted,
+      crop: JSON.stringify(input.crop),
     },
   );
   if (!row) throw new Error("Insert did not return a row");

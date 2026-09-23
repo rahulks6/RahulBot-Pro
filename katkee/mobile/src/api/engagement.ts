@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPost } from "./client";
-import type { Overlay, DrawStroke } from "../models/storyDraft";
+import type { Overlay, DrawStroke, StoryCrop } from "../models/storyDraft";
 
 export interface StoryDetail {
   id: string;
@@ -19,6 +19,7 @@ export interface StoryDetail {
   /** Lowercase key — see models/storyDraft.ts's filterKey/filterNameFromKey. */
   filter: string;
   audioMuted: boolean;
+  crop: StoryCrop;
 }
 
 export interface Comment {

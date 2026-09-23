@@ -94,3 +94,18 @@ export interface DrawStroke {
   width: number;
   points: { x: number; y: number }[];
 }
+
+/**
+ * A live-applied crop, not a pixel-level one — see migration 0017's own
+ * comment. `zoom` is clamped to [1, MAX_CROP_ZOOM]; `offsetX`/`offsetY`
+ * to [-1, 1] (a fraction of the pan room available at that zoom, not raw
+ * pixels — see mobile/src/components/CropGestureLayer.tsx for the exact
+ * transform this is fed into).
+ */
+export interface StoryCrop {
+  zoom: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export const MAX_CROP_ZOOM = 4;

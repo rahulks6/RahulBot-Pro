@@ -842,3 +842,44 @@ rather than fighting the `PanResponder` underneath them.
   (text tool, sticker sheet, overlay adjust) already blocks all touches to
   the screen beneath it while open, so those cases needed no extra
   handling either.
+
+### Five more closed: crop, crash-safe drafts, a real date/time picker
+
+- **Crop** (`StoryDraft.crop`, backend migration `0017`): the one field in
+  the spec's own `StoryDraft` shape this project hadn't built. No
+  image-processing library exists in this sandbox to re-encode cropped
+  pixels, so — same architecture as filter/overlays/drawing — crop is
+  `{zoom, offsetX, offsetY}` metadata applied as a live transform
+  (`storyDraft.ts`'s `mediaTransformStyle`) in the editor **and** every
+  viewer, never baked into the media file. `CropGestureLayer.tsx` is a
+  dedicated pinch-to-zoom/drag-to-pan mode (like Draw), hand-rolled on
+  `PanResponder` with no new dependency; offsets are stored as a fraction
+  of the *pan room available at the current zoom*, not raw pixels, so a
+  crop looks the same at any container size.
+- **Crash-safe local drafts** (`state/draftStorage.ts`): the spec's own
+  publish flow lists "persist local draft" as a step before upload, not
+  just React state — this project only had the latter until now. The
+  in-progress draft autosaves to `AsyncStorage` (already a real,
+  declared dependency) keyed by the media's own URI, debounced, and is
+  restored automatically if `StoryEditorScreen` remounts on that same
+  file (an app crash or reload mid-edit or mid-upload). Cleared on a
+  successful publish and on a confirmed discard.
+- **A real date/time picker**: the sticker sheet's Date/Time tab used to
+  only offer "today"/"now". It's now a hand-rolled +/- stepper on
+  day/hour/minute with a live preview — no calendar-picker dependency
+  declared, since steppers are a complete, functional answer for a Story
+  sticker (which only ever needs "some date," not scheduling precision).
+- **`StickerSheet`'s mention search** had the exact keyboard-covering-the-
+  results-list gap `TextToolModal` had — same `KeyboardAvoidingView` fix,
+  applied here too.
+- **Two real-device manual test plans**, written up as actual checklists
+  rather than only described: [`MANUAL_TEST_PLAN_CAMERA.md`](./MANUAL_TEST_PLAN_CAMERA.md)
+  and [`MANUAL_TEST_PLAN_EDITOR.md`](./MANUAL_TEST_PLAN_EDITOR.md). Run
+  these on a real device before trusting any of this module — nothing in
+  it has executed outside this sandbox.
+
+**Still open, deliberately not attempted:** camera tap-to-focus still has
+no accessible button alternative (continuous autofocus makes it a bonus
+rather than the only path to a focused shot, but it's a real gap); and, as
+always, none of the above has actually run — the two test plans above are
+what "run" would mean.
