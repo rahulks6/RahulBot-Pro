@@ -65,6 +65,10 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
   const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const zoomIndicatorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const zoomRef = useRef(1);
+  // The preview's own measured size, so the accessible "Focus" action (below)
+  // has a real point to focus at — the center of the actual preview, not a
+  // guessed constant that would be wrong on a differently-sized device.
+  const previewSize = useRef({ width: 0, height: 0 });
   const minZoom = device?.minZoom ?? 1;
   const maxZoom = device?.maxZoom ?? 4;
 
@@ -167,6 +171,17 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
     },
     () => setPosition((p) => (p === "back" ? "front" : "back")),
   );
+
+  // A screen reader intercepts the raw touch before the PanResponder below
+  // ever sees it, so tap-to-focus otherwise has no accessible equivalent —
+  // same reasoning as the capture button's own accessibilityActions.
+  // Focuses the center of the actual measured preview rather than an
+  // arbitrary point, since that's the one location a non-visual user can
+  // reliably mean by "focus the camera."
+  const onFocusCenterAccessibilityAction = useCallback(() => {
+    const { width, height } = previewSize.current;
+    if (width > 0 && height > 0) void camera.current?.focus({ x: width / 2, y: height / 2 });
+  }, []);
 
   // Two-finger pinch-zoom + single-tap-to-focus/double-tap-to-flip on the
   // full preview — both live on one PanResponder since RN's touch
@@ -290,7 +305,25 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
 
   return (
     <View style={styles.container}>
-      <View style={StyleSheet.absoluteFill} {...previewGesture.panHandlers}>
+      <View
+        style={StyleSheet.absoluteFill}
+        {...previewGesture.panHandlers}
+        onLayout={(e) => {
+          previewSize.current = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height };
+        }}
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel="Camera preview"
+        accessibilityHint="Use the actions menu to focus the camera or flip it"
+        accessibilityActions={[
+          { name: "focus", label: "Focus camera" },
+          { name: "activate", label: "Flip camera" },
+        ]}
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === "focus") onFocusCenterAccessibilityAction();
+          else if (event.nativeEvent.actionName === "activate") setPosition((p) => (p === "back" ? "front" : "back"));
+        }}
+      >
         <Camera ref={camera} style={StyleSheet.absoluteFill} device={device} isActive photo video audio zoom={zoom} />
       </View>
 

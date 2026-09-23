@@ -682,6 +682,8 @@ followed).
 | GET | `/api/v1/notifications/unread-count` | Bearer | → `{count}` |
 | POST | `/api/v1/notifications/read-all` | Bearer | Marks every unread notification for the caller read → 204 |
 | POST | `/api/v1/notifications/:id/read` | Bearer | Ownership-scoped (a non-recipient's call is a silent no-op) → 204; 404 for a malformed id |
+| GET | `/api/v1/notifications/preferences` | Bearer | → `{preferences}` (`likesEnabled`/`commentsEnabled`/`followsEnabled`/`mentionsEnabled`, all `true` by default) — migration 0018 |
+| PATCH | `/api/v1/notifications/preferences` | Bearer | `{likesEnabled?, commentsEnabled?, followsEnabled?, mentionsEnabled?}` → `{preferences}`; suppresses that notification type at creation time — `follow_request` isn't a field here and can never be suppressed |
 | GET | `/api/v1/stories/:id/owner` | Bearer | → `{username}`; same access rules as the Story itself |
 | POST | `/api/v1/users/:username/conversation` | Bearer | Find-or-create the 1:1 conversation with that user → `{conversation}`; 400 for yourself, 404 if either side blocked the other |
 | GET | `/api/v1/conversations` | Bearer | Paginated, most-recently-active first; each row has the other participant, last message preview, and unread flag |
@@ -693,7 +695,7 @@ followed).
 | POST | `/api/v1/highlights` | Bearer | `{title, storyIds}` (storyIds must be your own, non-deleted Stories) → `{highlight}` |
 | GET | `/api/v1/users/:username/highlights` | Bearer | List that user's Highlights; gated the same way their profile is (block/private-account) |
 | GET | `/api/v1/highlights/:id` | Bearer | Detail with items; a followers-only item is hidden from a non-follower even on an otherwise-public account |
-| PATCH | `/api/v1/highlights/:id` | Bearer, owner-only | `{title?, storyIds?}`; `storyIds`, if given, replaces the full ordered item set and can't be emptied (delete the Highlight instead) |
+| PATCH | `/api/v1/highlights/:id` | Bearer, owner-only | `{title?, storyIds?, coverStoryId?}`; `storyIds`, if given, replaces the full ordered item set and can't be emptied (delete the Highlight instead); `coverStoryId` pins the cover to one of the Highlight's own items (`null` clears back to the default first-item cover) — migration 0019 |
 | DELETE | `/api/v1/highlights/:id` | Bearer, owner-only | Deletes the Highlight; the Stories inside it remain in the owner's Archive |
 | POST | `/api/v1/highlights/reorder` | Bearer, owner-only | `{highlightIds}` — must be exactly the caller's current Highlight set, in the new order; rejects a partial/stale/foreign set with 422 (Phase 13) |
 | GET | `/api/v1/highlights/:id/items/:storyId` | Bearer | Full Story detail (engagement counts included) for one member Story — the one endpoint that bypasses the normal 24h expiry, and only for a Story confirmed to actually be in this Highlight |

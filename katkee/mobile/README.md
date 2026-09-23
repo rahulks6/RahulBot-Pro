@@ -803,10 +803,7 @@ needed." What's actually built:
   its visible size, so a small emoji or a tightly-scaled sticker still has
   a reasonably sized hit area.
 
-**Not attempted, and disclosed rather than faked:** camera tap-to-focus has
-no button alternative (most devices' continuous autofocus makes this a
-bonus rather than the only way to get a focused shot, but it's still a
-gap); high-contrast mode isn't specifically tested against (the existing
+**Not attempted, and disclosed rather than faked:** high-contrast mode isn't specifically tested against (the existing
 color tokens already have strong contrast by design — see `BRAND.md` —
 but nothing here verifies WCAG ratios against every combination); and
 none of this has been exercised with an actual screen reader on a real
@@ -882,11 +879,23 @@ rather than fighting the `PanResponder` underneath them.
   these on a real device before trusting any of this module — nothing in
   it has executed outside this sandbox.
 
-**Still open, deliberately not attempted:** camera tap-to-focus still has
-no accessible button alternative (continuous autofocus makes it a bonus
-rather than the only path to a focused shot, but it's a real gap); and, as
-always, none of the above has actually run — the two test plans above are
-what "run" would mean.
+**Still open:** as always, none of the above has actually run — the two
+test plans above are what "run" would mean.
+
+### Camera tap-to-focus now has an accessible alternative
+
+~~Camera tap-to-focus has no button alternative~~ **Fixed in a later
+pass.** The preview `View` (`CameraScreen.tsx`) now declares
+`accessibilityActions` — "Focus camera" and "Flip camera" — reachable
+through the same custom-actions menu the capture button's own
+`accessibilityActions` already used, rather than only through the raw
+tap/double-tap gesture a screen reader intercepts before `PanResponder`
+ever sees it. "Focus camera" focuses the center of the preview's own
+measured layout (captured via `onLayout`), not a guessed constant, so it's
+correct at any device size. Most devices' continuous autofocus already
+makes precise focus placement a bonus rather than the only way to get a
+usable shot, which is why this sat as a disclosed gap rather than a
+blocker — but a real accessible path now exists either way.
 
 ### Edit-in-place for location and date/time content
 
