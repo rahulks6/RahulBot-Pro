@@ -76,4 +76,6 @@ export type RootStackParamList = {
   NotificationSettings: undefined;
   Help: undefined;
   About: undefined;
+  /** Incoming, still-pending follow requests on a private account — accept/decline each one. */
+  FollowRequests: undefined;
 };

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../../navigation/types";
@@ -14,6 +14,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "HighlightEditor">;
 const MAX_TITLE_LENGTH = 30;
 const SELECTED_STRIP_COLUMNS = 5;
 const SELECTED_STRIP_GAP = spacing.xs;
+const ARCHIVE_PAGE_SIZE = 50;
 
 /**
  * Create (no `highlightId`) or edit (rename/replace items/delete) a
@@ -34,6 +35,9 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
   // `undefined` means "use the default cover" (the first selected item) — only ever set explicitly once the owner picks one.
   const [coverStoryId, setCoverStoryId] = useState<string | undefined>(undefined);
   const [initialCoverStoryId, setInitialCoverStoryId] = useState<string | undefined>(undefined);
+  const [archiveOffset, setArchiveOffset] = useState(0);
+  const [archiveHasMore, setArchiveHasMore] = useState(true);
+  const [archiveLoadingMore, setArchiveLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,11 +48,13 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
     (async () => {
       try {
         const [{ stories }, existing] = await Promise.all([
-          getMyArchivedStories(accessToken, { limit: 50 }),
+          getMyArchivedStories(accessToken, { limit: ARCHIVE_PAGE_SIZE }),
           isEditing ? getHighlightDetail(highlightId, accessToken) : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setArchive(stories);
+        setArchiveOffset(stories.length);
+        setArchiveHasMore(stories.length === ARCHIVE_PAGE_SIZE);
         if (existing) {
           setTitle(existing.highlight.title);
           setSelected(existing.highlight.items.map((item) => item.storyId));
@@ -66,6 +72,19 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
       cancelled = true;
     };
   }, [accessToken, isEditing, highlightId]);
+
+  const loadMoreArchive = useCallback(async () => {
+    if (!accessToken || archiveLoadingMore || !archiveHasMore) return;
+    setArchiveLoadingMore(true);
+    try {
+      const { stories } = await getMyArchivedStories(accessToken, { limit: ARCHIVE_PAGE_SIZE, offset: archiveOffset });
+      setArchive((current) => [...(current ?? []), ...stories]);
+      setArchiveOffset((current) => current + stories.length);
+      setArchiveHasMore(stories.length === ARCHIVE_PAGE_SIZE);
+    } finally {
+      setArchiveLoadingMore(false);
+    }
+  }, [accessToken, archiveLoadingMore, archiveHasMore, archiveOffset]);
 
   const toggle = (storyId: string) => {
     setSelected((current) =>
@@ -208,7 +227,10 @@ export function HighlightEditorScreen({ route, navigation }: Props): React.JSX.E
         numColumns={3}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.grid}
+        onEndReachedThreshold={0.4}
+        onEndReached={() => void loadMoreArchive()}
         ListEmptyComponent={<Text style={typography.caption}>No Stories in your Archive yet.</Text>}
+        ListFooterComponent={archiveLoadingMore ? <ActivityIndicator color={colors.accent} style={styles.footerSpinner} /> : null}
         renderItem={({ item }) => {
           const order = selected.indexOf(item.id);
           const isSelected = order !== -1;
@@ -290,6 +312,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   orderBadgeText: { color: colors.onAccent, fontSize: 11, fontWeight: "700" },
+  footerSpinner: { marginVertical: spacing.md },
   coverBadge: {
     position: "absolute",
     bottom: 4,

@@ -18,6 +18,7 @@ import { SettingsScreen } from "../screens/profile/SettingsScreen";
 import { NotificationSettingsScreen } from "../screens/profile/NotificationSettingsScreen";
 import { HelpScreen } from "../screens/profile/HelpScreen";
 import { AboutScreen } from "../screens/profile/AboutScreen";
+import { FollowRequestsScreen } from "../screens/profile/FollowRequestsScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -120,6 +121,17 @@ function SignedInNavigator(): React.JSX.Element {
         options={{
           headerShown: true,
           title: "About",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="FollowRequests"
+        component={FollowRequestsScreen}
+        options={{
+          headerShown: true,
+          title: "Follow Requests",
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.textPrimary,
           headerShadowVisible: false,

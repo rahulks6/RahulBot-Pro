@@ -5,7 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { RootStackParamList } from "../../navigation/types";
 import { colors, radii, spacing, typography, ICONS } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
-import { updateMyProfile } from "../../api/users";
+import { updateMyProfile, listFollowRequests } from "../../api/users";
 import { countPendingDrafts, clearAllPendingDrafts } from "../../state/draftStorage";
 import { ListRow } from "../../components/ListRow";
 import { DeleteAccountSheet } from "../../components/DeleteAccountSheet";
@@ -26,6 +26,7 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
   const [isPrivate, setIsPrivate] = useState(user?.isPrivate ?? false);
   const [togglingPrivacy, setTogglingPrivacy] = useState(false);
   const [draftCount, setDraftCount] = useState<number | null>(null);
+  const [pendingRequestCount, setPendingRequestCount] = useState<number | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
@@ -35,7 +36,14 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
   useFocusEffect(
     useCallback(() => {
       void countPendingDrafts().then(setDraftCount);
-    }, []),
+      if (accessToken) {
+        // A count-only fetch, capped at one page — this only needs to show
+        // a badge, not the full list (FollowRequestsScreen does that).
+        void listFollowRequests(accessToken, { limit: 50 })
+          .then(({ requests }) => setPendingRequestCount(requests.length))
+          .catch(() => setPendingRequestCount(null));
+      }
+    }, [accessToken]),
   );
 
   const onTogglePrivacy = async (next: boolean) => {
@@ -90,6 +98,11 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
           </View>
           {togglingPrivacy ? <ActivityIndicator color={colors.accent} /> : <Switch value={isPrivate} onValueChange={onTogglePrivacy} />}
         </View>
+        <ListRow
+          label="Follow requests"
+          detail={pendingRequestCount ? String(pendingRequestCount) : undefined}
+          onPress={() => navigation.navigate("FollowRequests")}
+        />
       </View>
 
       <Text style={styles.sectionHeader}>Notifications</Text>

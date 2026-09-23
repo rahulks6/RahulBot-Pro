@@ -450,14 +450,15 @@ both stores require in the listing itself.
   interactive parity with a live Story, so this pass keeps
   `HighlightViewerScreen.tsx` deliberately read-only; it's real, tested
   playback, just a narrower feature than the live viewer.
-- **No drag-to-reorder in the editor.** Item order is just "the order you
-  tapped things in," shown live as numbered badges — real and
-  deterministic, but not a drag handle. Re-ordering an existing Highlight
-  today means deselecting and reselecting in the order you want.
-- **The Archive picker loads one page (50 Stories, the backend's page-size
-  cap) with no "load more."** A prolific account's older Stories past
-  that first page aren't reachable from the picker yet — a real gap, not
-  a silent one.
+- ~~No drag-to-reorder in the editor~~ **Fixed in a later pass.** The
+  selected-items strip is a `DraggableGrid` (long-press and drag), the
+  same component the profile's own Highlights row reorder mode uses —
+  item order is a real drag handle now, not just tap order.
+- ~~The Archive picker loads one page with no "load more"~~ **Fixed in a
+  later pass.** `HighlightEditorScreen.tsx`'s Archive picker now paginates
+  the same way `ArchiveScreen.tsx` always did (`onEndReached`, a footer
+  spinner, `ARCHIVE_PAGE_SIZE` at a time) — a prolific account's older
+  Stories past the first page are reachable now.
 
 ### Phase 8 specifically
 
@@ -495,13 +496,16 @@ both stores require in the listing itself.
   anyway) and wired it into `ActivityScreen.tsx`'s mention handler; it
   falls back to opening the actor's profile only if that lookup itself
   fails (e.g. the Story has since expired).
-- **There's no screen for managing incoming follow requests yet.** The
-  backend's `GET /api/v1/follow-requests` /
-  `POST /api/v1/follow-requests/:id/accept|decline` have existed since
-  Phase 2, but no mobile screen was ever built against them. Tapping a
-  `follow_request` notification opens the requester's profile — useful,
-  but not the same as an actual request-management inbox, which is a real
-  gap worth closing in a later pass.
+- ~~There's no screen for managing incoming follow requests yet~~ **Fixed
+  in a later pass.** `FollowRequestsScreen.tsx` (reached from Settings >
+  Privacy > "Follow requests," with a live pending-count badge) lists
+  every incoming request and lets you accept or decline each one, backed
+  by the same `GET /api/v1/follow-requests` /
+  `POST /api/v1/follow-requests/:id/accept|decline` that had existed
+  since Phase 2 with no mobile screen against them. Tapping a
+  `follow_request` notification still just opens the requester's profile
+  rather than deep-linking into this screen — a smaller, cosmetic gap,
+  not the missing-feature one this note originally flagged.
 - **The unread badge is polled, not pushed**, per the
   `NotificationsContext.tsx` note above — a 20s worst-case staleness
   window, not a stub.
@@ -948,7 +952,9 @@ a fake button — they're now real screens/flows, not icon-only stubs):
   drafts (`draftStorage.ts`) and can wipe them. Help/About are real static
   content (an FAQ list, a version number) rather than placeholder text.
   Log Out and Delete Account moved here from the profile page itself,
-  matching the reference.
+  matching the reference. Privacy also links to a real **Follow Requests**
+  inbox (`FollowRequestsScreen.tsx`, with a live pending-count badge) — see
+  the Phase 7 gap list above for why that screen didn't exist until now.
 - **Edit Profile** (`EditProfileScreen.tsx`) — display name and bio,
   wired to the same `PATCH /api/v1/users/me` the backend already supported.
 - **Share Profile** — a native OS share sheet with a `katkee://user/<username>`
