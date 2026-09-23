@@ -1,20 +1,32 @@
 /**
- * KATKEE color tokens. Near-black + off-white, with a single amber/yellow
- * accent — no Instagram-style pink/purple gradients anywhere in the app.
+ * KATKEE color tokens. Near-black navy + cool off-white, with a single
+ * amber/orange accent — no Instagram-style pink/purple gradients anywhere
+ * in the app.
+ *
+ * `background`, `textPrimary`, and `accent` are pixel-exact, decoded
+ * directly from the real logo file (a pure-stdlib PNG decode — zlib
+ * inflate + PNG filter reversal by hand — since no image library is
+ * installable in this sandbox; see BRAND.md for the extraction and exact
+ * pixel percentages). Every other near-black token is that same logo
+ * background shifted by the identical delta from the old placeholder
+ * background to this real one, so the whole near-black scale keeps its
+ * relative lightness steps but now carries the logo's own slight navy
+ * tint through consistently, rather than the old neutral gray sitting
+ * next to a tinted background.
  */
 export const colors = {
-  background: "#0A0A0B",
-  surface: "#161617",
-  surfaceElevated: "#1F1F21",
-  border: "#2A2A2D",
+  background: "#080C14",
+  surface: "#141820",
+  surfaceElevated: "#1D212A",
+  border: "#282C36",
 
-  textPrimary: "#F5F3EF",
-  textSecondary: "#A8A7A4",
-  textDisabled: "#5C5B58",
+  textPrimary: "#E4E8F0",
+  textSecondary: "#A6A9AD",
+  textDisabled: "#5A5D61",
 
-  accent: "#F5B400", // Katkee amber — Story ring, primary CTA, Follow, Create, unread badges
-  accentPressed: "#D69B00",
-  onAccent: "#0A0A0B",
+  accent: "#FCB020", // Katkee amber — Story ring, primary CTA, Follow, Create, unread badges
+  accentPressed: "#DC9820",
+  onAccent: "#080C14",
 
   danger: "#E4483C",
   success: "#3FBF7F",

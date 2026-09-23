@@ -65,8 +65,14 @@ both stores require in the listing itself.
   - `LoginScreen.tsx`'s wordmark now matches the real brand logo — mixed
     case ("Kat" off-white + "kee" amber), not all-caps solid amber — and
     its subtitle is the real tagline ("Story that connects."), not a
-    placeholder. See `../BRAND.md` for the full name/tagline/color
-    reference this reads from.
+    placeholder. `src/theme/colors.ts`'s `background`/`textPrimary`/`accent`
+    are now **pixel-exact**, decoded from the actual logo file with a
+    ~100-line pure-Python PNG parser (stdlib `zlib` only — no PIL, no
+    ImageMagick, neither installable here), not eyeballed — every other
+    near-black token shifted by the same delta so the whole scale carries
+    the logo's real navy tint consistently. See `../BRAND.md` for the
+    full extraction, exact pixel percentages, and the complete token
+    table this reads from.
   - `ConversationScreen.tsx` now has real per-message delivery states
     (spec: Sending/Sent/Delivered/Read/Failed), shown as a caption under
     the single most recent message you sent (same convention as iMessage/
@@ -343,36 +349,45 @@ both stores require in the listing itself.
   older than that won't progress past whatever it showed on last fetch,
   which is fine in practice since a status caption only ever renders on
   the single most recent message anyway.
-- **Drag-and-drop reordering intercepts the touch responder immediately,
-  which has one real cost: it can't coexist with a scrolling ancestor.**
-  `src/components/DraggableGrid.tsx` is a hand-rolled long-press-to-drag
-  grid (`PanResponder`, no `react-native-gesture-handler` — not
-  installable here, same npm-registry constraint as everywhere else in
-  this project) used by both `HighlightsRow.tsx` (Highlights' own order,
-  spec) and `HighlightEditorScreen.tsx`'s new "selected, in order" strip
-  (a Highlight's content order — drag there, then Save persists it via
-  the existing `updateHighlight` storyIds order, no separate endpoint
-  needed). Detecting "held still, not moving, for 300ms" requires
-  claiming the responder at touch-*down*, before any movement exists to
-  judge — there's no way to defer that decision until motion happens
-  without gesture-handler's simultaneous-recognizer support. The real
-  consequence: a scroll gesture that *starts* on a Highlight card won't
-  scroll `ProfileScreen`/`UserProfileScreen` (now `ScrollView`s, for the
-  multi-row grid itself) — scrolling from anywhere else on the page still
-  works normally. `HighlightEditorScreen.tsx`'s own strip isn't inside a
-  ScrollView at all, so this doesn't affect it.
-- **Story Insights' "following vs. discovery" split is a real but
-  disclosed approximation.** It's each viewer's *current* follow
-  relationship to the owner (a live `follows` table join) — this schema
-  keeps no historical snapshot of what that relationship was at the
-  moment they actually viewed the Story, so someone who viewed as a
-  stranger and followed you five minutes later counts as "following" now.
-  Similarly, "profile visits" reuses the existing creator-scoped
+- **Drag-and-drop reordering no longer conflicts with a scrolling
+  ancestor — fixed, not just documented.** `src/components/DraggableGrid.tsx`
+  is a hand-rolled long-press-to-drag grid (`PanResponder`, no
+  `react-native-gesture-handler` — not installable here, same
+  npm-registry constraint as everywhere else in this project). Detecting
+  "held still, not moving, for 300ms" requires claiming the touch
+  responder at touch-*down*, before any movement exists to judge — there
+  was no way to defer that decision until motion happens without
+  gesture-handler's simultaneous-recognizer support, which is why this
+  used to just accept that a scroll starting on a Highlight card wouldn't
+  scroll the page. The actual fix: a new `draggable` prop (default
+  `true`) that, when `false`, never attaches a PanResponder to any item
+  at all — an ordinary `<Pressable>` instead, so an ancestor `ScrollView`
+  scrolls exactly as if the grid weren't there. `HighlightsRow.tsx` uses
+  this for a real **Reorder** toggle (visible only to the owner, only
+  when there's more than one Highlight): drag is off by default (the
+  profile page scrolls completely normally), and only turns on for the
+  window between tapping "Reorder" and "Done" — during which
+  `ProfileScreen.tsx`/`UserProfileScreen.tsx` also disable their own
+  `ScrollView`'s `scrollEnabled` via a new `onReorderModeChange` callback,
+  so there's nothing ambiguous for either gesture to fight over.
+  `HighlightEditorScreen.tsx`'s "selected, in order" strip isn't inside a
+  ScrollView at all, so it stays permanently draggable (the prop's
+  default) — no toggle needed there.
+- **Story Insights' "following vs. discovery" split is now a real
+  snapshot from view time, not a live lookup.** `story_views` gained a
+  real `was_following` column (migration `0014_story_view_follow_snapshot.sql`),
+  set once at the moment of a viewer's *first* view of a Story and never
+  touched again — so someone who viewed as a stranger and followed five
+  minutes later still correctly shows as discovery, not following (see
+  `backend/README.md`'s Phase 13 section, and a new backend test that
+  proves exactly this — follow after viewing, confirm the numbers didn't
+  move). "Profile visits" still reuses the existing creator-scoped
   `profile_visit` event (a viewer counts if they ever visited your
-  profile, not provably *because of* this specific Story). Both are real,
-  computed numbers, not invented ones — just not perfectly causal.
-  `SequenceInsightsScreen.tsx` also has no viewer-identity list at all
-  (only `StoryInsightsSheet.tsx`, per-Story, does) — an aggregate
+  profile, not provably *because of* this specific Story) — that one's a
+  real, disclosed approximation, not a bug to fix, since there's no
+  per-Story causal link for a profile visit to snapshot in the first
+  place. `SequenceInsightsScreen.tsx` still has no viewer-identity list
+  at all (only `StoryInsightsSheet.tsx`, per-Story, does) — an aggregate
   cross-Story identity list is a genuinely separate feature this pass
   doesn't add.
 

@@ -35,6 +35,7 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
   const [actionPending, setActionPending] = useState(false);
   const [messagePending, setMessagePending] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -127,7 +128,7 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
       : "Follow";
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} scrollEnabled={scrollEnabled}>
       <Pressable
         onPress={openStoryViewer}
         disabled={!hasActiveStory}
@@ -185,7 +186,7 @@ export function UserProfileScreen({ route }: Props): React.JSX.Element {
         </Pressable>
       ) : null}
 
-      <HighlightsRow username={username} isOwner={profile.isSelf} />
+      <HighlightsRow username={username} isOwner={profile.isSelf} onReorderModeChange={(active) => setScrollEnabled(!active)} />
       <ReportSheet visible={reportOpen} targetType="user" targetId={profile.id} onClose={() => setReportOpen(false)} />
     </ScrollView>
   );

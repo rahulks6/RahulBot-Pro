@@ -146,9 +146,28 @@ export async function listArchivedStoriesForOwner(ownerId: string, limit: number
   return rows.map(mapRow);
 }
 
+/**
+ * `was_following` is a real snapshot, taken right now — whether this
+ * viewer already followed the Story's owner at the exact moment of this
+ * view, not looked up later against whatever the relationship happens to
+ * be by the time someone checks Insights (spec: Views vs. Viewers,
+ * following-vs-discovery — see getStoryInsights' own comment for why
+ * that distinction matters). `ON CONFLICT DO NOTHING` means a repeat
+ * view by the same viewer never overwrites it — the snapshot is from
+ * their *first* view, which is the one "did they already follow before
+ * they ever saw this" is actually asking about.
+ */
 export async function recordView(storyId: string, viewerId: string): Promise<void> {
   await query(
-    `INSERT INTO story_views (story_id, viewer_id) VALUES (:'story_id', :'viewer_id')
+    `INSERT INTO story_views (story_id, viewer_id, was_following)
+     VALUES (
+       :'story_id', :'viewer_id',
+       EXISTS (
+         SELECT 1 FROM follows f
+         JOIN stories s ON s.id = :'story_id'
+         WHERE f.follower_id = :'viewer_id' AND f.followee_id = s.owner_id
+       )
+     )
      ON CONFLICT (story_id, viewer_id) DO NOTHING`,
     { story_id: storyId, viewer_id: viewerId },
   );
@@ -206,10 +225,10 @@ function mapInsightsRow(row: Row | null): InsightsCounts {
 /**
  * Real, honestly-scoped Insights (spec): everything here comes from data
  * this backend actually has, not invented numbers.
- * - "Following" vs "discovery" is each viewer's *current* follow
- *   relationship to the owner — not necessarily what it was at view time
- *   (this schema has no historical follow-state snapshot), which is a
- *   reasonable, disclosed approximation, not a fabricated one.
+ * - "Following" vs "discovery" is `story_views.was_following` — a real
+ *   snapshot taken at the moment of the viewer's own first view (see
+ *   recordView's own comment), not a live lookup against whatever the
+ *   relationship happens to be by the time someone checks Insights.
  * - "Completed" reuses story_complete, the same recommendation-scoring
  *   event Phase 6 already records for every Story (spec section 13).
  * - "Profile visit" reuses profile_visit, already creator-scoped (not
@@ -220,11 +239,10 @@ export async function getStoryInsights(storyId: string, ownerId: string): Promis
   const row = await queryOne(
     `SELECT
        COUNT(*) AS total_views,
-       COUNT(*) FILTER (WHERE f.follower_id IS NOT NULL) AS following_views,
+       COUNT(*) FILTER (WHERE sv.was_following) AS following_views,
        COUNT(*) FILTER (WHERE sc.viewer_id IS NOT NULL) AS completed_views,
        COUNT(*) FILTER (WHERE pv.viewer_id IS NOT NULL) AS profile_visit_views
      FROM story_views sv
-     LEFT JOIN follows f ON f.follower_id = sv.viewer_id AND f.followee_id = :'owner_id'
      LEFT JOIN (
        SELECT DISTINCT viewer_id FROM recommendation_events WHERE story_id = :'story_id' AND event_type = 'story_complete'
      ) sc ON sc.viewer_id = sv.viewer_id
@@ -244,29 +262,35 @@ export async function getStoryInsights(storyId: string, ownerId: string): Promis
  * here means creator_sequence_completed (reached the end of the whole
  * sequence), the sequence-level counterpart to story_complete above —
  * not "completed at least one Story in it", which would count someone
- * who bailed after the first as a completion.
+ * who bailed after the first as a completion. "Following" uses each
+ * viewer's *most recent* view's real was_following snapshot within this
+ * sequence (DISTINCT ON, ordered newest first) — the meaningful answer
+ * to "were they already following by the time they were watching this
+ * run" when the same viewer appears across more than one of these
+ * Stories, rather than picking an arbitrary one of their views.
  */
 export async function getSequenceInsights(ownerId: string): Promise<InsightsCounts> {
   const row = await queryOne(
-    `SELECT
-       COUNT(*) AS total_views,
-       COUNT(*) FILTER (WHERE f.follower_id IS NOT NULL) AS following_views,
-       COUNT(*) FILTER (WHERE sc.viewer_id IS NOT NULL) AS completed_views,
-       COUNT(*) FILTER (WHERE pv.viewer_id IS NOT NULL) AS profile_visit_views
-     FROM (
-       SELECT DISTINCT viewer_id
+    `WITH latest_view AS (
+       SELECT DISTINCT ON (viewer_id) viewer_id, was_following
        FROM story_views
        WHERE story_id IN (
          SELECT id FROM stories WHERE owner_id = :'owner_id' AND deleted_at IS NULL AND expires_at > now()
        )
-     ) sv
-     LEFT JOIN follows f ON f.follower_id = sv.viewer_id AND f.followee_id = :'owner_id'
+       ORDER BY viewer_id, viewed_at DESC
+     )
+     SELECT
+       COUNT(*) AS total_views,
+       COUNT(*) FILTER (WHERE lv.was_following) AS following_views,
+       COUNT(*) FILTER (WHERE sc.viewer_id IS NOT NULL) AS completed_views,
+       COUNT(*) FILTER (WHERE pv.viewer_id IS NOT NULL) AS profile_visit_views
+     FROM latest_view lv
      LEFT JOIN (
        SELECT DISTINCT viewer_id FROM recommendation_events WHERE creator_id = :'owner_id' AND event_type = 'creator_sequence_completed'
-     ) sc ON sc.viewer_id = sv.viewer_id
+     ) sc ON sc.viewer_id = lv.viewer_id
      LEFT JOIN (
        SELECT DISTINCT viewer_id FROM recommendation_events WHERE creator_id = :'owner_id' AND event_type = 'profile_visit'
-     ) pv ON pv.viewer_id = sv.viewer_id`,
+     ) pv ON pv.viewer_id = lv.viewer_id`,
     { owner_id: ownerId },
   );
   return mapInsightsRow(row);

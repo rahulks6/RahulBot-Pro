@@ -22,6 +22,7 @@ export function ProfileScreen(): React.JSX.Element {
   const [counts, setCounts] = useState<{ followerCount: number; followingCount: number } | null>(null);
   const [hasActiveStory, setHasActiveStory] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   const load = useCallback(async () => {
     if (!user || !accessToken) return;
@@ -52,7 +53,7 @@ export function ProfileScreen(): React.JSX.Element {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} scrollEnabled={scrollEnabled}>
       <Pressable
         onPress={() => {
           if (hasActiveStory) navigation.navigate("StoryViewer", { creators: [user.username], startIndex: 0 });
@@ -86,7 +87,7 @@ export function ProfileScreen(): React.JSX.Element {
         </Pressable>
       </View>
 
-      <HighlightsRow username={user.username} isOwner />
+      <HighlightsRow username={user.username} isOwner onReorderModeChange={(active) => setScrollEnabled(!active)} />
 
       <Pressable style={styles.logoutButton} onPress={() => void logout()}>
         <Text style={styles.logoutLabel}>Log out</Text>

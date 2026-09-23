@@ -12,6 +12,14 @@ import { DraggableGrid } from "./DraggableGrid";
 interface Props {
   username: string;
   isOwner: boolean;
+  /**
+   * Called with `true` when the owner enters reorder mode, `false` when
+   * they leave it — the caller (ProfileScreen.tsx/UserProfileScreen.tsx)
+   * uses this to disable its own ScrollView's scrolling for exactly that
+   * window. See DraggableGrid.tsx's own doc comment for why drag mode and
+   * an ancestor's scroll can't both be live on the same grid at once.
+   */
+  onReorderModeChange?: (active: boolean) => void;
 }
 
 const COLUMNS = 3;
@@ -30,14 +38,19 @@ const CARD_ASPECT_RATIO = 1.35; // portrait, not circular — spec section 62
  * migrations/0010_highlights.sql for why there's no separate cover-image
  * upload/crop flow in this pass.
  *
- * Your own grid is drag-to-reorder (long-press a card) — someone else's
- * is a plain grid, since only the owner's own order can ever change.
+ * Your own grid can be reordered via an explicit "Reorder" toggle —
+ * someone else's is always a plain grid, since only the owner's own
+ * order can ever change. Drag is gated behind that toggle, not always
+ * on, specifically so the profile page's own scroll still works from a
+ * touch that starts on a Highlight card the rest of the time (see
+ * DraggableGrid.tsx's `draggable` prop doc for the mechanics).
  */
-export function HighlightsRow({ username, isOwner }: Props): React.JSX.Element | null {
+export function HighlightsRow({ username, isOwner, onReorderModeChange }: Props): React.JSX.Element | null {
   const { accessToken } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { width: screenWidth } = useWindowDimensions();
   const [highlights, setHighlights] = useState<HighlightSummary[] | null>(null);
+  const [reordering, setReordering] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -68,6 +81,12 @@ export function HighlightsRow({ username, isOwner }: Props): React.JSX.Element |
     [accessToken, highlights],
   );
 
+  const toggleReordering = () => {
+    const next = !reordering;
+    setReordering(next);
+    onReorderModeChange?.(next);
+  };
+
   if (highlights === null) return null;
   if (highlights.length === 0 && !isOwner) return null;
 
@@ -76,52 +95,65 @@ export function HighlightsRow({ username, isOwner }: Props): React.JSX.Element |
   const cardHeight = cardWidth * CARD_ASPECT_RATIO;
 
   return (
-    <DraggableGrid
-      data={highlights}
-      keyExtractor={(h) => h.id}
-      columns={COLUMNS}
-      itemWidth={cardWidth}
-      itemHeight={cardHeight}
-      gap={GAP}
-      startIndex={isOwner ? 1 : 0}
-      onReorder={onReorder}
-      onPress={(highlight) => navigation.navigate("HighlightViewer", { highlightId: highlight.id, title: highlight.title })}
-      leadingChildren={
-        isOwner ? (
-          <Pressable
-            style={[styles.card, styles.newCard, { width: cardWidth, height: cardHeight, left: 0, top: 0 }]}
-            onPress={() => navigation.navigate("HighlightEditor", {})}
-          >
-            <Text style={styles.newGlyph}>+</Text>
-            <Text style={styles.newLabel}>New</Text>
-          </Pressable>
-        ) : null
-      }
-      renderItem={(highlight) => (
-        <View style={styles.card}>
-          {highlight.coverMediaId ? (
-            <Image
-              source={{ uri: mediaFileUrl(highlight.coverMediaId), headers: authHeaders }}
-              style={styles.coverImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.coverFallback}>
-              <Text style={styles.coverFallbackInitial}>{highlight.title.charAt(0).toUpperCase()}</Text>
+    <View style={styles.wrapper}>
+      {isOwner && highlights.length > 0 ? (
+        <Pressable style={styles.reorderToggle} onPress={toggleReordering} hitSlop={8}>
+          <Text style={styles.reorderToggleLabel}>{reordering ? "Done" : "Reorder"}</Text>
+        </Pressable>
+      ) : null}
+      <DraggableGrid
+        data={highlights}
+        keyExtractor={(h) => h.id}
+        columns={COLUMNS}
+        itemWidth={cardWidth}
+        itemHeight={cardHeight}
+        gap={GAP}
+        startIndex={isOwner ? 1 : 0}
+        draggable={isOwner && reordering}
+        onReorder={onReorder}
+        // Tapping a card opens it, except mid-reorder — nothing should
+        // navigate away while you're in the middle of dragging cards around.
+        onPress={reordering ? undefined : (highlight) => navigation.navigate("HighlightViewer", { highlightId: highlight.id, title: highlight.title })}
+        leadingChildren={
+          isOwner ? (
+            <Pressable
+              style={[styles.card, styles.newCard, { width: cardWidth, height: cardHeight, left: 0, top: 0 }]}
+              onPress={() => navigation.navigate("HighlightEditor", {})}
+            >
+              <Text style={styles.newGlyph}>+</Text>
+              <Text style={styles.newLabel}>New</Text>
+            </Pressable>
+          ) : null
+        }
+        renderItem={(highlight) => (
+          <View style={styles.card}>
+            {highlight.coverMediaId ? (
+              <Image
+                source={{ uri: mediaFileUrl(highlight.coverMediaId), headers: authHeaders }}
+                style={styles.coverImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.coverFallback}>
+                <Text style={styles.coverFallbackInitial}>{highlight.title.charAt(0).toUpperCase()}</Text>
+              </View>
+            )}
+            <View style={styles.labelScrim}>
+              <Text style={styles.label} numberOfLines={2}>
+                {highlight.title}
+              </Text>
             </View>
-          )}
-          <View style={styles.labelScrim}>
-            <Text style={styles.label} numberOfLines={2}>
-              {highlight.title}
-            </Text>
           </View>
-        </View>
-      )}
-    />
+        )}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: { width: "100%", marginTop: spacing.md },
+  reorderToggle: { alignSelf: "flex-end", marginBottom: spacing.xs },
+  reorderToggleLabel: { ...typography.caption, color: colors.accent, fontWeight: "700" },
   card: {
     flex: 1,
     borderRadius: radii.md,

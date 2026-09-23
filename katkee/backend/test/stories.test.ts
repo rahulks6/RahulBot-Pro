@@ -403,4 +403,23 @@ describe("Story Insights", () => {
       profileVisitRate: 0,
     });
   });
+
+  it("following-vs-discovery is a real snapshot from view time, not a live lookup", async () => {
+    const owner = await signupUser();
+    const viewer = await signupUser();
+    const story = await publishStory(owner.accessToken, await uploadPhoto(owner.accessToken));
+    const storyId = story.body.story.id;
+
+    // Views as a stranger — no follow relationship exists yet.
+    await client.post(`/api/v1/stories/${storyId}/view`, undefined, authHeader(viewer.accessToken));
+    const beforeFollow = await client.get(`/api/v1/stories/${storyId}/insights`, authHeader(owner.accessToken));
+    assert.equal(beforeFollow.body.insights.followingViewRate, 0, "was a stranger at view time");
+    assert.equal(beforeFollow.body.insights.discoveryViewRate, 100);
+
+    // Follows afterward — a live join would flip the numbers; a real snapshot must not.
+    await client.post(`/api/v1/users/${owner.input.username}/follow`, undefined, authHeader(viewer.accessToken));
+    const afterFollow = await client.get(`/api/v1/stories/${storyId}/insights`, authHeader(owner.accessToken));
+    assert.equal(afterFollow.body.insights.followingViewRate, 0, "still a stranger at the moment they actually viewed it");
+    assert.equal(afterFollow.body.insights.discoveryViewRate, 100);
+  });
 });

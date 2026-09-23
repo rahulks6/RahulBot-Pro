@@ -590,6 +590,46 @@ Story nobody has viewed yet returns all zeros rather than dividing by
 zero; a sequence aggregate across two Stories counts a viewer who watched
 both exactly once, not twice).
 
+## Phase 13 continued: following-vs-discovery is a real snapshot, not a live lookup
+
+The Insights work above shipped with one disclosed approximation:
+"following vs. discovery" came from a *live* `follows` join, so it
+reflected each viewer's relationship to the owner as of whenever someone
+happened to check Insights — not what it actually was the moment that
+viewer watched the Story. This closes that gap for real.
+
+Migration `0014_story_view_follow_snapshot.sql` adds `story_views.was_following`.
+`recordView` now sets it once, at INSERT time, from a real `EXISTS` check
+against `follows` — and because `ON CONFLICT (story_id, viewer_id) DO
+NOTHING` already made this table idempotent per viewer, a repeat view
+never overwrites it, so what's stored is genuinely "were they already
+following the very first time they saw this," not whatever their
+relationship happens to be by the time anyone looks. `getStoryInsights`
+now reads `sv.was_following` directly — the `follows` join is gone
+entirely, not just replaced. `getSequenceInsights` uses a `DISTINCT ON`
+over each viewer's *most recent* view within the sequence, since the same
+viewer can appear across more than one of an owner's active Stories and
+their relationship could plausibly have changed between those views —
+their latest view's snapshot is the one that answers "were they
+following by the time they were watching this run."
+
+Existing rows (recorded before this migration existed) are backfilled
+using each viewer's *current* relationship at migration time — the same
+approximation the live join made, but frozen at that one moment rather
+than drifting forever; every view recorded from here on gets the real
+thing.
+
+"Profile visits" stays exactly as it was — a disclosed approximation,
+not a bug: `profile_visit` is already creator-scoped, not story-scoped,
+in the event schema itself (spec section 11's own event taxonomy), so
+there's no per-Story causal link to snapshot in the first place.
+
+153/153 tests passing (1 new: a viewer who watches as a stranger and
+follows five minutes later still shows as discovery, not following, both
+immediately after the view and again after the follow — proving this is
+actually a snapshot and not a join that would silently flip once they
+followed).
+
 ## API (v1)
 
 | Method | Path | Auth | Notes |

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, PanResponder, StyleSheet, View } from "react-native";
+import { Animated, PanResponder, Pressable, StyleSheet, View } from "react-native";
 
 const LONG_PRESS_MS = 300;
 const MOVE_CANCEL_THRESHOLD = 8; // a touch that moves this far before the long-press timer fires is a scroll/tap, not a drag
@@ -126,7 +126,6 @@ function DraggableGridItem({
 
   return (
     <Animated.View
-      {...responder.panHandlers}
       style={[
         styles.item,
         {
@@ -141,7 +140,22 @@ function DraggableGridItem({
         },
       ]}
     >
-      {children}
+      {draggable ? (
+        // Only ever attaches the PanResponder while this grid is actually
+        // in reorder mode — see DraggableGrid's own doc comment for why
+        // that's what makes this safe to use inside a ScrollView at all.
+        <View {...responder.panHandlers} style={styles.fill}>
+          {children}
+        </View>
+      ) : (
+        // Not in reorder mode: a completely ordinary Pressable, no
+        // PanResponder anywhere in this subtree — the enclosing
+        // ScrollView (if any) gets touch priority exactly as if this
+        // component didn't exist.
+        <Pressable style={styles.fill} onPress={onPress}>
+          {children}
+        </Pressable>
+      )}
     </Animated.View>
   );
 }
@@ -158,6 +172,16 @@ export interface DraggableGridProps<T> {
   onReorder: (newOrder: T[]) => void;
   /** Fired on a plain tap — see this component's own doc comment for why this replaces a nested `<Pressable>`'s onPress. Omit if items aren't individually tappable. */
   onPress?: (item: T) => void;
+  /**
+   * Whether items can actually be picked up at all — default `true`.
+   * Pass `false` while this grid sits inside a `ScrollView`/`FlatList`
+   * ancestor whose own scrolling matters (see this component's own doc
+   * comment): with this `false`, no item ever attaches a PanResponder,
+   * so the ancestor scrolls completely normally, at the cost of no drag
+   * gesture being available at all until it's flipped back to `true`
+   * (e.g. behind an explicit "Reorder" toggle the caller owns).
+   */
+  draggable?: boolean;
   /**
    * Reserves this many leading grid slots (starting at slot 0) that `data`
    * itself doesn't occupy or reflow into — for a fixed, non-reorderable
@@ -181,10 +205,21 @@ export interface DraggableGridProps<T> {
  * `renderItem` should return plain (non-Pressable) visual content only —
  * `onPress` is a separate prop, called on a plain tap (released before the
  * long-press threshold, without drifting). Nesting a `<Pressable>` inside
- * a draggable item wouldn't work: this component's own PanResponder has
- * to claim the touch responder at the very start to ever detect a
- * long-press, and RN's responder negotiation resolves bottom-up, so a
- * child Pressable would claim it first and the drag would never fire.
+ * a draggable item wouldn't work while `draggable` is true: this
+ * component's own PanResponder has to claim the touch responder at the
+ * very start to ever detect a long-press, and RN's responder negotiation
+ * resolves bottom-up, so a child Pressable would claim it first and the
+ * drag would never fire. This is also exactly why `draggable` exists as
+ * its own prop rather than being always-on: claiming the responder at
+ * touch-*down* (unavoidable for detecting stillness) also means a
+ * ScrollView ancestor can't scroll starting from a touch on this grid
+ * while it's true. `draggable={false}` (the default's opposite — see
+ * that prop's own doc) sidesteps the conflict entirely rather than just
+ * accepting it: no PanResponder is even created in that state, so an
+ * ancestor ScrollView scrolls exactly as if this component weren't
+ * there. HighlightsRow.tsx uses this for a real "Reorder" mode toggle,
+ * rather than leaving drag permanently on and the ancestor page
+ * permanently unscrollable-from-a-Highlight-card.
  */
 export function DraggableGrid<T>({
   data,
@@ -196,6 +231,7 @@ export function DraggableGrid<T>({
   renderItem,
   onReorder,
   onPress,
+  draggable = true,
   startIndex = 0,
   leadingChildren,
 }: DraggableGridProps<T>): React.JSX.Element {
@@ -287,7 +323,7 @@ export function DraggableGrid<T>({
             top={top}
             width={itemWidth}
             height={itemHeight}
-            draggable
+            draggable={draggable}
             onDragStart={onDragStart}
             onDragMove={onDragMove}
             onDragEnd={onDragEnd}
@@ -304,4 +340,5 @@ export function DraggableGrid<T>({
 const styles = StyleSheet.create({
   container: { width: "100%", position: "relative" },
   item: { position: "absolute" },
+  fill: { flex: 1 },
 });
