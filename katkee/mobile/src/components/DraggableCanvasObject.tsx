@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { PanResponder, StyleSheet, View, type GestureResponderEvent, type PanResponderGestureState } from "react-native";
-import type { Overlay } from "../models/storyDraft";
+import { clampOverlayPosition, type Overlay } from "../models/storyDraft";
 import { OverlayBody } from "./OverlayBody";
 
 interface Props {
@@ -108,9 +108,9 @@ export function DraggableCanvasObject({
             setDragging(true);
             onDragStateChange(true);
           }
-          const nextX = gestureStart.current.x + gestureState.dx / containerWidth;
-          const nextY = gestureStart.current.y + gestureState.dy / containerHeight;
-          onChange(overlay.id, { x: nextX, y: nextY });
+          const rawX = gestureStart.current.x + gestureState.dx / containerWidth;
+          const rawY = gestureStart.current.y + gestureState.dy / containerHeight;
+          onChange(overlay.id, clampOverlayPosition(rawX, rawY));
         },
         onPanResponderRelease: (evt: GestureResponderEvent) => {
           if (dragging) {

@@ -46,8 +46,13 @@ function parseOverlay(raw: unknown, index: number): StoryOverlay | null {
   if (typeof type !== "string" || !OVERLAY_TYPES.includes(type as (typeof OVERLAY_TYPES)[number])) return null;
 
   const id = typeof o.id === "string" && o.id.length > 0 ? o.id : `overlay-${index}`;
-  const x = isFiniteNumber(o.x) ? clamp(o.x, -0.5, 1.5) : 0.5;
-  const y = isFiniteNumber(o.y) ? clamp(o.y, -0.5, 1.5) : 0.5;
+  // A sanity backstop against an arbitrary API caller, not the UX
+  // guarantee the mobile app's own gestures keep — see its
+  // OVERLAY_SAFE_MARGIN (storyDraft.ts), which is deliberately tighter
+  // than this so an overlay always stays within reach of a drag/tap; this
+  // just rejects wildly out-of-view garbage (x=1000, etc).
+  const x = isFiniteNumber(o.x) ? clamp(o.x, -0.1, 1.1) : 0.5;
+  const y = isFiniteNumber(o.y) ? clamp(o.y, -0.1, 1.1) : 0.5;
   const scale = isFiniteNumber(o.scale) ? clamp(o.scale, 0.1, 6) : 1;
   const rotation = isFiniteNumber(o.rotation) ? ((o.rotation % 360) + 360) % 360 : 0;
   const zIndex = isFiniteNumber(o.zIndex) ? Math.trunc(o.zIndex) : index;

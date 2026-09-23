@@ -3,6 +3,9 @@ import { StyleSheet, Text, View } from "react-native";
 import type { Overlay } from "../models/storyDraft";
 import { colors, radii } from "../theme";
 
+export /** Text wraps within this fraction of the container's own width (spec: "auto-wrap ... text") rather than growing indefinitely off-canvas. */
+const TEXT_MAX_WIDTH_FRACTION = 0.8;
+
 export const STICKER_GLYPHS: Record<string, string> = {
   spark: "✦",
   "heart-line": "♡",
@@ -42,7 +45,7 @@ export function OverlayBody({
           ? { backgroundColor: "rgba(0,0,0,0.55)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: radii.sm }
           : null;
       return (
-        <View style={backgroundStyle}>
+        <View style={[{ maxWidth: containerWidth * TEXT_MAX_WIDTH_FRACTION }, backgroundStyle]}>
           <Text
             style={[
               styles.text,

@@ -1,7 +1,7 @@
 import React from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radii, spacing, typography } from "../theme";
-import type { Overlay } from "../models/storyDraft";
+import { clampOverlayPosition, type Overlay } from "../models/storyDraft";
 
 const NUDGE_STEP = 0.02;
 const SCALE_STEP = 0.15;
@@ -45,7 +45,7 @@ export function OverlayAdjustSheet({ overlay, onChange, onEditText, onDelete, on
   const shown = overlay ?? lastOverlay;
   if (!shown) return <></>;
 
-  const nudge = (dx: number, dy: number) => onChange(shown.id, { x: shown.x + dx, y: shown.y + dy });
+  const nudge = (dx: number, dy: number) => onChange(shown.id, clampOverlayPosition(shown.x + dx, shown.y + dy));
   const rescale = (delta: number) => onChange(shown.id, { scale: clamp(shown.scale + delta, MIN_SCALE, MAX_SCALE) });
   const rotate = (delta: number) => onChange(shown.id, { rotation: ((shown.rotation + delta) % 360 + 360) % 360 });
 

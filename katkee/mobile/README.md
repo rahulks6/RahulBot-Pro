@@ -809,3 +809,36 @@ none of this has been exercised with an actual screen reader on a real
 device, which is the only way to know for certain whether VoiceOver/
 TalkBack really do route to the `accessibilityActions` this code declares
 rather than fighting the `PanResponder` underneath them.
+
+### Four more spec items closed: safe bounds, text wrap, keyboard handling, swipe-to-cycle filters
+
+- **"Objects must stay retrievable, not vanish off-canvas"**: nothing
+  previously stopped a drag (or the new OverlayAdjustSheet's nudge
+  buttons) from moving an object's anchor point fully outside the visible
+  canvas — reachable neither by another drag nor by tapping to select it
+  again. `storyDraft.ts`'s `clampOverlayPosition`/`OVERLAY_SAFE_MARGIN`
+  (6% margin) is now applied in both places. The backend's own `dto.ts`
+  clamp is deliberately looser (`-0.1..1.1`, a sanity backstop against an
+  arbitrary API caller) — the two are different jobs, not a mismatch.
+- **Auto-wrap text**: a text overlay had no width constraint at all, so a
+  long single-line caption just grew wider than the canvas indefinitely
+  instead of wrapping. `OverlayBody.tsx` now caps it at 80% of the
+  container's width, letting RN's own `Text` wrapping do the rest.
+- **Keyboard handling that never hides Done/controls**: `TextToolModal`'s
+  style/align/color/size rows sit below the text input with no
+  keyboard-avoidance at all before this — an opening keyboard on a real
+  device would have covered all of them. It's now wrapped in a
+  `KeyboardAvoidingView` (`padding` on iOS; Android's own window resize
+  already handles it, `height` there is just a safety net).
+- **Swipe-to-cycle filters with a briefly-shown name**: filters could only
+  be picked from the horizontal chip strip — spec section 24 also asks for
+  a swipe gesture on the media itself, with the filter's name flashing
+  briefly. Added as a `PanResponder` layer that sits *beneath* every
+  canvas object in paint order (rendered earlier in JSX), so a touch that
+  starts on an object is claimed by that object's own gesture first (RN's
+  topmost-sibling hit-testing) — "suppressed while actively manipulating a
+  text/sticker object" falls out of that ordering rather than needing a
+  separate flag to track it. Not rendered in draw mode, and every modal
+  (text tool, sticker sheet, overlay adjust) already blocks all touches to
+  the screen beneath it while open, so those cases needed no extra
+  handling either.

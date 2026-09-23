@@ -116,3 +116,20 @@ export function hasMeaningfulEdits(draft: StoryDraft): boolean {
     draft.audioMuted
   );
 }
+
+/**
+ * "Safe positioning near canvas edges" (spec): an overlay's anchor point
+ * (its own x/y, not its visible edges — those vary with scale/rotation)
+ * is kept within this margin of the canvas at all times, in both the drag
+ * gesture and the nudge-button alternative, so it can never be dragged
+ * somewhere it's no longer reachable to tap, drag back, or select through
+ * OverlayAdjustSheet. The backend's own clamp (dto.ts) is deliberately
+ * looser than this — a sanity backstop against an arbitrary API caller,
+ * not the UX guarantee this margin provides for the app's own gestures.
+ */
+export const OVERLAY_SAFE_MARGIN = 0.06;
+
+export function clampOverlayPosition(x: number, y: number): { x: number; y: number } {
+  const clamp = (n: number) => Math.min(Math.max(n, OVERLAY_SAFE_MARGIN), 1 - OVERLAY_SAFE_MARGIN);
+  return { x: clamp(x), y: clamp(y) };
+}

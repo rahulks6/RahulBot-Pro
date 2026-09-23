@@ -1,15 +1,18 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Image,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type GestureResponderEvent,
   type LayoutChangeEvent,
+  type PanResponderGestureState,
 } from "react-native";
 import Video from "react-native-video";
 import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -58,8 +61,16 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
   const [isDraggingOverlay, setIsDraggingOverlay] = useState(false);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [filterToastName, setFilterToastName] = useState<string | null>(null);
 
   const nextZIndex = useRef(1);
+  const filterToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (filterToastTimer.current) clearTimeout(filterToastTimer.current);
+    };
+  }, []);
 
   const onContainerLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -131,6 +142,51 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
 
   const activeFilter = useMemo(() => FILTER_PREVIEWS.find((f) => f.name === draft.filter) ?? FILTER_PREVIEWS[0], [draft.filter]);
 
+  const showFilterToast = useCallback((name: string) => {
+    setFilterToastName(name);
+    if (filterToastTimer.current) clearTimeout(filterToastTimer.current);
+    filterToastTimer.current = setTimeout(() => setFilterToastName(null), 900);
+  }, []);
+
+  const cycleFilter = useCallback(
+    (direction: 1 | -1) => {
+      setDraft((d) => {
+        const currentIndex = FILTER_PREVIEWS.findIndex((f) => f.name === d.filter);
+        const nextIndex = (currentIndex + direction + FILTER_PREVIEWS.length) % FILTER_PREVIEWS.length;
+        const next = FILTER_PREVIEWS[nextIndex];
+        showFilterToast(next.name);
+        return { ...d, filter: next.name };
+      });
+    },
+    [showFilterToast],
+  );
+
+  const SWIPE_FILTER_THRESHOLD = 40;
+
+  // Swipe-to-cycle filters (spec: "swipe-to-cycle with a briefly-shown
+  // filter name, suppressed while actively manipulating a text/sticker
+  // object"). This layer sits beneath the canvas objects in paint order
+  // (rendered before them, right below), so it only ever receives a touch
+  // that starts on empty canvas — a touch that starts on an object hits
+  // that object's own PanResponder first (RN's topmost-sibling-wins
+  // hit-testing), which is what "suppressed while manipulating an object"
+  // means in practice here, with no extra flag needed. Rendered only
+  // outside draw mode, and any modal (text/stickers/adjust) already
+  // blocks all touches to the screen beneath it while open.
+  const filterSwipeGesture = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_evt: GestureResponderEvent, gestureState: PanResponderGestureState) =>
+          Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        onPanResponderRelease: (_evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+          if (gestureState.dx <= -SWIPE_FILTER_THRESHOLD) cycleFilter(1);
+          else if (gestureState.dx >= SWIPE_FILTER_THRESHOLD) cycleFilter(-1);
+        },
+      }),
+    [cycleFilter],
+  );
+
   const confirmDiscard = useCallback(
     (onDiscard: () => void) => {
       if (!hasMeaningfulEdits(draft)) {
@@ -201,13 +257,19 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
           />
         ) : null}
 
-        {!drawMode && selectedOverlayId ? (
-          <Pressable
+        {!drawMode ? (
+          <View
             style={StyleSheet.absoluteFill}
-            onPress={() => setSelectedOverlayId(null)}
+            {...filterSwipeGesture.panHandlers}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
           />
+        ) : null}
+
+        {filterToastName ? (
+          <View style={styles.filterToast} pointerEvents="none">
+            <Text style={styles.filterToastLabel}>{filterToastName}</Text>
+          </View>
         ) : null}
 
         {containerSize.width > 0 && !drawMode
@@ -423,6 +485,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   trashIcon: { fontSize: 28 },
+  filterToast: {
+    position: "absolute",
+    alignSelf: "center",
+    top: "45%",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  filterToastLabel: { color: colors.textPrimary, fontSize: 18, fontWeight: "700" },
   bottomArea: { position: "absolute", bottom: spacing.xl, left: 0, right: 0, gap: spacing.sm, paddingHorizontal: spacing.md },
   filterStrip: { gap: spacing.xs, paddingBottom: spacing.sm },
   filterChip: {

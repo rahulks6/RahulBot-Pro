@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { colors, radii, spacing } from "../theme";
 import type { TextOverlayProperties, TextStyle } from "../models/storyDraft";
 
@@ -39,7 +39,16 @@ export function TextToolModal({ visible, initialText, initialProperties, onCance
 
   return (
     <Modal visible={visible} animationType="fade" transparent={false} onRequestClose={onCancel}>
-      <View style={styles.container}>
+      {/*
+        The Done button and every style/align/color/size control sit below
+        the input, so an opening keyboard has to be actively avoided or it
+        covers all of them (spec: keyboard handling that "never hides the
+        Done button/active text field/controls"). `padding` shrinks this
+        view's own height on iOS; Android already resizes the window by
+        default (windowSoftInputMode), so `height` here is a no-op safety
+        net rather than double-compensation.
+      */}
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.topBar}>
           <Pressable onPress={onCancel}>
             <Text style={styles.topAction}>Cancel</Text>
@@ -143,7 +152,7 @@ export function TextToolModal({ visible, initialText, initialProperties, onCance
             <Text style={styles.bgToggleLabel}>{hasBackground ? "Background: on" : "Background: off"}</Text>
           </Pressable>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
