@@ -401,7 +401,7 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
   const isOwnStory = authUser?.username === currentUsername;
 
   return (
-    <View style={styles.container} onLayout={onContainerLayout} {...gesture.panHandlers}>
+    <View style={styles.container} onLayout={onContainerLayout}>
       {mediaKind === "video" ? (
         <Video
           source={{ uri: mediaUrl, headers: authHeaders }}
@@ -422,6 +422,58 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
           resizeMode="cover"
         />
       ) : null}
+
+      {/*
+        The tap/double-tap/hold/swipe recognizer, as its own layer rather
+        than on the outer container: a screen reader collapses whatever
+        View it's marked `accessible` on into one opaque node, which would
+        have swallowed the like/comment/share/more buttons, the progress
+        bar, and the close button — all later siblings here — into
+        unreachability. Sitting *beneath* StoryOverlayLayer (rendered
+        earlier in JSX) in paint order means a tap on a mention is still
+        claimed by the mention's own touch target first (RN's
+        topmost-sibling hit-testing), the same technique the editor's own
+        swipe-to-cycle-filter layer already uses relative to canvas
+        objects. accessibilityActions gives a screen reader the same four
+        moves the gesture recognizer offers a sighted touch — next/previous
+        Story, next/previous creator — reusing the same navigation and
+        analytics-emit calls the gesture handler itself calls, so the
+        resulting analytics event is identical either way.
+      */}
+      <View
+        style={StyleSheet.absoluteFill}
+        {...gesture.panHandlers}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel="Story"
+        accessibilityHint="Use the actions menu to move between Stories or creators"
+        accessibilityActions={[
+          { name: "nextStory", label: "Next Story" },
+          { name: "previousStory", label: "Previous Story" },
+          { name: "nextCreator", label: "Next creator" },
+          { name: "previousCreator", label: "Previous creator" },
+        ]}
+        onAccessibilityAction={(event) => {
+          switch (event.nativeEvent.actionName) {
+            case "nextStory":
+              emit("story_next", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+              goNextStory();
+              break;
+            case "previousStory":
+              emit("story_previous", { storyId: currentStory.id, creatorId: currentStory.ownerId });
+              goPreviousStory();
+              break;
+            case "nextCreator":
+              emit("creator_swipe_next", { creatorId: currentStory.ownerId });
+              goNextCreator();
+              break;
+            case "previousCreator":
+              emit("creator_swipe_previous", { creatorId: currentStory.ownerId });
+              goPreviousCreator();
+              break;
+          }
+        }}
+      />
 
       {detail && containerSize.width > 0 ? (
         <StoryOverlayLayer

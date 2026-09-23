@@ -312,7 +312,7 @@ export function CameraScreen({ navigation }: Props): React.JSX.Element {
           previewSize.current = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height };
         }}
         accessible
-        accessibilityRole="adjustable"
+        accessibilityRole="button"
         accessibilityLabel="Camera preview"
         accessibilityHint="Use the actions menu to focus the camera or flip it"
         accessibilityActions={[

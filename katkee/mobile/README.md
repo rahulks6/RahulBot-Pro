@@ -930,6 +930,40 @@ a drag's release already calls — a screen-reader user gets a slower,
 one-step-at-a-time equivalent, not a dead end. Both call sites needed no
 changes themselves; the fix is entirely inside `DraggableGrid.tsx`.
 
+### The single biggest undisclosed gap: the Story feed itself had no accessible navigation at all
+
+`StoryFeed.tsx` is the app's actual core loop — tap left/right to move
+between Stories, double-tap to like, hold to pause, swipe up/down to move
+between creators — and every one of those, before this fix, was reachable
+only through its `PanResponder` gesture recognizer. Nothing here had ever
+been given an accessible alternative, and unlike the crop tool or
+drag-to-reorder above, this one was never disclosed as a gap either: a
+screen-reader user could open Home and reach the like/comment/share/more
+buttons (those were already properly accessible), but had **no way at all**
+to actually move to the next Story, the previous Story, or a different
+creator — the single most central interaction in the entire product.
+
+The fix isn't as simple as marking the existing container `accessible`,
+though: `gesture.panHandlers` sat on the *outer* `View` that also directly
+contains the progress bar, the action rail, the footer, and the close
+button as siblings — marking that container accessible would have
+collapsed all of those already-working buttons into one opaque node,
+trading one gap for a worse one. Instead, the gesture recognizer now lives
+on its own dedicated `StyleSheet.absoluteFill` layer, inserted *beneath*
+`StoryOverlayLayer` in paint order (rendered earlier in JSX) — the same
+"topmost-sibling hit-testing" technique the editor's own swipe-to-cycle-
+filter layer already relies on relative to canvas objects, so a tap on a
+mention overlay is still claimed by the mention's own touch target first,
+never by this layer. That layer declares `accessibilityActions` for the
+four moves that matter — next/previous Story, next/previous creator —
+each calling the exact same `goNextStory`/`goPreviousStory`/
+`goNextCreator`/`goPreviousCreator` and analytics `emit(...)` calls the
+gesture handler itself already used, so an accessibility-driven navigation
+is indistinguishable from a gestural one in every system that consumes it
+(recommendations, insights). Double-tap-to-like isn't duplicated here
+deliberately — the action rail's own "Like"/"Unlike" button already covers
+that intent through an ordinary, already-accessible `Pressable`.
+
 ### Edit-in-place for location and date/time content
 
 Double-tap-to-re-edit (spec section 20) was explicitly a text-only
