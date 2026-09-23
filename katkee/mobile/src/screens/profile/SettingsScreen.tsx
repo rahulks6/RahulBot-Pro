@@ -103,6 +103,8 @@ export function SettingsScreen({ navigation }: Props): React.JSX.Element {
           detail={pendingRequestCount ? String(pendingRequestCount) : undefined}
           onPress={() => navigation.navigate("FollowRequests")}
         />
+        <ListRow label="Blocked accounts" onPress={() => navigation.navigate("BlockedAccounts")} />
+        <ListRow label="Muted accounts" onPress={() => navigation.navigate("MutedAccounts")} />
       </View>
 
       <Text style={styles.sectionHeader}>Notifications</Text>

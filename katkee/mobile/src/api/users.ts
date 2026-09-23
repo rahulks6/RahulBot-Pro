@@ -62,8 +62,52 @@ export function blockUser(username: string, accessToken: string): Promise<void> 
   return apiPost(`/api/v1/users/${encodeURIComponent(username)}/block`, undefined, accessToken);
 }
 
+export function unblockUser(username: string, accessToken: string): Promise<void> {
+  return apiDelete(`/api/v1/users/${encodeURIComponent(username)}/block`, accessToken);
+}
+
 export function muteUser(username: string, accessToken: string): Promise<void> {
   return apiPost(`/api/v1/users/${encodeURIComponent(username)}/mute`, undefined, accessToken);
+}
+
+export function unmuteUser(username: string, accessToken: string): Promise<void> {
+  return apiDelete(`/api/v1/users/${encodeURIComponent(username)}/mute`, accessToken);
+}
+
+export interface BlockedUser {
+  id: string;
+  username: string;
+  displayName: string;
+  blockedAt: string;
+}
+
+export function listBlockedUsers(
+  accessToken: string,
+  params: { limit?: number; offset?: number } = {},
+): Promise<{ blocked: BlockedUser[]; limit: number; offset: number }> {
+  const query = new URLSearchParams();
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return apiGet(`/api/v1/blocks${qs ? `?${qs}` : ""}`, accessToken);
+}
+
+export interface MutedUser {
+  id: string;
+  username: string;
+  displayName: string;
+  mutedAt: string;
+}
+
+export function listMutedUsers(
+  accessToken: string,
+  params: { limit?: number; offset?: number } = {},
+): Promise<{ muted: MutedUser[]; limit: number; offset: number }> {
+  const query = new URLSearchParams();
+  if (params.limit) query.set("limit", String(params.limit));
+  if (params.offset) query.set("offset", String(params.offset));
+  const qs = query.toString();
+  return apiGet(`/api/v1/mutes${qs ? `?${qs}` : ""}`, accessToken);
 }
 
 export interface FollowedUser {

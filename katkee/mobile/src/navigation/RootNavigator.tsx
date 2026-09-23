@@ -19,6 +19,8 @@ import { NotificationSettingsScreen } from "../screens/profile/NotificationSetti
 import { HelpScreen } from "../screens/profile/HelpScreen";
 import { AboutScreen } from "../screens/profile/AboutScreen";
 import { FollowRequestsScreen } from "../screens/profile/FollowRequestsScreen";
+import { BlockedAccountsScreen } from "../screens/profile/BlockedAccountsScreen";
+import { MutedAccountsScreen } from "../screens/profile/MutedAccountsScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -132,6 +134,28 @@ function SignedInNavigator(): React.JSX.Element {
         options={{
           headerShown: true,
           title: "Follow Requests",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="BlockedAccounts"
+        component={BlockedAccountsScreen}
+        options={{
+          headerShown: true,
+          title: "Blocked Accounts",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="MutedAccounts"
+        component={MutedAccountsScreen}
+        options={{
+          headerShown: true,
+          title: "Muted Accounts",
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.textPrimary,
           headerShadowVisible: false,

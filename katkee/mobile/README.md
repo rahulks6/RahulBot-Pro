@@ -992,6 +992,30 @@ never actually touched:
   conditional label ("Open your Story" / "Open {name}'s Story" when there
   is one to open, otherwise just the name).
 
+### Muting and blocking were one-way doors — a cross-reference against every backend route caught it
+
+Cross-referencing every backend route against what mobile actually calls
+(rather than trusting the per-feature disclosures written when each phase
+shipped) turned up a real, functional gap, not just an accessibility one:
+`StoryMoreMenu.tsx`'s "Mute @user"/"Block @user" only ever called
+`muteUser`/`blockUser`. The backend's `DELETE /api/v1/users/:username/mute`
+and `.../block` (unmute/unblock) have existed and been tested since Phase
+2, and so has `GET /api/v1/blocks`/`GET /api/v1/mutes` (the lists), but
+**nothing in this app ever called any of the four** — once you muted or
+blocked someone, there was no screen anywhere to review or undo it. This
+is a distinct gap from the "Mute and Block... are there and work" note
+above — that one only ever meant the one-way mute/block *action* itself.
+
+Fixed with two new screens, `BlockedAccountsScreen.tsx` and
+`MutedAccountsScreen.tsx` (reached from Settings > Privacy), each backed
+by the corresponding list endpoint with a per-row Unblock/Unmute button.
+The per-Story "More" menu itself stays a simple one-way action sheet
+deliberately — it has no profile data in scope to know whether someone's
+already muted, and adding that round-trip to an ephemeral action sheet
+didn't seem worth it once a real management screen exists elsewhere; the
+same "action in the moment, review/undo in Settings" split most social
+apps already use.
+
 ### Edit-in-place for location and date/time content
 
 Double-tap-to-re-edit (spec section 20) was explicitly a text-only

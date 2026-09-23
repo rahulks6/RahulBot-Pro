@@ -78,4 +78,8 @@ export type RootStackParamList = {
   About: undefined;
   /** Incoming, still-pending follow requests on a private account — accept/decline each one. */
   FollowRequests: undefined;
+  /** Accounts you've blocked — a real unblock action for each, not just a one-way door. */
+  BlockedAccounts: undefined;
+  /** Accounts you've muted — a real unmute action for each, not just a one-way door. */
+  MutedAccounts: undefined;
 };
