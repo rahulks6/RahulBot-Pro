@@ -41,6 +41,7 @@ import { StickerSheet, type StickerAddPayload } from "../../components/StickerSh
 import { DrawingCanvas } from "../../components/DrawingCanvas";
 import { OverlayAdjustSheet } from "../../components/OverlayAdjustSheet";
 import { CropGestureLayer } from "../../components/CropGestureLayer";
+import { CropAdjustControls } from "../../components/CropAdjustControls";
 import { savePendingDraft, loadPendingDraft, clearPendingDraft } from "../../state/draftStorage";
 
 type Props = NativeStackScreenProps<CreateStackParamList, "StoryEditor">;
@@ -419,18 +420,23 @@ export function StoryEditorScreen({ route, navigation }: Props): React.JSX.Eleme
       </View>
 
       {cropMode ? (
-        <View style={styles.topBar}>
-          <Text style={styles.cropHint}>Pinch to zoom · Drag to reposition</Text>
-          <Pressable
-            onPress={() => setCropMode(false)}
-            hitSlop={12}
-            style={styles.cropDoneButton}
-            accessibilityRole="button"
-            accessibilityLabel="Done cropping"
-          >
-            <Text style={styles.cropDoneLabel}>Done</Text>
-          </Pressable>
-        </View>
+        <>
+          <View style={styles.topBar}>
+            <Text style={styles.cropHint}>Pinch to zoom · Drag to reposition</Text>
+            <Pressable
+              onPress={() => setCropMode(false)}
+              hitSlop={12}
+              style={styles.cropDoneButton}
+              accessibilityRole="button"
+              accessibilityLabel="Done cropping"
+            >
+              <Text style={styles.cropDoneLabel}>Done</Text>
+            </Pressable>
+          </View>
+          <View style={styles.cropControlsBar}>
+            <CropAdjustControls crop={draft.crop} onChange={(crop) => setDraft((d) => ({ ...d, crop }))} />
+          </View>
+        </>
       ) : null}
 
       {!drawMode && !cropMode ? (
@@ -597,6 +603,13 @@ const styles = StyleSheet.create({
   cropHint: { color: "rgba(255,255,255,0.85)", fontSize: 13 },
   cropDoneButton: { backgroundColor: colors.accent, borderRadius: radii.pill, paddingHorizontal: spacing.md, paddingVertical: 6 },
   cropDoneLabel: { color: colors.onAccent, fontWeight: "700" },
+  cropControlsBar: {
+    position: "absolute",
+    bottom: spacing.xxl,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
   trashZone: {
     position: "absolute",
     bottom: spacing.xl,

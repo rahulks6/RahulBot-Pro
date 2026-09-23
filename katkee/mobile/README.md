@@ -897,6 +897,25 @@ makes precise focus placement a bonus rather than the only way to get a
 usable shot, which is why this sat as a disclosed gap rather than a
 blocker — but a real accessible path now exists either way.
 
+### Crop now has a non-gesture path too — an undisclosed gap this pass caught
+
+`OverlayAdjustSheet.tsx` explicitly scopes itself to "canvas-object
+manipulation" (text/emoji/mention/location/datetime/sticker overlays); the
+crop tool is a separate editor mode with its own `CropGestureLayer.tsx`
+(pinch-to-zoom, drag-to-pan), and nothing had ever given *it* a non-gesture
+equivalent — a real, undisclosed accessibility gap, found on inspection
+rather than reported by anyone. `CropAdjustControls.tsx` closes it: zoom
++/- and a directional pan pad, plus a one-tap Reset back to `{zoom: 1,
+offsetX: 0, offsetY: 0}`, shown in the editor's crop mode alongside the
+existing "Pinch to zoom · Drag to reposition" hint and Done button. Both
+the buttons and the gesture layer route every change through the same
+`clampCrop`, so a button nudge and an actual pinch/drag can never disagree
+about what a valid crop is. The freehand drawing tool remains the one
+deliberate exception with no non-gesture equivalent — there's no
+accessible way to author a freehand stroke without a finger path, the same
+way there isn't in any drawing app, so this is a permanent, honest limit
+rather than an oversight.
+
 ### Edit-in-place for location and date/time content
 
 Double-tap-to-re-edit (spec section 20) was explicitly a text-only
