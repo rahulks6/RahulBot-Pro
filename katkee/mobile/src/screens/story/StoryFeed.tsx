@@ -13,9 +13,11 @@ import { ShareSheet } from "../../components/ShareSheet";
 import { StoryMoreMenu } from "../../components/StoryMoreMenu";
 import { StoryInsightsSheet } from "../../components/StoryInsightsSheet";
 import { StoryOverlayLayer, useContainerLayout } from "../../components/StoryOverlayLayer";
+import { SponsoredStorySlide } from "../../components/SponsoredStorySlide";
 import { filterNameFromKey } from "../../models/filterPreviews";
 import { mediaTransformStyle } from "../../models/storyDraft";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
+import type { SponsoredHomeFeedEntry } from "../../api/stories";
 
 const PHOTO_DURATION_MS = 5000;
 const HOLD_DELAY_MS = 250;
@@ -39,6 +41,16 @@ export interface StoryFeedProps {
   onOpenDM: (params: { storyId: string; ownerUsername: string }) => void;
   /** A mention overlay was tapped — navigate to that user's live profile (spec section 30). */
   onOpenProfile: (username: string) => void;
+  /**
+   * Sponsored slides to interleave into this exact vertical sequence, at
+   * the server-decided positions (spec sections 26-28, 37) — keyed by the
+   * creatorIndex a slide follows. Omitted (or empty) by every existing
+   * caller except HomeScreen when ads are enabled; with no entries, every
+   * code path below that reads it is a no-op and this component behaves
+   * exactly as it did before Sponsored Stories existed — "no ads = normal
+   * Home" (spec) holds by construction, not by a separate check.
+   */
+  sponsoredAfter?: Record<number, SponsoredHomeFeedEntry>;
 }
 
 /**
@@ -55,12 +67,26 @@ export interface StoryFeedProps {
  * opened from their profile, a notification, or a DM share — `onClose`
  * provided so there's something to return to).
  */
-export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpenDM, onOpenProfile }: StoryFeedProps): React.JSX.Element {
+export function StoryFeed({
+  creators,
+  startIndex,
+  initialStoryId,
+  onClose,
+  onOpenDM,
+  onOpenProfile,
+  sponsoredAfter,
+}: StoryFeedProps): React.JSX.Element {
   const { user: authUser, accessToken } = useAuth();
   const reducedMotion = useReducedMotion();
   const [containerSize, onContainerLayout] = useContainerLayout();
 
   const [creatorIndex, setCreatorIndex] = useState(startIndex);
+  // A sponsored slide is shown at most once per boundary per mount — going
+  // back past it and swiping forward again just resumes organic content,
+  // the same "it doesn't reappear once dismissed" behavior spec section 40
+  // (Hide Ad) already requires for the hide/report case specifically.
+  const [pendingSponsoredKey, setPendingSponsoredKey] = useState<number | null>(null);
+  const shownSponsoredKeysRef = useRef<Set<number>>(new Set());
   const [storiesByCreator, setStoriesByCreator] = useState<Record<string, PublicStory[]>>({});
   const [storyIndexByCreator, setStoryIndexByCreator] = useState<Record<string, number>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -212,14 +238,28 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
     }
   }, [currentStory, emit]);
 
-  const goNextCreator = useCallback(() => {
-    maybeEmitQuickSkip();
+  const advancePastSponsored = useCallback(() => {
+    setPendingSponsoredKey(null);
     if (creatorIndex >= creators.length - 1) {
       leaveCurrentCreator("forward");
       return;
     }
     setCreatorIndex((i) => i + 1);
-  }, [creatorIndex, creators.length, leaveCurrentCreator, maybeEmitQuickSkip]);
+  }, [creatorIndex, creators.length, leaveCurrentCreator]);
+
+  const goNextCreator = useCallback(() => {
+    maybeEmitQuickSkip();
+    if (sponsoredAfter?.[creatorIndex] && !shownSponsoredKeysRef.current.has(creatorIndex)) {
+      shownSponsoredKeysRef.current.add(creatorIndex);
+      setPendingSponsoredKey(creatorIndex);
+      return;
+    }
+    if (creatorIndex >= creators.length - 1) {
+      leaveCurrentCreator("forward");
+      return;
+    }
+    setCreatorIndex((i) => i + 1);
+  }, [creatorIndex, creators.length, leaveCurrentCreator, maybeEmitQuickSkip, sponsoredAfter]);
 
   const goPreviousCreator = useCallback(() => {
     maybeEmitQuickSkip();
@@ -381,6 +421,20 @@ export function StoryFeed({ creators, startIndex, initialStoryId, onClose, onOpe
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goNextStory, goPreviousStory, goNextCreator, goPreviousCreator, ensureLiked, currentStory, emit]);
+
+  if (pendingSponsoredKey !== null) {
+    const slot = sponsoredAfter?.[pendingSponsoredKey];
+    if (slot) {
+      return (
+        <SponsoredStorySlide
+          slot={slot}
+          onAdvance={advancePastSponsored}
+          onGoBack={() => setPendingSponsoredKey(null)}
+          onDismiss={advancePastSponsored}
+        />
+      );
+    }
+  }
 
   if (caughtUp) {
     return <EmptyState title="You're all caught up" message="No more Stories right now — check back soon." />;

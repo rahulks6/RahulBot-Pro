@@ -30,6 +30,33 @@ export interface RankedFeedEntry extends FeedEntry {
   score: number;
 }
 
+/**
+ * Mirrors recommendation.service.ts's OrganicFeedEntry/SponsoredFeedEntry
+ * union — only /api/v1/stories/feed/home returns this shape (getRankedHomeFeed
+ * below); getFollowingFeed's plain FeedEntry[] is untouched by ads. A
+ * sponsored entry only ever appears when both ADS_ENABLED and
+ * SPONSORED_STORIES_ENABLED are on server-side; with either off (today's
+ * default), every entry here is `kind: "organic"` and this is exactly the
+ * pre-ads RankedFeedEntry shape, just with one added discriminant field.
+ */
+export interface OrganicHomeFeedEntry extends RankedFeedEntry {
+  kind: "organic";
+}
+
+export interface SponsoredHomeFeedEntry {
+  kind: "sponsored";
+  label: "Sponsored";
+  campaignId: string;
+  creativeId: string;
+  mediaId: string;
+  headline: string;
+  bodyText: string;
+  ctaLabel: string;
+  ctaUrl: string;
+}
+
+export type HomeFeedEntry = OrganicHomeFeedEntry | SponsoredHomeFeedEntry;
+
 export interface PublishStoryInput {
   mediaId: string;
   caption?: string;
@@ -52,8 +79,8 @@ export function getFollowingFeed(accessToken: string): Promise<{ feed: FeedEntry
   return apiGet("/api/v1/stories/feed/following", accessToken);
 }
 
-/** Phase 6: followed creators + real discovery of public creators you don't yet follow, ranked by the backend's scoring heuristic. */
-export function getRankedHomeFeed(accessToken: string): Promise<{ feed: RankedFeedEntry[] }> {
+/** Phase 6: followed creators + real discovery of public creators you don't yet follow, ranked by the backend's scoring heuristic — plus, when enabled server-side, sponsored entries interleaved at fixed positions (see HomeFeedEntry). */
+export function getRankedHomeFeed(accessToken: string): Promise<{ feed: HomeFeedEntry[] }> {
   return apiGet("/api/v1/stories/feed/home", accessToken);
 }
 

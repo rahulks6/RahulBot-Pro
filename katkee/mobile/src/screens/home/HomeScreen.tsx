@@ -6,7 +6,7 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors, typography } from "../../theme";
 import { useAuth } from "../../state/AuthContext";
-import { getRankedHomeFeed, type RankedFeedEntry } from "../../api/stories";
+import { getRankedHomeFeed, type HomeFeedEntry, type SponsoredHomeFeedEntry } from "../../api/stories";
 import { EmptyState } from "../../components/EmptyState";
 import { StoryFeed } from "../story/StoryFeed";
 import type { MainTabParamList, RootStackParamList } from "../../navigation/types";
@@ -30,7 +30,7 @@ type HomeNavigationProp = CompositeNavigationProp<
 export function HomeScreen(): React.JSX.Element {
   const { accessToken } = useAuth();
   const navigation = useNavigation<HomeNavigationProp>();
-  const [feed, setFeed] = useState<RankedFeedEntry[] | null>(null);
+  const [feed, setFeed] = useState<HomeFeedEntry[] | null>(null);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -69,10 +69,29 @@ export function HomeScreen(): React.JSX.Element {
     );
   }
 
+  // The backend interleaves sponsored entries into this same array at
+  // fixed positions (recommendation.service.ts's interleaveSponsoredSlots)
+  // — StoryFeed's creator sequence only knows organic usernames, so this
+  // pulls the sponsored ones back out into a side map keyed by "which
+  // organic creatorIndex it follows," preserving exactly the position the
+  // server (not this client) decided. With ads off, `feed` never contains
+  // a "sponsored" entry, so `sponsoredAfter` is always `{}` here and
+  // StoryFeed's ad-handling code paths are never exercised at all.
+  const creators: string[] = [];
+  const sponsoredAfter: Record<number, SponsoredHomeFeedEntry> = {};
+  for (const entry of feed) {
+    if (entry.kind === "sponsored") {
+      if (creators.length > 0) sponsoredAfter[creators.length - 1] = entry;
+      continue;
+    }
+    creators.push(entry.owner.username);
+  }
+
   return (
     <StoryFeed
-      creators={feed.map((entry) => entry.owner.username)}
+      creators={creators}
       startIndex={0}
+      sponsoredAfter={sponsoredAfter}
       onOpenDM={({ storyId, ownerUsername }) => {
         navigation.navigate("DM", { screen: "SendStory", params: { storyId, ownerUsername } });
       }}
