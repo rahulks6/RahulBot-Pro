@@ -17,7 +17,7 @@
     "seed:admin": "ts-node --transpile-only scripts/seedPrimaryAdmin.ts",
     "seed:admin:prod": "node dist/scripts/seedPrimaryAdmin.js",
     "pretest": "ts-node --transpile-only scripts/reset-test-db.ts",
-    "test": "tsc -p tsconfig.json && node --test dist/test/*.test.js"
+    "test": "tsc -p tsconfig.json && node --test --test-concurrency=1 dist/test/*.test.js"
   },
   "dependencies": {},
   "devDependencies": {
