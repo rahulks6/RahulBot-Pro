@@ -970,31 +970,221 @@ invalid roles and nonexistent usernames are rejected; and the primary
 admin can never be demoted or suspended by anyone, including another
 admin, through either the direct endpoint or a resolved report.
 
-## Ads: not built, but the architecture doesn't block it later
+## ~~Ads: not built, but the architecture doesn't block it later~~ Built in a later pass
 
-No ad SDK is integrated, and none should be faked here — a placeholder ad
-slot that doesn't actually serve or track anything would be exactly the
-kind of dishonest functionality this whole project has avoided everywhere
-else. What's real: the places a real ad SDK would eventually plug in
-don't require restructuring anything that exists today.
+Everything below this line ("Admin Console", "Sponsored Story ads: a real,
+admin-managed system") is that later pass. The paragraph above described a
+real, honest state at the time — no ad SDK, no admin console, both
+genuinely deferred — and is kept here (struck through, not deleted) as an
+accurate record of that state rather than quietly rewritten. What follows
+replaces it.
 
-- **Backend**: an ad network is typically client-side (the mobile SDK
-  talks directly to the ad network); this backend's only likely
-  involvement is analytics correlation. `recommendation_events` (migration
-  0007) already has the exact shape a "sponsored impression" event would
-  need — `events.dto.ts`'s `EventType` union is a closed list specifically
-  so a new event type is a deliberate, reviewed addition, not schema
-  drift; adding `"ad_impression"`/`"ad_click"` there later is a small,
-  additive change, not a redesign.
-- **Mobile**: `StoryFeed.tsx`'s feed is already just an array of entries
-  rendered one at a time (`RankedFeedEntry[]` from `getRankedHomeFeed`);
-  inserting a sponsored entry every N creators later is a filter/interleave
-  step over that same array, not a rewrite of the feed's rendering or
-  gesture code. `StoryMoreMenu.tsx` already has real, working "Not
-  Interested"/Mute/Block actions — the same UX pattern a "why am I seeing
-  this ad" control would reuse.
-- **Revenue-model decisions this pass deliberately didn't make**: which ad
-  network/SDK, impression vs. click billing, frequency capping, and
-  targeting all need a real business decision (and a real SDK account)
-  neither available nor appropriate to guess at inside a sandbox with no
-  network access to any ad network in the first place.
+## Admin Console: a separate, permission-gated web surface
+
+A second, independent frontend for admin/moderation/ads work — reachable
+at `/admin`, never inside the consumer mobile app's navigation (the 6
+bottom tabs are unchanged; there is no 7th "Admin" tab and never should
+be). It's server-rendered HTML/CSS/vanilla JS with **zero build step and
+zero new dependencies** (`public/admin/{index.html,app.js,style.css}`,
+served by `modules/admin/console.routes.ts` via `fs.readFileSync` on every
+request — edit and reload, no bundler) — the same "hand-rolled, real,
+working today, no external deps" constraint every other part of this
+backend already lives under (this sandbox has no npm registry access, so
+a React/Vite admin frontend was never an option). The pages themselves
+carry **zero authority**: they're a static shell containing no user data,
+whose JS immediately calls the same JSON API everything else in this
+backend already exposes and bounces to its own login view on a 401. Every
+real access decision happens server-side, in that JSON API, exactly once,
+never in the browser.
+
+**Authentication** reuses 100% of the existing system: the console's login
+page calls `POST /api/v1/auth/login` (the identical endpoint the mobile
+app uses) and keeps the returned access token in `sessionStorage` (that
+browser tab only, cleared on close) — no new session/cookie mechanism, no
+CSRF surface to reason about, no parallel auth system to keep in sync.
+
+**RBAC: the existing role model, extended, not replaced.** Migration 0020's
+`role` (`'user' | 'moderator' | 'admin'`) and `is_primary_admin` (a DB-level
+unique partial index — at most one row can ever hold it) are **unchanged**
+and still gate every pre-existing endpoint (the mobile-facing moderator
+queue, `/api/v1/admin/staff`) exactly as before. `is_primary_admin` is this
+spec's SUPER_ADMIN: it already means "can do everything, can never be
+removed" — reusing it rather than inventing a parallel super-admin concept
+was a deliberate "extend, don't rebuild" call. On top of that, migration
+0021 adds `admin_permissions(user_id, permission, granted_by, granted_at)`
+— a granular grant table for the *new* console's finer-grained checks:
+`reports.read/review`, `content.remove/restore`, `users.view/restrict/suspend`,
+`moderation.history.read`, `ads.create/edit/review/pause/analytics.read`,
+`admins.read/create/update/disable`, `audit.read` (the full closed list is
+`modules/admin/permissions.ts`). `permissions.service.ts`'s
+`requirePermission(viewerId, permission)` is the one gate every new route
+calls: not an admin → 403; `is_primary_admin` → bypasses everything
+(implicit, never a row in `admin_permissions`); plain admin → needs an
+explicit granted row for that exact permission. `requireSuperAdmin` gates
+the handful of things only the one true super admin can do: granting/
+revoking permissions themselves, listing the admin roster with its
+permission matrix, flipping feature flags, and editing ad frequency-cap
+settings — an admin can never grant themselves (or anyone) a permission,
+change their own role, or touch these, structurally, not just by
+convention. `admins.create`/`admins.disable` themselves *are* grantable
+regular permissions (an admin with `admins.create` can promote another
+user to admin, same as the existing "any admin can create another admin"
+rule) — every such action still blocks the actor from targeting their own
+account, and can never touch `is_primary_admin`.
+
+**ADMIN_CONSOLE_ENABLED** (migration 0024, defaults **on** — this whole
+surface has zero effect on the consumer app either way) gates every one
+of these new, permission-checked routes: `permissions.service.ts`'s
+`requirePermission`/`requireSuperAdmin` both check it first and 404 the
+whole console off if it's disabled. The **legacy** `requireModerator`/
+`requireAdmin` in `moderation.service.ts` never call it — the existing
+mobile-facing moderation queue is completely unaffected by this flag,
+verified by its own test (`test/admin-console.test.ts`).
+
+**Moderation, extended with a real undo and a real audit trail.**
+`moderation_status` (migration 0022, on `stories`/`story_comments`) sits
+*alongside* the `deleted_at` every existing visibility check already
+uses (unchanged) — a moderator's removal still hides content exactly like
+before, but now also records *who*, *when*, *why*, and — unlike an
+owner's own deletion — is specifically restorable
+(`POST /api/v1/admin/console/content/:type/:id/restore`, which only ever
+un-deletes a row this exact mechanism removed; an owner's own delete is
+untouched and can never be resurrected by a moderator). `account_status`
+(migration 0023) adds a genuinely lighter **RESTRICTED** state alongside
+the existing, already-tested `is_active`/suspension mechanism (unchanged):
+restricted blocks only three specific actions — publishing a Story,
+posting a comment, starting a *new* DM conversation (an existing
+conversation keeps working) — checked at exactly those three call sites,
+never at login/refresh, so a restricted user keeps browsing normally.
+Every one of these actions (remove/restore/restrict/unrestrict, plus
+report dismissal) writes a `moderation_actions` row (migration 0021,
+`GET /api/v1/admin/console/moderation-history`) *and* an `audit_logs` row
+— the latter is genuinely append-only: no repository function in this
+codebase issues `UPDATE`/`DELETE` against it, and no route ever will;
+admins can view it (`audit.read`) but never erase it. Report resolution
+(`resolveReport`) is now optimistic-locked — the status UPDATE requires
+`status = 'pending'` in its own WHERE clause and reports zero rows
+affected as a 409, not a silent double-action, if two moderators race to
+resolve the same report.
+
+## Sponsored Story ads: a real, admin-managed system
+
+Migration 0025 adds `advertisers`, `ad_campaigns`, `ad_creatives`,
+`ad_events`, `ad_hidden`, `ad_settings` — deliberately **not**
+over-engineered: no `ad_sets`/`ad_accounts`/`ad_targeting`/`ad_delivery`
+tables. Every delivery signal (impression/click/hide/report/
+why-this-ad-open) folds into one `ad_events` table with a closed
+`event_type` union, mirroring `recommendation_events`' (0007) own "one
+events table" convention. Campaigns are admin-managed only in V1 — there
+is no advertiser self-service login — but `advertiser_id` is a real FK
+column from day one, so that isn't precluded later.
+
+**Campaign state machine**: `draft → pending_review → approved/rejected →
+active ⇄ paused → completed`, gated by `ads.create`/`ads.edit`/
+`ads.review`/`ads.pause` respectively (`modules/ads/ads.service.ts`).
+Every transition is the same optimistic-locked, single-statement,
+WHERE-guarded UPDATE the report-resolution race fix above uses — two
+admins racing to approve/pause the same campaign can't both "win"; the
+loser gets a 409 naming the campaign's actual current status.
+
+**Creatives reuse the existing media pipeline exactly** — an admin uploads
+an image/video through the same `POST /api/v1/media/{photos,videos}`
+endpoint the consumer app uses (real magic-byte/dimension validation, no
+separate uploader), then references that `mediaId` when adding a creative.
+A creative's CTA URL is validated as a real, safe `http(s)://` absolute
+URL (`ads/dto.ts`'s `assertSafeCtaUrl`) — `javascript:`/`data:`/anything
+else is rejected outright, not sanitized-and-allowed.
+
+**Targeting is real but honestly limited**: `ad_campaigns` stores broad,
+non-sensitive fields only — country/language/age-range/interest tags —
+and the schema **structurally forbids** what the spec explicitly rules
+out (religion, health, sexual orientation, political affiliation: there
+are no columns for them, and nothing here infers them). What's disclosed,
+not silently glossed over: this backend collects **no per-user country/
+language/age/interest data anywhere**, so V1 delivery eligibility checks
+status/flight-window/not-hidden-by-this-viewer only — every stored
+targeting field is honestly surfaced to the viewer via "Why am I seeing
+this ad?" (`GET /api/v1/ads/:campaignId/why-this-ad`, verbatim from the
+campaign's own stored fields, nothing fabricated), but doesn't yet narrow
+*who* actually receives a campaign. Wiring real targeting in later is
+additive (a WHERE clause added to `listActiveDeliverableCampaigns`), not a
+redesign — it's blocked on collecting that profile data at all, a
+separate, privacy-sensitive decision this pass didn't make unasked.
+
+**Feed insertion is fully isolated from organic ranking** — the actual
+guarantee spec section 28 asks for, not just a comment promising it.
+`recommendation.service.ts`'s `getRankedHomeFeed` computes the entire
+organic ranking exactly as before, then — only as a final step —
+`ads/ads.service.ts`'s `selectSponsoredSlots` (which never reads a score
+or an engagement event) is interleaved between already-fully-ranked
+organic entries at a spacing derived from `ad_settings`
+(`min_organic_between_ads`, `max_ads_per_session` — server-configurable
+via `GET/POST /api/v1/admin/console/ads/settings`, super-admin-only,
+never hard-coded). Every entry in the feed array now carries a `kind:
+"organic" | "sponsored"` discriminant (additive — an existing consumer
+reading only `kind: "organic"` entries sees identical data to before).
+With `ADS_ENABLED` or `SPONSORED_STORIES_ENABLED` off (both default off),
+`selectSponsoredSlots` returns `[]` and the feed is **exactly** what it
+was before this module existed — verified by
+`test/ads.test.ts`'s "with ads disabled, the Home feed is exactly what it
+would be with no ads module at all" test.
+
+**Real, non-fabricated analytics**: `GET /api/v1/admin/console/ads/campaigns/:id/analytics`
+returns `COUNT(*) ... GROUP BY event_type` over real `ad_events` rows —
+never a placeholder number. Hiding an ad (`POST /api/v1/ads/events` with
+`eventType: "hide"`) writes to `ad_hidden`, a real per-viewer exclusion
+state (not just a log entry) that `selectSponsoredSlots` checks — a
+hidden campaign never reappears for that viewer, verified live.
+
+**Feature flags** (`ADMIN_CONSOLE_ENABLED`, `ADS_ENABLED`,
+`SPONSORED_STORIES_ENABLED`, `AD_REPORTING_ENABLED` — migration 0024) are
+real DB rows read fresh on every gated request (`feature-flags/flags.repository.ts`),
+editable only by the super admin through the console — flipping one takes
+effect on the very next request, no cache, no redeploy.
+
+**Verified live, not just unit-tested**: the full loop — admin login →
+create advertiser/campaign → upload a real creative → submit → approve →
+activate → a viewer's Home feed actually receiving the sponsored slide →
+impression/click events recorded → hide → the campaign never reappearing
+for that viewer — was smoke-tested end to end against a real running
+server and a real Postgres instance during this pass, which is how two
+real bugs were caught and fixed before they ever reached a test file: (1)
+`ads.repository.ts`'s `createCreative`/`recordEvent` were passing
+camelCase parameter objects straight into psql placeholders expecting
+snake_case names, silently leaving several `:'name'` placeholders
+unsubstituted (a real SQL syntax error, not a validation failure); (2)
+`scripts/reset-test-db.ts`'s `TRUNCATE users CASCADE` was also wiping
+`feature_flags`/`ad_settings` (both FK to `users.updated_by`), silently
+deleting their seeded default rows on every test run — fixed by reseeding
+both right after the truncate.
+
+**Test isolation note**: `npm test` now runs with `--test-concurrency=1`.
+This suite's tests all share one Postgres test database, and this pass
+added the first tests that mutate genuinely *global* singleton rows
+(`feature_flags`, `ad_settings`) mid-test — under the previous default
+concurrency, a concurrent file's `GET /api/v1/stories/feed/home` could
+observe a stray sponsored entry (or a mid-flight `ADMIN_CONSOLE_ENABLED`
+toggle) it never expected. Serializing the suite trades some wall-clock
+time for eliminating that entire class of flake.
+
+Tests: `test/admin-console.test.ts` (permission gating success/denial for
+every new action, self-target blocks on admin management endpoints,
+restrict-blocks-publish-but-not-browsing, remove/restore including "never
+resurrects an owner's own deletion," moderation history gating,
+ADMIN_CONSOLE_ENABLED on/off, legacy queue unaffected) and
+`test/ads.test.ts` (permission gating, unsafe-CTA-URL rejection, the full
+state machine including out-of-order-transition rejection, real analytics
+counts, cross-campaign event rejection, hide-stops-reselection, and
+ads-disabled-feed-is-identical).
+
+**What's explicitly not built, disclosed rather than glossed over**: no
+advertiser self-service portal (admin-managed only, as scoped); no real
+delivery targeting against user attributes (collecting that data wasn't
+asked for and raises its own privacy questions); no billing/budget
+enforcement beyond storing `daily_budget_cents` (nothing reads or acts on
+it yet); no rate limiting specific to the new admin-console/ads endpoints
+beyond the existing global limiter; cross-statement DB transactions
+aren't available in this `psql`-CLI architecture (each `query()` call is
+its own process), so "transactional" here means single-statement
+optimistic locking, not a multi-statement `BEGIN`/`COMMIT` — the same
+documented tradeoff this backend has accepted everywhere else.

@@ -1077,6 +1077,19 @@ additionally sees "Manage staff."
 new moderator/admin calls were added to that same file rather than a
 duplicate one, since they're the same backend module.
 
+**A later pass added a genuinely separate web Admin Console** (see
+backend/README.md's "Admin Console: a separate, permission-gated web
+surface") reachable at `/admin` in a browser — **not** inside this app,
+and this app's bottom navigation is still exactly the same 6 tabs it's
+always been (Home/Search/+/Activity/DM/Profile). `ModerationQueueScreen.tsx`
+and `AdminStaffScreen.tsx` above are unchanged and still work exactly as
+described — they're the coarse, role-only-gated mobile path, kept
+deliberately simple. The web console is the fuller, granular-permission-gated
+surface (content restore, account restriction, moderation history, audit
+log, ads management) — a moderator/admin using this app never needs it for
+day-to-day report handling, but an admin managing other admins' specific
+permissions, or reviewing ad campaigns, uses the web console instead.
+
 ### Edit-in-place for location and date/time content
 
 Double-tap-to-re-edit (spec section 20) was explicitly a text-only
@@ -1090,6 +1103,77 @@ instead of `onAdd`. Reachable two ways, matching the text pattern exactly:
 double-tapping the object directly, or "Edit Location"/"Edit Date/Time" in
 OverlayAdjustSheet — so it's available through the accessible,
 non-gesture path too, not just the double-tap gesture.
+
+## Sponsored Stories inside Home
+
+A later pass wired real Sponsored Stories into the Home feed itself —
+never a new tab, never a separate screen. The backend now interleaves
+sponsored entries into `GET /api/v1/stories/feed/home`'s response array at
+server-decided positions (see backend/README.md's "Sponsored Story ads"
+section for the full backend side); this is the mobile side of that same
+feature.
+
+**`StoryFeed.tsx`'s existing gesture recognizer — the entire hand-rolled
+tap-left/right, double-tap-to-like, hold-to-pause, swipe-up/down
+`PanResponder` — is completely untouched.** A Sponsored Story never
+reaches it: `StoryFeed` gained one new optional prop, `sponsoredAfter?:
+Record<number, SponsoredHomeFeedEntry>` (keyed by "which creatorIndex
+this slide follows"), and one new bit of state, `pendingSponsoredKey`.
+`goNextCreator` checks that map *before* actually advancing the creator
+index; if there's an unshown slide there, it renders
+**`SponsoredStorySlide.tsx`** instead — a genuinely separate component,
+with its own small, separate `PanResponder` (swipe up/down only — there's
+no rail of Stories within one ad to tap through, no like/comment on an
+ad). Swiping past it calls back into `StoryFeed` to actually advance the
+creator index; swiping back just clears the pending state and returns to
+whichever creator was already current. `HomeScreen.tsx` is the only
+caller that ever passes `sponsoredAfter` — `StoryViewerScreen.tsx` and
+`ArchivedStoryViewerScreen.tsx` (a single creator's Stories opened from a
+profile/notification/DM) never do, so ads only ever appear in Home,
+matching the spec.
+
+**"No ads = normal Home" holds by construction, not by a runtime check**:
+with the backend's `ADS_ENABLED`/`SPONSORED_STORIES_ENABLED` flags off
+(both default off), the feed array never contains a `kind: "sponsored"`
+entry, so `HomeScreen.tsx`'s `sponsoredAfter` map is always `{}`, so
+every `sponsoredAfter?.[creatorIndex]` lookup in `StoryFeed.tsx` is always
+`undefined`, so `pendingSponsoredKey` is never set, so the new render
+branch is dead code at runtime — the exact same code path that ran before
+this feature existed runs today, unchanged.
+
+**`SponsoredStorySlide.tsx`** — full-screen, clearly labeled "Sponsored"
+(top-left badge, spec's explicit labeling requirement), reuses the exact
+same media pipeline as an organic Story (`getMedia`/`mediaFileUrl` —
+photo or video, autoplay, a photo has the same 5-second progress-bar
+auto-advance as an organic Story). Its own "•••" menu is genuinely
+separate from `StoryMoreMenu.tsx`'s "Not Interested" (which excludes a
+*creator* from recommendations — meaningless for an ad) and offers **Hide
+Ad** (records a real `hide` event and the campaign never reappears for
+that viewer — server-enforced via `ad_hidden`, not a client-only flag),
+**Report Ad** (a real `report` event, counted in that campaign's real
+analytics the admin console shows), and **Why am I seeing this?** (opens
+a real disclosure sheet reading the campaign's own stored, non-sensitive
+targeting fields via `GET /api/v1/ads/:campaignId/why-this-ad` — honestly
+says "reaching a general audience" when a campaign has no specific
+targeting set, rather than inventing a reason). The CTA button opens
+`ctaUrl` via `Linking.openURL` and fires a real `click` event first — the
+backend already validated that URL is a safe `http(s)://` absolute URL at
+creative-creation time, never `javascript:`/`data:`/anything else.
+
+**Graceful failure, not a blank screen or a spinner**: `getMedia` failing
+falls back to treating the creative as a photo rather than showing
+nothing; `getWhyThisAd` failing just doesn't open the sheet (no crash);
+every `recordAdEvent` call is fire-and-forget, exactly like the existing
+`recordEvent` analytics calls elsewhere in this app — a dropped ad event
+never blocks or breaks viewing.
+
+**What this pass didn't (and, per spec, shouldn't) do**: no ad SDK, no
+third-party ad network — every ad shown comes from this backend's own
+admin-managed campaigns, exactly as scoped. No client-side frequency-cap
+logic at all — spacing and the max-ads-per-load cap are entirely
+server-decided (`ad_settings`, editable only by the super admin through
+the web console), so this app never needs to know or reason about the
+cap; it just renders whatever positions the backend already chose.
 
 ## Icon set pass
 
