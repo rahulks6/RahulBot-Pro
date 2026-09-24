@@ -1,0 +1,1259 @@
+# KATKEE mobile — Phase 1 through Phase 12
+
+Real, hand-written TypeScript source for the design system, navigation shell,
+authentication, search/follow, camera capture + the Story editor, publishing
+and viewing Stories, the full gesture set plus likes/comments/sharing, real
+analytics-event emission feeding the backend's recommendation system, a real
+Activity tab backed by the backend's notifications, a real DM inbox and
+conversation thread (including sharing a Story into a conversation), real
+Highlights — create/edit/view, picked from a real Archive of every Story
+you've ever published — a real Report flow (Story, comment, and
+account) feeding the backend's moderation queue, and now everything
+needed to actually ship this to the App Store and Play Store — real
+account deletion, an environment config that points at a real deployed
+backend instead of `localhost`, a crash boundary, and a hook for real
+crash reporting — wired to the actual backend API (`../backend`) — not
+generated boilerplate. It has **not** been built or run in this session;
+see the limitation below before trusting it further, and see "Phase 3
+specifically" for why that phase carries more risk than 1-2 (Phases 4-10
+inherit the same camera/gesture risk, plus their own new ones — see each
+phase's own "specifically" section). A best-effort `tsc` pass (no real
+library types installed — see below) ran clean against every file
+touched through Phase 12 (Phase 11 — the backend's production hardening —
+needed no mobile changes at all; see "Phase 11 specifically" below for
+why), for what that's worth given its limits. See `../DEPLOYMENT.md` for
+the actual build-and-submit runbook and `../STORE_LISTING.md` for what
+both stores require in the listing itself.
+
+## What exists here
+
+- **Phase 13 (spec realignment):** a pass against the full 123-section
+  KATKEE master spec found real daylight between it and what Phases 1-12
+  had built, and closed the highest-impact gaps:
+  - `src/screens/story/StoryFeed.tsx` — the gesture/engagement core
+    extracted from `StoryViewerScreen.tsx` so **Home can be the Story feed
+    itself** (spec sections 4-6: zero-tap, full-screen, auto-advancing —
+    not a tray you tap into, which is what Phase 6 actually shipped).
+    `HomeScreen.tsx` now renders it directly; `StoryViewerScreen.tsx` is a
+    thin wrapper used when a specific creator's Stories are opened from
+    somewhere with a real "back" (a profile, a notification, a DM share).
+    Reaching either edge of Home's feed shows a "you're all caught up" end
+    state instead of navigating away, since Home has nowhere to go back to.
+  - A Story's view count is now visible to **any** viewer who can watch it
+    (previously owner-only), while who's actually behind that number stays
+    a strictly owner-only `GET /api/v1/stories/:id/viewers` door —
+    `src/components/StoryInsightsSheet.tsx`, opened by tapping the count on
+    your own Story. Backend: `stories.repository.ts`'s new `listViewers`,
+    `stories.service.ts`'s relaxed `getViewCount` + new `getStoryViewers`,
+    both covered by new tests in `test/stories.test.ts`.
+  - `src/components/HighlightsRow.tsx` rebuilt as an exactly-3-per-row grid
+    of rectangular/portrait cards — spec section 62 explicitly rules out
+    the circular Instagram-style bubbles this rendered as before.
+    `ProfileScreen.tsx`/`UserProfileScreen.tsx` are now `ScrollView`s so a
+    multi-row grid can't overflow off-screen.
+  - `src/screens/profile/ArchiveScreen.tsx` (new) — a dedicated, private,
+    month-grouped, multi-select grid over every Story you've ever
+    published (`GET /api/v1/stories/mine/archive`, previously only fed the
+    Highlight-creation picker). Multi-select feeds straight into creating
+    a Highlight (`HighlightEditorScreen.tsx` gained an `initialStoryIds`
+    preselect param) or bulk-deleting. Reached from a new **Archive** link
+    on your own `ProfileScreen.tsx`.
+  - `src/screens/activity/ActivityScreen.tsx` now groups consecutive
+    `like` notifications for the same Story into one row ("Rahul, Priya
+    and 12 others liked your Story" — spec's own example), instead of one
+    row per like. Every other notification type is unaffected.
+  - `LoginScreen.tsx`'s wordmark now matches the real brand logo — mixed
+    case ("Kat" off-white + "kee" amber), not all-caps solid amber — and
+    its subtitle is the real tagline ("Story that connects."), not a
+    placeholder. `src/theme/colors.ts`'s `background`/`textPrimary`/`accent`
+    are now **pixel-exact**, decoded from the actual logo file with a
+    ~100-line pure-Python PNG parser (stdlib `zlib` only — no PIL, no
+    ImageMagick, neither installable here), not eyeballed — every other
+    near-black token shifted by the same delta so the whole scale carries
+    the logo's real navy tint consistently. See `../BRAND.md` for the
+    full extraction, exact pixel percentages, and the complete token
+    table this reads from.
+  - `ConversationScreen.tsx` now has real per-message delivery states
+    (spec: Sending/Sent/Delivered/Read/Failed), shown as a caption under
+    the single most recent message you sent (same convention as iMessage/
+    WhatsApp), not on every message. Sending/Failed are purely client-
+    local — an outgoing message is optimistically echoed into the thread
+    immediately, tappable to retry if the send fails. Sent/Delivered/Read
+    come from the backend's new per-message `status`, computed from a real
+    `last_delivered_at` watermark (bumped whenever a participant's client
+    actually fetches messages — the honest "delivered" signal available
+    with no push/WebSocket channel) alongside the existing `last_read_at`.
+    See `backend/README.md`'s Phase 13 section for the full mechanism.
+  - `src/components/DraggableGrid.tsx` (new) — long-press-and-drag
+    reordering, hand-rolled with `PanResponder` (no drag library
+    installed). Closes the last major spec gap from this pass: Highlights
+    can now be reordered (`HighlightsRow.tsx`, backed by a new
+    `POST /api/v1/highlights/reorder` + `highlights.position` column —
+    see `backend/README.md`'s Phase 13 section), and so can a Highlight's
+    own contents (`HighlightEditorScreen.tsx`'s new "selected, in order"
+    strip, persisted through the existing `updateHighlight` storyIds
+    order — no new endpoint needed there). See "Phase 13 specifically"
+    below for a real tradeoff this technique has with a scrolling parent.
+  - **Story Insights, the deeper piece** (completion %, following-vs-
+    discovery split, profile-visit rate) — the last remaining gap from
+    this pass. `StoryInsightsSheet.tsx` (renamed from `StoryViewersSheet.tsx`,
+    which it supersedes) now shows real stats above the viewer list:
+    `GET /api/v1/stories/:id/insights` (owner-only, same door as the
+    viewer list). A new `src/screens/profile/SequenceInsightsScreen.tsx`,
+    reached from a new **Insights** link on your own `ProfileScreen.tsx`,
+    shows the same stats aggregated across every Story you currently have
+    active ("per-sequence Insights", spec) via
+    `GET /api/v1/stories/mine/sequence-insights`. Every number here is
+    real, computed from events this backend already records — see
+    `backend/README.md`'s Phase 13 section for exactly what each rate
+    means and the one honestly-disclosed approximation it makes
+    (following-vs-discovery reflects a viewer's *current* follow
+    relationship, not necessarily what it was at view time — this schema
+    has no historical snapshot of that).
+  - **Every real gap identified in the original spec pass is now closed.**
+    The one remaining item, `ArchiveScreen.tsx`'s missing full-screen
+    viewer for an individual expired Story, is done: a new
+    `src/screens/profile/ArchivedStoryViewerScreen.tsx` (view-only, no
+    like/comment/next — same philosophy as `HighlightViewerScreen.tsx`)
+    plays back any of your own Archive Stories regardless of expiry. No
+    backend change was needed — an owner already bypasses the normal 24h
+    check for their own content, both for the Story detail fetch and the
+    media file itself (see `media.routes.ts`'s `requireAccessibleMedia`).
+    `ArchiveScreen.tsx`'s grid now distinguishes a plain tap (opens the
+    viewer) from a long-press, or a tap while already mid-selection
+    (toggles selection) — the Photos-app convention, not a new gesture
+    library.
+- `src/theme/` — the Katkee design system tokens: near-black background,
+  off-white text, one amber/yellow accent (`colors.accent`) used for the
+  Story ring, primary CTA, Follow, Create, and unread badges. No
+  Instagram-style pink/purple gradients anywhere.
+- `src/navigation/` — the exact 6-item bottom nav (`HOME | SEARCH | + |
+  ACTIVITY | DM | PROFILE`) with a custom tab bar (`BottomTabBar.tsx`) that
+  renders Create as a raised amber circle, not a 7th equal tab. No Discover
+  tab.
+- `src/state/AuthContext.tsx` + `src/api/` — real signup/login/logout/token
+  refresh wired to the backend's actual endpoints and response shapes
+  (kept in lockstep with `backend/src/modules/auth/*` — see the comment at
+  the top of `src/api/client.ts`), with token persistence via AsyncStorage
+  and automatic refresh-on-expiry.
+- `src/screens/` — Login, Signup, Search, and the tapped-through user
+  profile (follow/unfollow, including the "Requested" state for private
+  accounts) are real, functional, wired to the Phase 2 backend endpoints.
+  Home, Create (camera + editor), Activity, and DM are now all real too
+  (see below) — the Profile tab shows the real authenticated user fetched
+  from `/api/v1/auth/me`.
+- `src/navigation/SearchStack.tsx` — the Search tab is its own stack
+  (`SearchHome` → `UserProfile`) so tapping a result actually opens that
+  person's profile (spec section 30), rather than everything living flush
+  in the tab bar.
+- `src/screens/create/CameraScreen.tsx` — full-screen capture against
+  `react-native-vision-camera`: tap for a photo, press-and-hold for video
+  (with a timer badge and a 60s cap), flip, flash, timer delay, pinch to
+  zoom, tap to focus, double-tap to flip, and gallery import via
+  `react-native-image-picker`.
+- `src/screens/create/StoryEditorScreen.tsx` + `src/components/
+  DraggableTextOverlay.tsx` — movable/pinch-resizable/two-finger-rotatable
+  text overlays (hand-rolled multitouch on React Native's core
+  `PanResponder`, reading `nativeEvent.touches` directly — no gesture
+  library needed for this part), drag-to-trash delete, discard-protection
+  on close, and a filter strip. Uploads the finished photo/video to the
+  real `POST /api/v1/media/photos|videos` endpoints from Phase 3's
+  backend work.
+- `src/models/storyDraft.ts` — the `StoryDraft`/`Overlay` shapes from spec
+  section 26, so a real renderer (later) can consume exactly what the
+  editor already produces.
+- `src/screens/create/StoryEditorScreen.tsx` now actually **publishes**:
+  a caption field and a Public/Followers audience picker, then "Share
+  Story" uploads the media and calls the real `POST /api/v1/stories`
+  from Phase 4's backend work, landing back on Home.
+- `src/screens/story/StoryViewerScreen.tsx` — the full-screen Story viewer
+  (spec section 4), now with the complete gesture set: tap right/left move
+  within a creator's Stories (crossing to the next creator once you tap
+  past their last Story, per spec), swipe up/down move between creators
+  outright, hold pauses (a real `Animated.timing`-driven progress bar per
+  segment), and double-tap ensures a like — never unlikes, and single-tap
+  navigation is deliberately delayed behind the double-tap window so a
+  double-tap is never misread as two single taps first. Each view is
+  recorded through `POST /api/v1/stories/:id/view`, and the resulting
+  count is shown live (visible to any authorized viewer, not just the
+  owner) — who's actually behind that number is a separate, strictly
+  owner-only door (`GET /api/v1/stories/:id/viewers`, surfaced as a tap
+  target only on your own Story). The gesture set and engagement rail
+  live in `src/screens/story/StoryFeed.tsx`, shared by two callers: this
+  screen (reached from a Story ring on your own or another user's
+  profile, a notification, or a DM share — each has a real "back" to
+  return to) and Home itself.
+- `src/screens/home/HomeScreen.tsx` — Home *is* the Story feed (spec
+  sections 4-6): it fetches `GET /api/v1/stories/feed/home` (Phase 6's
+  ranked endpoint — followed creators plus real discovery, not just the
+  follow graph) and renders `StoryFeed` directly, full-screen and
+  auto-advancing from the moment Home opens — zero taps needed, not a
+  tray you tap into. Swiping/tapping past the last creator shows a
+  "you're all caught up" end state instead of navigating away, since
+  Home has nowhere to go back to.
+- `RootNavigator.tsx` wraps the tab navigator in a root-level stack so
+  `StoryViewer` is reachable from any tab (Profile, Search, Home) without
+  each tab's own stack needing to know about it.
+- `src/components/CommentsSheet.tsx` — a bottom-sheet Modal (no
+  bottom-sheet library installed) with real pagination, posting, and
+  delete (your own comment, or any comment if you own the Story — spec
+  section 14's moderation allowance), wired to the Phase 5 backend.
+- `src/components/ShareSheet.tsx` — native OS share via React Native's
+  built-in `Share` API, plus "Copy link" gated to public Stories only (spec
+  section 15: "Sharing must NEVER bypass Story privacy") — see "Phase 5
+  specifically" for what the copied link actually is.
+- `src/components/StoryMoreMenu.tsx` — View Insights (real view count) and
+  Delete for your own Story; Not Interested (Phase 6 — actually excludes
+  that creator from your `feed/home`, not just a UI acknowledgment),
+  Mute, and Block for someone else's. "Report" is still left out — it
+  needs a moderation queue that doesn't exist (Phase 11).
+- The right-side action rail (Heart with live count, Comment with live
+  count, Share, More) on the Story viewer is real, not decorative — spec
+  section 5.
+- `src/api/events.ts` + real emission throughout `StoryViewerScreen.tsx`:
+  `creator_impression`/`creator_sequence_started` on arriving at a
+  creator, `story_impression` per Story shown, `watch_duration` +
+  `qualified_view` (≥2s, per spec section 13) computed from real elapsed
+  time on leaving a Story, `story_complete` only on a natural
+  progress-bar finish (vs. `story_next`/`story_previous` for a tap and
+  `creator_swipe_next`/`creator_swipe_previous` for a swipe — genuinely
+  distinguished, not the same event relabeled), `creator_sequence_
+  continued`/`creator_sequence_completed`, `quick_creator_skip` (spec
+  section 8's negative signal — leaving a creator within 1.5s of
+  arriving), and `comment_open`. `profile_visit` needs no client
+  emission at all — the backend records it server-side, more reliably
+  than trusting the client (see `backend/README.md`).
+- `src/screens/activity/ActivityScreen.tsx` — a real notification list
+  (spec section 31) fetched from the Phase 7 backend, grouped into
+  Today/Earlier sections, with a Katkee-amber unread dot per row, pull to
+  refresh, and pagination (`onEndReached` loads the next page). Tapping a
+  like/comment notification opens that Story directly in the viewer (the
+  recipient of those two types is always the Story's owner, so the
+  viewer's own username is the correct `creators` entry — no extra lookup
+  needed); tapping a follow, follow_request, or mention notification opens
+  the actor's profile instead — see "Phase 7 specifically" for why mention
+  doesn't always open the Story itself. "Mark all read" appears whenever
+  the loaded page has an unread row.
+- `src/state/NotificationsContext.tsx` — shares the unread count between
+  `ActivityScreen` and a new amber badge on the Activity tab icon in
+  `BottomTabBar.tsx`, polling `GET /api/v1/notifications/unread-count`
+  every 20s while signed in (there's no push/websocket channel available
+  in this sandbox — see `backend/README.md`).
+- `src/navigation/types.ts` — `MainTabParamList`'s `Search` entry is now
+  typed with `NavigatorScreenParams<SearchStackParamList>` so a sibling tab
+  (Activity) can deep-link into Search's nested `UserProfile` screen via
+  `navigation.navigate("Search", { screen: "UserProfile", params: {...} })`
+  — the standard React Navigation pattern for reaching a screen nested
+  inside a different tab than the one you're navigating from.
+- `src/navigation/DMStack.tsx` — the DM tab is now its own stack
+  (`DMInbox` → `Conversation` / `SendStory`), the same pattern as
+  `SearchStack.tsx`.
+- `src/screens/dm/DMInboxScreen.tsx` — a real conversation list fetched
+  from the Phase 8 backend: other participant, a last-message preview
+  ("You: " prefix for your own, "Shared a Story" for a story-only
+  message), and an unread dot, pull-to-refresh, tap to open the thread.
+- `src/screens/dm/ConversationScreen.tsx` — a real message thread: an
+  `inverted` `FlatList` kept in the backend's own newest-first order (so
+  "load older" is just `onEndReached` on the same list, no reversing),
+  a composer that actually posts via `POST
+  /api/v1/conversations/:id/messages`, mark-read on focus, and a 4s poll
+  for new messages while the screen is open (see "Phase 8 specifically").
+  A shared-Story bubble resolves its real owner via the new
+  `GET /api/v1/stories/:id/owner` and opens it in `StoryViewer`,
+  falling back to doing nothing if the Story's no longer accessible.
+- `src/screens/dm/SendStoryScreen.tsx` — the "Send to a Katkee user" leg
+  of the Share sheet: search for someone, tap to open (or reuse) the
+  conversation with them and send the Story as a message. Reached from
+  `ShareSheet.tsx` via a root → `Main` → `DM` → `SendStory` deep link
+  (`StoryViewerScreen.tsx` holds the root-level navigation object;
+  `ShareSheet` itself stays navigation-agnostic via an `onSendToUser`
+  callback prop, the same pattern as its existing `onClose`).
+- `src/state/DMContext.tsx` — mirrors `NotificationsContext.tsx` exactly:
+  shares the DM tab's own unread count (independent of Activity's) with a
+  matching amber badge on the DM tab icon, polling
+  `GET /api/v1/conversations/unread-count` every 20s.
+- `src/api/stories.ts`'s `getStoryOwnerUsername()` — the Phase 8 backend
+  addition (`GET /api/v1/stories/:id/owner`) used by both the DM
+  shared-Story bubble and, retroactively, `ActivityScreen.tsx`'s mention
+  notifications (see "Phase 7 specifically" above).
+- `src/components/HighlightsRow.tsx` — the row of Highlight bubbles under
+  a profile's bio (spec section 35), rendered on both `ProfileScreen.tsx`
+  (your own, with a leading "+ New" bubble) and `UserProfileScreen.tsx`
+  (theirs, gated the same way the backend gates it — a private account's
+  Highlights just don't load for a non-follower). A bubble's cover is a
+  real thumbnail (`Image` with an `Authorization` header, the same
+  pattern `StoryViewerScreen.tsx` already used), not a placeholder.
+- `src/screens/highlight/HighlightEditorScreen.tsx` — create (no
+  `highlightId`) or edit (rename/replace items/delete) a Highlight: a
+  title field and a tap-to-select grid built from
+  `GET /api/v1/stories/mine/archive` — every Story you've ever published,
+  expired or not, which is the entire reason an Archive listing exists
+  now (see backend/README.md's Phase 9 section). Selection order becomes
+  the Highlight's item order, shown as a numbered badge per selected
+  thumbnail.
+- `src/screens/highlight/HighlightViewerScreen.tsx` — sequential,
+  view-only playback of a Highlight's items, real media and a real
+  per-item progress bar, reached by tapping a bubble. Deliberately its
+  own, simpler screen rather than a mode on `StoryViewerScreen.tsx` — see
+  "Phase 9 specifically" for why.
+- `UserProfileScreen.tsx` also gained a real **Message** button next to
+  Follow, now that DMs exist (Phase 8) — it opens or reuses the 1:1
+  conversation with that user and navigates straight into it.
+- `src/components/ReportSheet.tsx` — a shared reason-picker bottom sheet
+  (the 7 backend-defined reasons, an optional details field) for
+  reporting a Story, a comment, or a user account, posting a real
+  `POST /api/v1/reports` that lands in the Phase 10 backend's moderation
+  queue. React Native's built-in `Alert` can't reasonably list 7 options,
+  so this is a small Modal in the same style as `ShareSheet.tsx`, not a
+  new UI pattern.
+- `StoryMoreMenu.tsx` gained a real **Report** row for someone else's
+  Story (the placeholder note that used to be here — "needs a moderation
+  queue that doesn't exist" — is exactly what Phase 10 built).
+  `UserProfileScreen.tsx` gained a small **Report this account** link.
+  `CommentsSheet.tsx` gained a **Report** action per comment that isn't
+  your own, alongside the existing Delete.
+- `src/config/env.ts` — a real dev/production split for the backend URL,
+  selected automatically by React Native's own `__DEV__` global (true in
+  a Metro/debug build, false in a release build) — no extra native module
+  needed just to pick a URL. `api/client.ts`'s `API_BASE_URL` now reads
+  from this instead of a hardcoded `localhost:4000`. Set
+  `production.apiBaseUrl` to your real deployed backend's HTTPS domain
+  (see `../DEPLOYMENT.md`) before making a release build.
+- `src/components/ErrorBoundary.tsx` — a top-level crash boundary
+  (wraps everything in `App.tsx`, outside even `AuthProvider`) so an
+  unexpected render error shows a real, recoverable screen instead of a
+  blank one. Reports through `src/crashReporting.ts`, which is inert
+  (just `console.error`s) until you wire in a real service — that file's
+  own comment is the exact `npm install`/wizard sequence for Sentry, the
+  standard choice for React Native.
+- `src/components/DeleteAccountSheet.tsx` — real, password-confirmed,
+  in-app account deletion, reachable from `ProfileScreen.tsx`. This isn't
+  optional polish: App Store review guideline 5.1.1(v) requires an
+  in-app deletion path for any app that supports account creation, and a
+  submission is rejected outright without one. Calls the Phase 12 backend
+  endpoint through a new `AuthContext.deleteAccount()`, which clears
+  local tokens and returns to signed-out on success — the same ending
+  state as `logout()`, reached by a genuinely different, irreversible
+  action.
+
+### Phase 13 specifically
+
+- **"Delivered" means "the recipient's client actually fetched it," not
+  "pushed to their device."** There's no push/WebSocket channel in this
+  build (see `backend/README.md`'s own sandbox-limitation notes for the
+  same class of constraint elsewhere) — `ConversationScreen.tsx`'s 4s
+  poll while a thread is open is the real-time approximation, and
+  `Delivered` reflects a real fetch having happened, honestly scoped
+  rather than faked as true push delivery. `pollForNew` only refreshes
+  status on the most recent `PAGE_SIZE` (30) messages — a status caption
+  older than that won't progress past whatever it showed on last fetch,
+  which is fine in practice since a status caption only ever renders on
+  the single most recent message anyway.
+- **Drag-and-drop reordering no longer conflicts with a scrolling
+  ancestor — fixed, not just documented.** `src/components/DraggableGrid.tsx`
+  is a hand-rolled long-press-to-drag grid (`PanResponder`, no
+  `react-native-gesture-handler` — not installable here, same
+  npm-registry constraint as everywhere else in this project). Detecting
+  "held still, not moving, for 300ms" requires claiming the touch
+  responder at touch-*down*, before any movement exists to judge — there
+  was no way to defer that decision until motion happens without
+  gesture-handler's simultaneous-recognizer support, which is why this
+  used to just accept that a scroll starting on a Highlight card wouldn't
+  scroll the page. The actual fix: a new `draggable` prop (default
+  `true`) that, when `false`, never attaches a PanResponder to any item
+  at all — an ordinary `<Pressable>` instead, so an ancestor `ScrollView`
+  scrolls exactly as if the grid weren't there. `HighlightsRow.tsx` uses
+  this for a real **Reorder** toggle (visible only to the owner, only
+  when there's more than one Highlight): drag is off by default (the
+  profile page scrolls completely normally), and only turns on for the
+  window between tapping "Reorder" and "Done" — during which
+  `ProfileScreen.tsx`/`UserProfileScreen.tsx` also disable their own
+  `ScrollView`'s `scrollEnabled` via a new `onReorderModeChange` callback,
+  so there's nothing ambiguous for either gesture to fight over.
+  `HighlightEditorScreen.tsx`'s "selected, in order" strip isn't inside a
+  ScrollView at all, so it stays permanently draggable (the prop's
+  default) — no toggle needed there.
+- **Story Insights' "following vs. discovery" split is now a real
+  snapshot from view time, not a live lookup.** `story_views` gained a
+  real `was_following` column (migration `0014_story_view_follow_snapshot.sql`),
+  set once at the moment of a viewer's *first* view of a Story and never
+  touched again — so someone who viewed as a stranger and followed five
+  minutes later still correctly shows as discovery, not following (see
+  `backend/README.md`'s Phase 13 section, and a new backend test that
+  proves exactly this — follow after viewing, confirm the numbers didn't
+  move). "Profile visits" still reuses the existing creator-scoped
+  `profile_visit` event (a viewer counts if they ever visited your
+  profile, not provably *because of* this specific Story) — that one's a
+  real, disclosed approximation, not a bug to fix, since there's no
+  per-Story causal link for a profile visit to snapshot in the first
+  place. `SequenceInsightsScreen.tsx` still has no viewer-identity list
+  at all (only `StoryInsightsSheet.tsx`, per-Story, does) — an aggregate
+  cross-Story identity list is a genuinely separate feature this pass
+  doesn't add.
+
+### Phase 12 specifically
+
+- **No new native modules, no ios/android folders yet.** Everything
+  Phase 12 needed was achievable in plain TypeScript/React Native — see
+  `../DEPLOYMENT.md` for the real bootstrap step (`npx
+  @react-native-community/cli@latest init`) that finally creates those,
+  on your own machine, when you're ready to build for real.
+- **Crash reporting is a real integration point, not a real crash
+  reporter.** `crashReporting.ts` is inert until you actually run `npm
+  install @sentry/react-native` (or swap in Bugsnag/Crashlytics) — see
+  that file's own comment for the exact steps. Shipping a hardcoded
+  Sentry DSN (or any real credential) into this repo would be a real
+  security mistake, not a shortcut worth taking to look more "done."
+
+### Phase 11 specifically
+
+- **No new files, no new UI — and that's not a gap.** Phase 11 was the
+  backend's production hardening (rate limiting, structured logging, a
+  real DB-backed health check, startup config validation — see
+  backend/README.md's Phase 11 section). None of that needed a mobile
+  change because the error-handling plumbing built all the way back in
+  Phase 1 already does the right thing by construction: `api/client.ts`'s
+  `request()` already turns any non-2xx JSON response's `message` field
+  into an `ApiError`, and every screen that calls `login`/`signup`
+  already catches `ApiError` and shows `err.message` — so a 429 rate-limit
+  response (`{"error":"http_error","message":"Too many requests — try
+  again in 898s."}`) already surfaces to the user correctly, verified by
+  reading that code path rather than assumed. That's a real payoff of
+  having kept error shapes consistent across nine prior phases, not
+  something added for Phase 11 specifically.
+
+### Phase 10 specifically
+
+- ~~No mobile moderator queue~~ **Built in a later pass** —
+  `ModerationQueueScreen.tsx` (Settings > Moderation > Report queue, shown
+  to `role: "moderator"`/`"admin"` accounts) drives the backend's
+  `GET /api/v1/moderation/reports` and resolve/suspend endpoints for real:
+  tap a pending report to Dismiss, Remove Content, or Suspend the account,
+  same as the API always supported. See "Admin login and a real staff
+  hierarchy" below for the rest (who can grant that access, and why one
+  account can never lose it).
+- **Reporting doesn't visibly change what you see afterward.** Filing a
+  report shows a "thanks, we'll review this" confirmation and nothing
+  else — it doesn't hide the reported content, mute the account, or
+  otherwise change your own feed (that's what Block/Mute are for, and
+  they're unaffected by this). A report is a signal to moderators, not a
+  personal filter.
+
+### Phase 9 specifically
+
+- **Highlight playback is view-only — no like, comment, share, or view
+  recording.** `StoryViewerScreen.tsx`'s equivalents all go through the
+  *normal* per-Story endpoints (`getStoryDetail`, `recordStoryView`,
+  `likeStory`, …), every one of which enforces the 24h expiry a Highlight
+  exists specifically to outlive — reusing them here would have meant
+  threading an expiry-bypass through each one individually on the
+  backend. A Highlight is about persisting visibility, not full
+  interactive parity with a live Story, so this pass keeps
+  `HighlightViewerScreen.tsx` deliberately read-only; it's real, tested
+  playback, just a narrower feature than the live viewer.
+- ~~No drag-to-reorder in the editor~~ **Fixed in a later pass.** The
+  selected-items strip is a `DraggableGrid` (long-press and drag), the
+  same component the profile's own Highlights row reorder mode uses —
+  item order is a real drag handle now, not just tap order.
+- ~~The Archive picker loads one page with no "load more"~~ **Fixed in a
+  later pass.** `HighlightEditorScreen.tsx`'s Archive picker now paginates
+  the same way `ArchiveScreen.tsx` always did (`onEndReached`, a footer
+  spinner, `ARCHIVE_PAGE_SIZE` at a time) — a prolific account's older
+  Stories past the first page are reachable now.
+
+### Phase 8 specifically
+
+- **Messaging is polled, not pushed.** An open conversation polls every
+  4s for new messages (tighter than Activity/DM's 20s badge polling,
+  since the user is actively looking at the screen) — there's no
+  push/websocket channel in this sandbox (see backend/README.md). A real
+  chat product would want a persistent connection; this is the honest
+  approximation available here, not a stub.
+- **A "Shared a Story" bubble that's no longer accessible just does
+  nothing when tapped**, rather than showing an error — the owner-lookup
+  call fails the same way `getStoryForViewer` would for any expired,
+  deleted, or since-privacy-changed Story, and silently no-opping felt
+  better than surfacing a confusing error for something the recipient
+  has no way to act on anyway.
+- **Group DMs aren't here** — see backend/README.md for why the schema
+  itself is 1:1-only for this pass, not just the UI.
+- **No typing indicator, read receipts beyond the unread dot, or message
+  deletion/editing.** The spec's DM sections don't call for the first two
+  as hard requirements the way the core send/receive/share loop is, and
+  message deletion wasn't in this pass's scope — a real, testable slice
+  (send, receive, share a Story, know what's unread) over a wider shallow
+  one.
+
+### Phase 7 specifically
+
+- **A mention notification on a Story you don't own couldn't deep-link
+  straight to that Story — fixed in Phase 8.** For like/comment
+  notifications the recipient is always the Story's owner, so the
+  viewer's own username was always enough to reopen it. A mention's
+  recipient is just whoever got @-mentioned in a comment, though — the
+  Story underneath it could belong to anyone — and there was no
+  "look up a Story's owner by id" call. Phase 8 added one
+  (`GET /api/v1/stories/:id/owner`, needed for the DM shared-Story bubble
+  anyway) and wired it into `ActivityScreen.tsx`'s mention handler; it
+  falls back to opening the actor's profile only if that lookup itself
+  fails (e.g. the Story has since expired).
+- ~~There's no screen for managing incoming follow requests yet~~ **Fixed
+  in a later pass.** `FollowRequestsScreen.tsx` (reached from Settings >
+  Privacy > "Follow requests," with a live pending-count badge) lists
+  every incoming request and lets you accept or decline each one, backed
+  by the same `GET /api/v1/follow-requests` /
+  `POST /api/v1/follow-requests/:id/accept|decline` that had existed
+  since Phase 2 with no mobile screen against them. Tapping a
+  `follow_request` notification still just opens the requester's profile
+  rather than deep-linking into this screen — a smaller, cosmetic gap,
+  not the missing-feature one this note originally flagged.
+- **The unread badge is polled, not pushed**, per the
+  `NotificationsContext.tsx` note above — a 20s worst-case staleness
+  window, not a stub.
+
+### Phase 4 specifically
+
+- **Video duration for the progress bar comes from the player, not the
+  server.** The backend doesn't parse a video's real duration yet (see
+  `backend/README.md` — that needs `ffmpeg`, which the sandbox's network
+  policy refused), so the viewer waits for `react-native-video`'s own
+  `onLoad` to report the real duration before starting that segment's
+  progress bar, falling back to a 15s guess only if that never fires.
+- **Knowing whether a Story's media is a photo or video** now uses a real
+  `GET /api/v1/media/:id` metadata lookup (Phase 4 also opened that
+  endpoint up beyond owner-only — see `backend/README.md`) rather than
+  guessing from a file extension.
+
+### Phase 5 specifically
+
+- **The copied/shared link is real but inert.** `ShareSheet.tsx` builds a
+  `katkee://story/:id` deep link — correct scheme, correct id — but
+  Universal Links (iOS) / App Links (Android) aren't configured in the
+  (nonexistent) native projects, so tapping that link on a device won't
+  open the app yet. That native configuration is a real, separate step;
+  the link format itself isn't a placeholder.
+- **"Send to a Katkee user" isn't in the Share sheet.** Spec section 15
+  lists it alongside Copy Link and native share, but it needs a
+  conversation to send it into — DMs are Phase 8. Offering a picker that
+  saved to nothing would be fake functionality.
+- **"Not Interested" and "Report" aren't in the More menu.** The spec
+  lists them (section 16), but "Not Interested" is a recommendation
+  signal with no recommender to feed yet (Phase 6), and "Report" needs
+  a moderation queue that doesn't exist (Phase 11). Mute and Block —
+  the two items that already have a real backend — are there and work.
+- **Haptic feedback on like uses `Vibration.vibrate()`**, React Native's
+  built-in API, rather than a dedicated haptics package — this sandbox
+  can't install one, and a short vibration is a real (if blunter)
+  substitute for a haptic tick, not a stub.
+- **The hand-rolled tap/double-tap/hold/swipe recognizer in
+  `StoryViewerScreen.tsx`** is now doing more at once than Phase 4's
+  version (it also has to not mistake a double-tap-to-like for two
+  single taps) — worth deliberately testing on a real device before
+  trusting the timing values (`HOLD_DELAY_MS`, `DOUBLE_TAP_WINDOW_MS`,
+  `SWIPE_CLOSE_THRESHOLD`) feel right, not just that they compile.
+
+### Phase 3 specifically
+
+Two things are honestly scoped down rather than faked:
+
+- **Filters are preview-only.** `src/models/filterPreviews.ts` applies a
+  color-tint `View` over the live preview so the picker actually does
+  something on screen, but it does **not** bake the filter into the
+  exported file's pixels — spec section 23 ("filters must actually modify
+  media") needs either a native image-processing module or a server-side
+  pass, and the backend can't do that here either (see
+  `backend/README.md` — `apt-get install ffmpeg` was refused by the same
+  network policy that blocks npm). The chosen filter name is still saved
+  on the `StoryDraft`, so wiring up a real renderer later doesn't touch
+  the editor's UI or state.
+- **Stickers, drawing, mentions, and location are not in this pass.**
+  Spec sections 21/22/24/25 are real scope for the Story editor, but
+  given how much of this phase (camera + multitouch overlay gestures) is
+  already impossible to verify without a device, adding several more
+  unverified subsystems in one pass seemed like the wrong tradeoff. Text
+  overlays are real and complete (drag, pinch-resize, rotate, delete,
+  edit); the rest is a natural next slice.
+- **The editor's action was "Upload," not "Share Story," in this phase.**
+  Phase 4 added real publishing underneath it — see below — so the button
+  now says "Share Story" and actually is one.
+
+### Phase 6 specifically
+
+- **`follow_after_story` isn't emitted at all.** It would need correlating
+  "the viewer just followed someone" (which happens in
+  `UserProfileScreen.tsx`, a completely different screen) with "they were
+  recently viewing that creator's Story" — real attribution logic that
+  doesn't exist yet, and guessing at it felt worse than leaving the event
+  out. `repeat_creator_visit` similarly isn't client-emitted — the
+  backend already derives it correctly from real `story_impression`
+  timestamps spread across days (see `backend/README.md`), so a
+  redundant client event would just be double-bookkeeping.
+- **`story_replay` isn't emitted.** There's no "go back to the start of a
+  Story you've already finished" affordance in this viewer (tapping left
+  only moves to the previous Story in the sequence, never re-plays the
+  current one from 0) — nothing to attach the event to yet.
+- **Every event call is fire-and-forget** (`recordEvent(...).catch(() =>
+  undefined)`) — a dropped analytics call degrades ranking quality over
+  time, never the viewing experience in the moment. That's a deliberate
+  tradeoff, not an oversight.
+
+## Known sandbox limitation (read this first)
+
+This session's network policy blocks `registry.npmjs.org`, so `npm install`
+could not run here — meaning `react`, `react-native`, and
+`@react-navigation/*` were never actually resolved, and this code has not
+been properly typechecked, built, or run. As a partial, best-effort check,
+`tsc` was run directly against every file with real library types stubbed
+out (so most of its output is expected "cannot find module react-native"
+noise, not real findings) — it still caught one genuine bug worth knowing
+about: `StoryEditorScreen.tsx`'s error-message style spread `typography.caption`
+*after* setting `color: colors.danger`, so the spread's own gray silently
+overwrote the intended red. Fixed. That's the kind of thing this technique
+can catch (property-order bugs, obvious type mismatches) and the kind it
+can't (anything needing real React Native/library type information, or
+anything only wrong at runtime on a device). Separately, React Native requires Xcode
+(iOS) and/or the Android SDK plus a physical or emulated device to build and
+run at all — no cloud sandbox provides that, so real-device testing was
+always going to happen on your hardware regardless of network access (see
+the KATKEE build-plan doc, section on real-device testing).
+
+This is also not yet a fully bootstrapped React Native project — there are
+no native `android/`/`ios/` folders, `metro.config.js`, or Gradle/Xcode
+project files. Those are ordinarily generated by the React Native CLI
+itself; hand-writing them would be far more likely to produce broken
+boilerplate than real value, so they're intentionally left for the actual
+bootstrap step below rather than faked.
+
+## To actually run this, on a machine with the RN toolchain installed
+
+```bash
+npx @react-native-community/cli@latest init KatkeeMobile --skip-install
+# then copy this package's src/, App.tsx, index.js, app.json, babel.config.js,
+# tsconfig.json, and package.json dependencies into the generated project
+cd KatkeeMobile
+npm install
+npm run typecheck   # do this first — this code has never been typechecked
+npm run ios         # or: npm run android
+```
+
+Point `API_BASE_URL` in `src/api/client.ts` at your backend (the iOS
+simulator can reach `localhost:4000` directly; Android emulators need
+`10.0.2.2:4000`; a physical device needs your machine's LAN IP).
+
+Phase 3 additionally needs, once the native projects exist:
+
+- **iOS** (`ios/KatkeeMobile/Info.plist`): `NSCameraUsageDescription`,
+  `NSMicrophoneUsageDescription`, and `NSPhotoLibraryUsageDescription`
+  (gallery import) — `react-native-vision-camera` and
+  `react-native-image-picker` both refuse to function without these.
+- **Android** (`android/app/src/main/AndroidManifest.xml`): the `CAMERA`
+  and `RECORD_AUDIO` permissions.
+- `react-native-vision-camera` requires iOS 13+ and may need a `Podfile`
+  tweak per its own install docs (frame processors, if ever used, need
+  `react-native-worklets-core` — not added here since nothing in this
+  pass uses frame processors).
+- **Location sticker** (`@react-native-community/geolocation`, added for
+  the Camera + Editor module below) additionally needs, once the native
+  projects exist: iOS `NSLocationWhenInUseUsageDescription` in `Info.plist`,
+  and Android's `ACCESS_FINE_LOCATION` permission in the manifest (the app
+  also requests it at runtime via `PermissionsAndroid`, but the manifest
+  entry is what makes that request possible at all).
+
+Camera capture, the pinch/rotate/drag-to-zoom multitouch handling, and
+video playback are exactly the kind of code that most needs real-device
+testing (spec section 56) before trusting it — none of that happened in
+this session.
+
+## Camera + Editor module: what's real, what's approximated, what needs a device
+
+A full rewrite of Story capture and editing (mobile/src/screens/create/,
+mobile/src/components/Draggable*, OverlayBody.tsx, StickerSheet.tsx,
+DrawingCanvas.tsx, StoryOverlayLayer.tsx) against a big, explicit spec —
+here's an honest accounting.
+
+**Real, and now actually persists (the headline bug fix):** overlays and
+the chosen filter used to vanish on publish — `StoryEditorScreen.onShare`
+built a `StoryDraft` the editor could preview but never sent any of it to
+the backend. Every canvas object type (text, emoji, mention, location,
+date/time, sticker) is now stored as structured JSON on the Story
+(`backend` migration `0015_story_overlays.sql`), round-trips through
+publish, and renders live — with the same `OverlayBody` component the
+editor itself uses, so what you see while editing is what actually
+publishes — in every viewer (`StoryFeed.tsx`, `ArchivedStoryViewerScreen.tsx`,
+`HighlightViewerScreen.tsx`) via the shared `StoryOverlayLayer.tsx`.
+
+**Real: one gesture model for every object type.** `DraggableCanvasObject.tsx`
+(the file that used to be `DraggableTextOverlay.tsx` — same technique,
+generalized) drives drag/pinch/rotate/double-tap/drag-to-delete for text,
+emoji, mentions, location and date/time chips, and stickers alike, still
+on hand-rolled `PanResponder` math with zero new gesture dependencies.
+`CameraScreen.tsx`'s own pinch-to-zoom was rewritten the same way to close
+a real bug: it previously imported `PinchGestureHandler` from
+`react-native-gesture-handler`, a package never actually declared in
+`package.json` — it would have failed to resolve on a real build. Rather
+than add that (and `react-native-reanimated`, `react-native-svg`) as new
+native dependencies, this pass stayed consistent with the rest of the
+project's zero-dependency multitouch pattern: two-finger pinch-zoom on the
+preview and a new one-finger record-and-drag-to-zoom on the capture button
+itself (spec section 18) are both hand-rolled `PanResponder`s, with a
+temporary "Nx" zoom badge.
+
+**The exact same phantom-dependency bug survived at the app root, found
+during a later full-app audit.** `App.tsx` still wrapped the whole tree in
+`<GestureHandlerRootView>` from `react-native-gesture-handler` — the
+CameraScreen fix above removed the library's only real usage but left
+this root-level setup wrapper behind, still importing a package that was
+never in `package.json` and still isn't used anywhere in this codebase.
+It would have failed to resolve on a real build the same way the old
+`PinchGestureHandler` import would have. Removed; `App.tsx` no longer
+imports `react-native-gesture-handler` at all. Caught by cross-referencing
+every `import ... from "<package>"` in `src/`, `App.tsx`, and `index.js`
+against `package.json`'s actual `dependencies` — a check worth re-running
+after any future gesture work, since this is the second time it's caught
+exactly this mistake.
+
+**Real: mentions are structural, not baked-in text.** A mention overlay
+stores only `{userId}`; the backend re-resolves it to a live
+`username`/`displayName` on every read, dropping it entirely if the
+account was deleted or either side has blocked the other since publish —
+verified by five backend tests (`backend/test/stories.test.ts`'s "Camera +
+Editor" describe block), not just asserted. Tapping a published mention
+navigates to that user's real profile.
+
+**Real: drawing, with undo/redo, no SVG library.** `DrawingCanvas.tsx`
+samples touch points into normalized strokes; `DrawingStrokes.tsx` renders
+them as chains of thin rotated `View`s between consecutive points (the
+standard SVG-free polyline technique), shared between the live editor and
+the read-only viewer. Undo/redo is a local stack, not a full history
+system, per spec. The eraser is real but simplified: it removes whole
+strokes your finger passes over rather than trimming them pixel-by-pixel —
+there's no pixel layer under this component for a paint-over eraser to
+work with, and whole-stroke erase is a normal, honest interpretation of
+"undo what you drew here."
+
+**Real but a deliberate simplification: location.** Device location is
+requested only when you explicitly tap "Location" in the sticker sheet —
+never on the editor simply opening — using the real, newly-declared
+`@react-native-community/geolocation` API (same "declared, not yet
+installed or run in this sandbox" status as vision-camera, image-picker,
+and video). There's no Maps/Places API key configured anywhere in this
+project, so there's no reverse-geocoding: "Use current location" fills in
+a coarse, rounded coordinate label (~1km precision, never the raw
+full-precision reading) that you can edit or replace with your own text
+before it's ever attached to the Story.
+
+**Approximated, disclosed, and unchanged from before this module:** the 11
+named filters are still semi-transparent color-tint overlays
+(`models/filterPreviews.ts`), not real pixel-level color grading — that
+needs either a native image-processing module or a server-side pass
+(ffmpeg), neither available in this sandbox. What changed is that the
+chosen filter now actually reaches the backend and renders at view time
+instead of being silently dropped; what didn't change is that it's still
+an approximation of the real effect, exactly as before.
+
+**Not attempted:** custom illustrated sticker artwork (the "Katkee
+original stickers" are Unicode glyphs, not drawn assets — a real illustration
+pipeline is outside what a text-only sandbox session can produce);
+frame-accurate audio sync verification for zoom-while-recording (the
+recording/zoom code path is real, but only on-device testing can confirm
+audio actually stays in sync — see spec section 45's own test plan,
+unrun here); and, as with the rest of this project, any of it actually
+running on a device.
+
+### Video/audio: the mute toggle now actually publishes, and overlay sync needs no extra code
+
+The editor's mute/unmute control (spec section 44) had exactly the same
+bug overlays and the filter choice did: `StoryEditorScreen` toggled a
+`videoMuted` state that only ever affected its own `<Video muted={...}>`
+preview — nothing sent it to the backend, so a Story muted in the editor
+still published with its original audio. Fixed the same way: it's now
+`draft.audioMuted`, sent on publish (backend migration `0016`), and read
+back by every viewer's own `<Video muted={...}>` (`StoryFeed.tsx`,
+`ArchivedStoryViewerScreen.tsx`, `HighlightViewerScreen.tsx`) instead of
+each hardcoding `false`.
+
+"Overlays stay synced over the video timeline" (spec section 44) turns
+out to need no new code at all, once you look at how overlays are already
+stored: every overlay's `x`/`y`/`scale`/`rotation` is a static value
+normalized to the media container's box (see `storyDraft.ts`), not
+keyframed to a particular video timestamp — an overlay doesn't move
+*during* playback, it sits in one place for the Story's whole duration,
+the same way it would over a photo. Since the editor's preview and every
+viewer both render that same normalized position through the same
+`OverlayBody` component, over a `<Video resizeMode="cover">` that's sized
+identically in both places, "the overlay is in the same spot at every
+point in the video" was already true by construction — there was no
+separate timeline-sync mechanism to build or that could drift.
+
+### Accessibility: what's real, and what's still gesture-only
+
+Spec: "gesture-only interaction must have an accessible alternative where
+needed." What's actually built:
+
+- **Reduced Motion** (`hooks/useReducedMotion.ts`, reading the OS setting
+  live via `AccessibilityInfo`): the double-tap-to-like heart burst in
+  `StoryFeed.tsx` collapses to an instant flash instead of a scaling/fading
+  animation when it's on. The auto-advance progress bar's own timing is
+  left alone deliberately — it's the mechanism that decides when the next
+  Story shows, not decoration, so "reducing" it would break the feature.
+- **Screen-reader labels, roles, and selection state** on every icon-only
+  control this module added or touched: Camera's flash/timer/flip/gallery/
+  close, the editor's Text/Stickers/Draw/mute buttons and filter/audience
+  chips, the sticker sheet's tabs/emoji/stickers/mention results, the text
+  tool's style/align/color/size controls, and the drawing tool's
+  tool/color/size/undo/redo controls.
+- **A real, working non-gesture path for every canvas-object manipulation**
+  (`OverlayAdjustSheet.tsx`): tapping an object opens directional nudge
+  buttons for position, +/- for scale and rotation, and a Delete button —
+  standing in for one-finger drag, two-finger pinch-and-twist, and
+  drag-to-trash respectively, reachable through ordinary button activation.
+  Text additionally gets an "Edit Text" button into the existing style
+  editor. Because a screen reader intercepts raw touches for its own
+  navigation, `DraggableCanvasObject.tsx` also wires this up as a real
+  `accessibilityAction` ("activate"), not just a touch handler with a
+  label — the same technique the camera's capture button uses for "take
+  photo" / "record video" as explicit actions rather than relying on the
+  hold-to-record gesture reaching a screen reader at all.
+- **Touch targets**: every canvas object gets a 16px `hitSlop` on top of
+  its visible size, so a small emoji or a tightly-scaled sticker still has
+  a reasonably sized hit area.
+
+**Not attempted, and disclosed rather than faked:** high-contrast mode isn't specifically tested against (the existing
+color tokens already have strong contrast by design — see `../BRAND.md` —
+but nothing here verifies WCAG ratios against every combination); and
+none of this has been exercised with an actual screen reader on a real
+device, which is the only way to know for certain whether VoiceOver/
+TalkBack really do route to the `accessibilityActions` this code declares
+rather than fighting the `PanResponder` underneath them.
+
+### Four more spec items closed: safe bounds, text wrap, keyboard handling, swipe-to-cycle filters
+
+- **"Objects must stay retrievable, not vanish off-canvas"**: nothing
+  previously stopped a drag (or the new OverlayAdjustSheet's nudge
+  buttons) from moving an object's anchor point fully outside the visible
+  canvas — reachable neither by another drag nor by tapping to select it
+  again. `storyDraft.ts`'s `clampOverlayPosition`/`OVERLAY_SAFE_MARGIN`
+  (6% margin) is now applied in both places. The backend's own `dto.ts`
+  clamp is deliberately looser (`-0.1..1.1`, a sanity backstop against an
+  arbitrary API caller) — the two are different jobs, not a mismatch.
+- **Auto-wrap text**: a text overlay had no width constraint at all, so a
+  long single-line caption just grew wider than the canvas indefinitely
+  instead of wrapping. `OverlayBody.tsx` now caps it at 80% of the
+  container's width, letting RN's own `Text` wrapping do the rest.
+- **Keyboard handling that never hides Done/controls**: `TextToolModal`'s
+  style/align/color/size rows sit below the text input with no
+  keyboard-avoidance at all before this — an opening keyboard on a real
+  device would have covered all of them. It's now wrapped in a
+  `KeyboardAvoidingView` (`padding` on iOS; Android's own window resize
+  already handles it, `height` there is just a safety net).
+- **Swipe-to-cycle filters with a briefly-shown name**: filters could only
+  be picked from the horizontal chip strip — spec section 24 also asks for
+  a swipe gesture on the media itself, with the filter's name flashing
+  briefly. Added as a `PanResponder` layer that sits *beneath* every
+  canvas object in paint order (rendered earlier in JSX), so a touch that
+  starts on an object is claimed by that object's own gesture first (RN's
+  topmost-sibling hit-testing) — "suppressed while actively manipulating a
+  text/sticker object" falls out of that ordering rather than needing a
+  separate flag to track it. Not rendered in draw mode, and every modal
+  (text tool, sticker sheet, overlay adjust) already blocks all touches to
+  the screen beneath it while open, so those cases needed no extra
+  handling either.
+
+### Five more closed: crop, crash-safe drafts, a real date/time picker
+
+- **Crop** (`StoryDraft.crop`, backend migration `0017`): the one field in
+  the spec's own `StoryDraft` shape this project hadn't built. No
+  image-processing library exists in this sandbox to re-encode cropped
+  pixels, so — same architecture as filter/overlays/drawing — crop is
+  `{zoom, offsetX, offsetY}` metadata applied as a live transform
+  (`storyDraft.ts`'s `mediaTransformStyle`) in the editor **and** every
+  viewer, never baked into the media file. `CropGestureLayer.tsx` is a
+  dedicated pinch-to-zoom/drag-to-pan mode (like Draw), hand-rolled on
+  `PanResponder` with no new dependency; offsets are stored as a fraction
+  of the *pan room available at the current zoom*, not raw pixels, so a
+  crop looks the same at any container size.
+- **Crash-safe local drafts** (`state/draftStorage.ts`): the spec's own
+  publish flow lists "persist local draft" as a step before upload, not
+  just React state — this project only had the latter until now. The
+  in-progress draft autosaves to `AsyncStorage` (already a real,
+  declared dependency) keyed by the media's own URI, debounced, and is
+  restored automatically if `StoryEditorScreen` remounts on that same
+  file (an app crash or reload mid-edit or mid-upload). Cleared on a
+  successful publish and on a confirmed discard.
+- **A real date/time picker**: the sticker sheet's Date/Time tab used to
+  only offer "today"/"now". It's now a hand-rolled +/- stepper on
+  day/hour/minute with a live preview — no calendar-picker dependency
+  declared, since steppers are a complete, functional answer for a Story
+  sticker (which only ever needs "some date," not scheduling precision).
+- **`StickerSheet`'s mention search** had the exact keyboard-covering-the-
+  results-list gap `TextToolModal` had — same `KeyboardAvoidingView` fix,
+  applied here too.
+- **Two real-device manual test plans**, written up as actual checklists
+  rather than only described: [`MANUAL_TEST_PLAN_CAMERA.md`](./MANUAL_TEST_PLAN_CAMERA.md)
+  and [`MANUAL_TEST_PLAN_EDITOR.md`](./MANUAL_TEST_PLAN_EDITOR.md). Run
+  these on a real device before trusting any of this module — nothing in
+  it has executed outside this sandbox.
+
+**Still open:** as always, none of the above has actually run — the two
+test plans above are what "run" would mean.
+
+### Camera tap-to-focus now has an accessible alternative
+
+~~Camera tap-to-focus has no button alternative~~ **Fixed in a later
+pass.** The preview `View` (`CameraScreen.tsx`) now declares
+`accessibilityActions` — "Focus camera" and "Flip camera" — reachable
+through the same custom-actions menu the capture button's own
+`accessibilityActions` already used, rather than only through the raw
+tap/double-tap gesture a screen reader intercepts before `PanResponder`
+ever sees it. "Focus camera" focuses the center of the preview's own
+measured layout (captured via `onLayout`), not a guessed constant, so it's
+correct at any device size. Most devices' continuous autofocus already
+makes precise focus placement a bonus rather than the only way to get a
+usable shot, which is why this sat as a disclosed gap rather than a
+blocker — but a real accessible path now exists either way.
+
+### Crop now has a non-gesture path too — an undisclosed gap this pass caught
+
+`OverlayAdjustSheet.tsx` explicitly scopes itself to "canvas-object
+manipulation" (text/emoji/mention/location/datetime/sticker overlays); the
+crop tool is a separate editor mode with its own `CropGestureLayer.tsx`
+(pinch-to-zoom, drag-to-pan), and nothing had ever given *it* a non-gesture
+equivalent — a real, undisclosed accessibility gap, found on inspection
+rather than reported by anyone. `CropAdjustControls.tsx` closes it: zoom
++/- and a directional pan pad, plus a one-tap Reset back to `{zoom: 1,
+offsetX: 0, offsetY: 0}`, shown in the editor's crop mode alongside the
+existing "Pinch to zoom · Drag to reposition" hint and Done button. Both
+the buttons and the gesture layer route every change through the same
+`clampCrop`, so a button nudge and an actual pinch/drag can never disagree
+about what a valid crop is. The freehand drawing tool remains the one
+deliberate exception with no non-gesture equivalent — there's no
+accessible way to author a freehand stroke without a finger path, the same
+way there isn't in any drawing app, so this is a permanent, honest limit
+rather than an oversight.
+
+### Drag-to-reorder had the exact same gap — also fixed
+
+`DraggableGrid.tsx` (Highlights' own order in `HighlightsRow.tsx`, and a
+Highlight's item order in `HighlightEditorScreen.tsx`'s selected strip)
+had **zero** accessibility props at all before this — not even a label,
+let alone an alternative to the long-press-and-drag gesture itself. A
+screen-reader user had no way to reorder anything through either surface.
+Each item in reorder mode now exposes `accessibilityActions` ("Move
+earlier/later in order"), handled by a new `onMoveStep` that moves the
+item exactly one slot and commits immediately through the same `onReorder`
+a drag's release already calls — a screen-reader user gets a slower,
+one-step-at-a-time equivalent, not a dead end. Both call sites needed no
+changes themselves; the fix is entirely inside `DraggableGrid.tsx`.
+
+### The single biggest undisclosed gap: the Story feed itself had no accessible navigation at all
+
+`StoryFeed.tsx` is the app's actual core loop — tap left/right to move
+between Stories, double-tap to like, hold to pause, swipe up/down to move
+between creators — and every one of those, before this fix, was reachable
+only through its `PanResponder` gesture recognizer. Nothing here had ever
+been given an accessible alternative, and unlike the crop tool or
+drag-to-reorder above, this one was never disclosed as a gap either: a
+screen-reader user could open Home and reach the like/comment/share/more
+buttons (those were already properly accessible), but had **no way at all**
+to actually move to the next Story, the previous Story, or a different
+creator — the single most central interaction in the entire product.
+
+The fix isn't as simple as marking the existing container `accessible`,
+though: `gesture.panHandlers` sat on the *outer* `View` that also directly
+contains the progress bar, the action rail, the footer, and the close
+button as siblings — marking that container accessible would have
+collapsed all of those already-working buttons into one opaque node,
+trading one gap for a worse one. Instead, the gesture recognizer now lives
+on its own dedicated `StyleSheet.absoluteFill` layer, inserted *beneath*
+`StoryOverlayLayer` in paint order (rendered earlier in JSX) — the same
+"topmost-sibling hit-testing" technique the editor's own swipe-to-cycle-
+filter layer already relies on relative to canvas objects, so a tap on a
+mention overlay is still claimed by the mention's own touch target first,
+never by this layer. That layer declares `accessibilityActions` for the
+four moves that matter — next/previous Story, next/previous creator —
+each calling the exact same `goNextStory`/`goPreviousStory`/
+`goNextCreator`/`goPreviousCreator` and analytics `emit(...)` calls the
+gesture handler itself already used, so an accessibility-driven navigation
+is indistinguishable from a gestural one in every system that consumes it
+(recommendations, insights). Double-tap-to-like isn't duplicated here
+deliberately — the action rail's own "Like"/"Unlike" button already covers
+that intent through an ordinary, already-accessible `Pressable`.
+
+### A sweep for smaller accessibility gaps the icon pass left behind
+
+Auditing every gesture surface turned up a handful of smaller,
+easy-to-miss gaps in files the earlier accessibility and icon passes
+never actually touched:
+
+- **`HighlightViewerScreen.tsx` and `ArchivedStoryViewerScreen.tsx`** were
+  never migrated to the shared `ICONS` glyph module at all (still using
+  raw `"✎"`/`"✕"` strings), and none of their buttons — Edit, Close, and
+  the previous/next tap zones — had an `accessibilityLabel`. Both are now
+  on `ICONS.edit`/`ICONS.close`, with real labels throughout ("Previous
+  item", "Next item", "Edit Highlight", "Close").
+- **Every modal's tap-outside-to-dismiss backdrop** (`ShareSheet.tsx`,
+  `CommentsSheet.tsx`, `StoryInsightsSheet.tsx`, `StoryMoreMenu.tsx`,
+  `ReportSheet.tsx`, `DeleteAccountSheet.tsx`) was an unlabeled, still-
+  focusable `Pressable` — a screen reader would land on it and announce
+  only "button," with no indication of what it does. `StickerSheet.tsx`
+  and `OverlayAdjustSheet.tsx` already had this right (`accessibilityRole
+  ="button" accessibilityLabel="Close"`); the other six now match that
+  existing, correct convention instead of it being applied inconsistently.
+- **The Story-ring avatar Pressable** on both `ProfileScreen.tsx` and
+  `UserProfileScreen.tsx` had a `Text` child that was just a single
+  initial letter (e.g. "R") — a screen reader's default behavior of
+  reading a Pressable's visible text as its label meant this announced as
+  "R, button" with no indication it opens a Story. Both now get a real,
+  conditional label ("Open your Story" / "Open {name}'s Story" when there
+  is one to open, otherwise just the name).
+
+### Muting and blocking were one-way doors — a cross-reference against every backend route caught it
+
+Cross-referencing every backend route against what mobile actually calls
+(rather than trusting the per-feature disclosures written when each phase
+shipped) turned up a real, functional gap, not just an accessibility one:
+`StoryMoreMenu.tsx`'s "Mute @user"/"Block @user" only ever called
+`muteUser`/`blockUser`. The backend's `DELETE /api/v1/users/:username/mute`
+and `.../block` (unmute/unblock) have existed and been tested since Phase
+2, and so has `GET /api/v1/blocks`/`GET /api/v1/mutes` (the lists), but
+**nothing in this app ever called any of the four** — once you muted or
+blocked someone, there was no screen anywhere to review or undo it. This
+is a distinct gap from the "Mute and Block... are there and work" note
+above — that one only ever meant the one-way mute/block *action* itself.
+
+Fixed with two new screens, `BlockedAccountsScreen.tsx` and
+`MutedAccountsScreen.tsx` (reached from Settings > Privacy), each backed
+by the corresponding list endpoint with a per-row Unblock/Unmute button.
+The per-Story "More" menu itself stays a simple one-way action sheet
+deliberately — it has no profile data in scope to know whether someone's
+already muted, and adding that round-trip to an ephemeral action sheet
+didn't seem worth it once a real management screen exists elsewhere; the
+same "action in the moment, review/undo in Settings" split most social
+apps already use.
+
+### The follower/following counts have looked tappable since Phase 1 — they never were
+
+The same route cross-reference turned up one more: every profile
+(`ProfileScreen.tsx`, `UserProfileScreen.tsx`) has shown a bold follower
+count and a bold following count since Phase 1, styled and laid out
+exactly like a tappable stat — but neither `Pressable` nor `onPress` was
+ever attached to either one. `GET /api/v1/users/:username/followers` and
+`.../following` have both existed and been tested since Phase 2. Fixed
+with one shared `FollowListScreen.tsx` (both directions are the same
+shape and the same `assertCanViewConnections` access rule on the
+backend), reached by tapping either count on either profile screen; each
+row in the list navigates to that user's own profile the same way a
+search result does.
+
+### Admin login and a real staff hierarchy
+
+There is no separate "admin login screen" — an admin or moderator signs
+in through the exact same `LoginScreen.tsx` everyone else uses. What's
+new is that `PublicUser` (from signup/login/`/auth/me`) now carries a
+real `role: "user" | "moderator" | "admin"` and `isPrimaryAdmin: boolean`
+from the backend (migration 0020), and the app conditionally shows a
+**Moderation** section in `SettingsScreen.tsx` once `user.role` is
+anything other than `"user"` — a moderator sees "Report queue," an admin
+additionally sees "Manage staff."
+
+- **`ModerationQueueScreen.tsx`** — Pending/Actioned/Dismissed tabs (same
+  tab-bar pattern as `ActivityScreen.tsx`), each report showing the
+  reporter, the reason, and a real denormalized summary of what's actually
+  being reported (a Story, a comment with its body, or an account).
+  Tapping a pending report opens Dismiss / Remove Content / Suspend
+  Account, exactly the three actions `POST /api/v1/moderation/reports/:id
+  /resolve` already supported with no mobile screen driving it before now.
+- **`AdminStaffScreen.tsx`** (admin-only) — a username field and a
+  Moderator/Admin toggle to grant access, and the current staff roster
+  with a Remove button per row. The primary admin's row has no Remove
+  button at all — not just disabled, actually absent — since the backend
+  rejects that call unconditionally anyway (see backend/README.md's "A
+  real staff hierarchy" section for exactly why, and how the very first
+  admin gets bootstrapped, since there's deliberately no in-app way to
+  create the first one).
+
+`api/moderation.ts` already existed for the user-facing Report flow
+(`createReport`, `REPORT_REASONS` — `ReportSheet.tsx`'s own module); the
+new moderator/admin calls were added to that same file rather than a
+duplicate one, since they're the same backend module.
+
+**A later pass added a genuinely separate web Admin Console** (see
+backend/README.md's "Admin Console: a separate, permission-gated web
+surface") reachable at `/admin` in a browser — **not** inside this app,
+and this app's bottom navigation is still exactly the same 6 tabs it's
+always been (Home/Search/+/Activity/DM/Profile). `ModerationQueueScreen.tsx`
+and `AdminStaffScreen.tsx` above are unchanged and still work exactly as
+described — they're the coarse, role-only-gated mobile path, kept
+deliberately simple. The web console is the fuller, granular-permission-gated
+surface (content restore, account restriction, moderation history, audit
+log, ads management) — a moderator/admin using this app never needs it for
+day-to-day report handling, but an admin managing other admins' specific
+permissions, or reviewing ad campaigns, uses the web console instead.
+
+### Edit-in-place for location and date/time content
+
+Double-tap-to-re-edit (spec section 20) was explicitly a text-only
+requirement, but the same gap existed in spirit for location and date/time
+stickers: once placed, the only way to change a mistyped location label or
+a wrong date/time was delete-and-recreate. `StickerSheet` now accepts an
+`editingOverlay`, pre-fills the relevant tab from it, hides the other tabs
+while editing, and calls a new `onEditDone` (merging into the *existing*
+overlay's `properties`, leaving its position/scale/rotation untouched)
+instead of `onAdd`. Reachable two ways, matching the text pattern exactly:
+double-tapping the object directly, or "Edit Location"/"Edit Date/Time" in
+OverlayAdjustSheet — so it's available through the accessible,
+non-gesture path too, not just the double-tap gesture.
+
+## Sponsored Stories inside Home
+
+A later pass wired real Sponsored Stories into the Home feed itself —
+never a new tab, never a separate screen. The backend now interleaves
+sponsored entries into `GET /api/v1/stories/feed/home`'s response array at
+server-decided positions (see backend/README.md's "Sponsored Story ads"
+section for the full backend side); this is the mobile side of that same
+feature.
+
+**`StoryFeed.tsx`'s existing gesture recognizer — the entire hand-rolled
+tap-left/right, double-tap-to-like, hold-to-pause, swipe-up/down
+`PanResponder` — is completely untouched.** A Sponsored Story never
+reaches it: `StoryFeed` gained one new optional prop, `sponsoredAfter?:
+Record<number, SponsoredHomeFeedEntry>` (keyed by "which creatorIndex
+this slide follows"), and one new bit of state, `pendingSponsoredKey`.
+`goNextCreator` checks that map *before* actually advancing the creator
+index; if there's an unshown slide there, it renders
+**`SponsoredStorySlide.tsx`** instead — a genuinely separate component,
+with its own small, separate `PanResponder` (swipe up/down only — there's
+no rail of Stories within one ad to tap through, no like/comment on an
+ad). Swiping past it calls back into `StoryFeed` to actually advance the
+creator index; swiping back just clears the pending state and returns to
+whichever creator was already current. `HomeScreen.tsx` is the only
+caller that ever passes `sponsoredAfter` — `StoryViewerScreen.tsx` and
+`ArchivedStoryViewerScreen.tsx` (a single creator's Stories opened from a
+profile/notification/DM) never do, so ads only ever appear in Home,
+matching the spec.
+
+**"No ads = normal Home" holds by construction, not by a runtime check**:
+with the backend's `ADS_ENABLED`/`SPONSORED_STORIES_ENABLED` flags off
+(both default off), the feed array never contains a `kind: "sponsored"`
+entry, so `HomeScreen.tsx`'s `sponsoredAfter` map is always `{}`, so
+every `sponsoredAfter?.[creatorIndex]` lookup in `StoryFeed.tsx` is always
+`undefined`, so `pendingSponsoredKey` is never set, so the new render
+branch is dead code at runtime — the exact same code path that ran before
+this feature existed runs today, unchanged.
+
+**`SponsoredStorySlide.tsx`** — full-screen, clearly labeled "Sponsored"
+(top-left badge, spec's explicit labeling requirement), reuses the exact
+same media pipeline as an organic Story (`getMedia`/`mediaFileUrl` —
+photo or video, autoplay, a photo has the same 5-second progress-bar
+auto-advance as an organic Story). Its own "•••" menu is genuinely
+separate from `StoryMoreMenu.tsx`'s "Not Interested" (which excludes a
+*creator* from recommendations — meaningless for an ad) and offers **Hide
+Ad** (records a real `hide` event and the campaign never reappears for
+that viewer — server-enforced via `ad_hidden`, not a client-only flag),
+**Report Ad** (a real `report` event, counted in that campaign's real
+analytics the admin console shows), and **Why am I seeing this?** (opens
+a real disclosure sheet reading the campaign's own stored, non-sensitive
+targeting fields via `GET /api/v1/ads/:campaignId/why-this-ad` — honestly
+says "reaching a general audience" when a campaign has no specific
+targeting set, rather than inventing a reason). The CTA button opens
+`ctaUrl` via `Linking.openURL` and fires a real `click` event first — the
+backend already validated that URL is a safe `http(s)://` absolute URL at
+creative-creation time, never `javascript:`/`data:`/anything else.
+
+**Graceful failure, not a blank screen or a spinner**: `getMedia` failing
+falls back to treating the creative as a photo rather than showing
+nothing; `getWhyThisAd` failing just doesn't open the sheet (no crash);
+every `recordAdEvent` call is fire-and-forget, exactly like the existing
+`recordEvent` analytics calls elsewhere in this app — a dropped ad event
+never blocks or breaks viewing.
+
+**What this pass didn't (and, per spec, shouldn't) do**: no ad SDK, no
+third-party ad network — every ad shown comes from this backend's own
+admin-managed campaigns, exactly as scoped. No client-side frequency-cap
+logic at all — spacing and the max-ads-per-load cap are entirely
+server-decided (`ad_settings`, editable only by the super admin through
+the web console), so this app never needs to know or reason about the
+cap; it just renders whatever positions the backend already chose.
+
+## Icon set pass
+
+Against a supplied "Katkee Icon Set" reference sheet (bottom nav, story
+actions, camera, story editor, owner controls, search, activity, DM,
+profile, highlights, archive). There's no vector icon font or SVG icon
+library installed (same network-blocked-npm-install constraint as
+everywhere else in this project), so every icon is a plain Unicode glyph
+rendered through `Text` — now centralized in `theme/icons.ts` (`ICONS`)
+instead of each screen inlining its own "✕"/"⚡"/etc., which is what every
+file below was doing before this pass.
+
+**Updated to match the reference:**
+- **Bottom navigation** — real icons (⌂/🔍/+/♡/💬/◉) above each label;
+  previously text-only labels with a focus dot.
+- **Story action rail** — like/liked/comment/share/more, plus the owner's
+  viewer-count button and the close button.
+- **Camera screen** — Gallery and Flip were plain text buttons ("Gallery",
+  "Flip"); Timer showed only a number. All three are icons now (Close and
+  Flash already were).
+- **Story editor top bar** — Text/Stickers/Draw/Crop/Audio were plain text
+  buttons; now Aa/☺/✎/⛶/🔊 icons, and the trash-zone glyph and drawing
+  tool's undo/redo now pull from the same shared constants.
+- **Search** — added a leading search icon and a clear (✕) button to the
+  existing input, which had neither.
+- **DM conversation** — the "shared a Story" attachment marker and the
+  Send button are icons now.
+- **Highlights / Archive** — the "New Highlight" card, the Archive
+  multi-select checkmark, and the Delete/Create Highlight actions now
+  carry icons alongside their labels. Log out gets an exit icon.
+
+**Initially deliberately not touched, then built for real in a follow-up
+pass** (the icon pass above stopped at re-skinning what already existed;
+the features below didn't exist yet, so adding their icons would have been
+a fake button — they're now real screens/flows, not icon-only stubs):
+
+- **Settings screen** (`SettingsScreen.tsx`) — a real hub: a Privacy switch
+  wired to the existing `isPrivate` field on `PATCH /api/v1/users/me`;
+  a link into **Notification Settings** (`NotificationSettingsScreen.tsx`),
+  backed by a genuinely new backend table (migration 0018,
+  `notification_preferences`) with real per-type (like/comment/follow/mention)
+  toggles enforced at `notifications.repository.ts`'s single `createNotification`
+  funnel point — turning one off actually suppresses that notification type
+  at creation time, not a client-side filter of an unfiltered feed.
+  `follow_request` is never in that list: it's an actionable pending
+  request, not a muteable broadcast, so the backend never lets it be
+  suppressed. Data & Storage is real too, in the one thing this app
+  actually caches on-device: it shows a live count of crash-autosaved Story
+  drafts (`draftStorage.ts`) and can wipe them. Help/About are real static
+  content (an FAQ list, a version number) rather than placeholder text.
+  Log Out and Delete Account moved here from the profile page itself,
+  matching the reference. Privacy also links to a real **Follow Requests**
+  inbox (`FollowRequestsScreen.tsx`, with a live pending-count badge) — see
+  the Phase 7 gap list above for why that screen didn't exist until now.
+- **Edit Profile** (`EditProfileScreen.tsx`) — display name and bio,
+  wired to the same `PATCH /api/v1/users/me` the backend already supported.
+- **Share Profile** — a native OS share sheet with a `katkee://user/<username>`
+  deep link, same inert-until-native-linking-exists caveat as `ShareSheet.tsx`'s
+  Story share link.
+- **Activity tabs** (`ActivityScreen.tsx`) — All/Likes/Comments/Follows/Mentions
+  tab bar, a client-side filter of the same unified feed (no backend
+  change) — `follow_request` notifications live under the Follows tab
+  alongside `follow`, since both are the same relationship concern.
+- **Search filter** — an All/Following toggle. "Following" fetches the
+  viewer's own following list once (`getFollowing`, paginated up to a
+  500-person cap) and cross-references it client-side against search
+  results — there's no backend search-scoping endpoint, so this is real
+  filtering of real data, just done on-device.
+- **DM new-chat + emoji picker** — a "New Chat" header button
+  (`NewChatScreen.tsx`) searches a user and opens a real conversation via
+  the existing `POST /api/v1/users/:username/conversation` endpoint (it
+  already supported this — no backend change needed). The emoji picker is
+  a fixed, client-only glyph grid that inserts into the composer text;
+  file/image attachments were **not** built — `conversations/dto.ts`'s
+  `parseSendMessageInput` only accepts text body or a shared Story, and
+  adding real attachment upload/storage/moderation is out of proportion to
+  an icon-set follow-up.
+- **Highlights "Change Cover"** — a Highlight's cover now has a real
+  override: `cover_story_id` (migration 0019), settable to any of that
+  Highlight's own items via a star toggle in `HighlightEditorScreen.tsx`,
+  validated server-side to actually belong to the Highlight, and falling
+  back to the original first-item default if that Story is later dropped
+  from the set or the override is explicitly cleared.

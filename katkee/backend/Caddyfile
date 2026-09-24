@@ -1,0 +1,13 @@
+# Caddy auto-provisions and auto-renews a real Let's Encrypt TLS
+# certificate for {$DOMAIN} — this is the whole reason to run it in front
+# of the backend rather than exposing port 4000 directly. Point your
+# domain's DNS A record at the VPS's IP before starting this, or
+# certificate issuance will fail.
+{$DOMAIN} {
+	reverse_proxy backend:4000
+
+	# Media files are already served with long-lived cache headers by the
+	# backend itself (see media.routes.ts) — this just makes sure Caddy
+	# doesn't strip them.
+	encode gzip
+}

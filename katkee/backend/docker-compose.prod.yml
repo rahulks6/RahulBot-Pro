@@ -1,0 +1,74 @@
+# A single-VPS production deployment: Postgres + the backend + Caddy for
+# automatic HTTPS (a real TLS certificate, auto-renewed — required
+# because iOS blocks plain HTTP by default; see DEPLOYMENT.md). This is
+# the "smallest real, professional deployment" path — a $6-12/mo VPS
+# (DigitalOcean/Hetzner/Linode droplet) is enough to launch on. A managed
+# Postgres (Railway/Render/Supabase/RDS) is a reasonable upgrade later if
+# you outgrow self-hosting it, but nothing here requires that on day one.
+#
+# Untested in this sandbox (no Docker daemon available to me here — see
+# Dockerfile's own note). Written against standard, well-documented
+# Docker Compose patterns; run `docker compose -f docker-compose.prod.yml
+# config` yourself first to catch typos before deploying for real.
+#
+# Requires a `.env` file next to this one (never committed — see
+# .dockerignore) with real values for POSTGRES_PASSWORD, JWT_ACCESS_SECRET,
+# JWT_REFRESH_SECRET, and DOMAIN. Generate the two JWT secrets with:
+#   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: katkee
+      POSTGRES_USER: katkee
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U katkee"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: katkee
+      PGUSER: katkee
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in .env}
+    volumes:
+      - media_data:/app/data/media
+    expose:
+      - "4000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env, e.g. api.yourapp.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  media_data:
+  caddy_data:
+  caddy_config:
