@@ -6,10 +6,13 @@ import * as commentsRepo from "../stories/comments.repository";
 import * as sharesRepo from "../stories/shares.repository";
 import * as eventsRepo from "./events.repository";
 import * as recommendationRepo from "./recommendation.repository";
+import * as adsService from "../ads/ads.service";
+import type { SponsoredSlot } from "../ads/ads.service";
 import { creatorAffinity, explorationMultiplier, freshness, storyQuality } from "./scoring";
 import type { StoryRecord } from "../stories/stories.repository";
 
-export interface RankedFeedEntry {
+export interface OrganicFeedEntry {
+  kind: "organic";
   owner: { id: string; username: string; displayName: string };
   isFollowing: boolean;
   stories: Array<{
@@ -22,6 +25,23 @@ export interface RankedFeedEntry {
   }>;
   score: number;
 }
+
+export interface SponsoredFeedEntry {
+  kind: "sponsored";
+  label: "Sponsored";
+  campaignId: string;
+  creativeId: string;
+  mediaId: string;
+  headline: string;
+  bodyText: string;
+  ctaLabel: string;
+  ctaUrl: string;
+}
+
+export type FeedEntry = OrganicFeedEntry | SponsoredFeedEntry;
+
+/** @deprecated kept as an alias so any existing import of the pre-ads entry shape still resolves — see OrganicFeedEntry for the current, `kind`-tagged shape. */
+export type RankedFeedEntry = OrganicFeedEntry;
 
 function toStorySummary(story: StoryRecord) {
   return {
@@ -92,14 +112,14 @@ async function scoreCreator(viewerId: string, creatorId: string, stories: StoryR
  * sections 7-11 — see scoring.ts's own docstring for why it's not (and
  * can't yet be) a trained model.
  */
-export async function getRankedHomeFeed(viewerId: string): Promise<RankedFeedEntry[]> {
+export async function getRankedHomeFeed(viewerId: string): Promise<FeedEntry[]> {
   const [ownStories, viewer, creatorIds] = await Promise.all([
     storiesRepo.listActiveStoriesForOwner(viewerId),
     usersRepo.findUserById(viewerId),
     recommendationRepo.listEligibleCreatorIds(viewerId),
   ]);
 
-  const entries: RankedFeedEntry[] = [];
+  const entries: OrganicFeedEntry[] = [];
 
   // Your own active Stories always lead the feed, unscored — the
   // recommendation formula predicts whether *someone else's* content is
@@ -107,6 +127,7 @@ export async function getRankedHomeFeed(viewerId: string): Promise<RankedFeedEnt
   // (score is Infinity purely so the sort below keeps it first).
   if (ownStories.length > 0 && viewer) {
     entries.push({
+      kind: "organic",
       owner: { id: viewer.id, username: viewer.username, displayName: viewer.displayName },
       isFollowing: false,
       stories: ownStories.map(toStorySummary),
@@ -124,6 +145,7 @@ export async function getRankedHomeFeed(viewerId: string): Promise<RankedFeedEnt
 
     const score = await scoreCreator(viewerId, creatorId, stories, relationship.isFollowing);
     entries.push({
+      kind: "organic",
       owner: { id: owner.id, username: owner.username, displayName: owner.displayName },
       isFollowing: relationship.isFollowing,
       stories: stories.map(toStorySummary),
@@ -132,5 +154,53 @@ export async function getRankedHomeFeed(viewerId: string): Promise<RankedFeedEnt
   }
 
   entries.sort((a, b) => b.score - a.score);
-  return entries;
+  return interleaveSponsoredSlots(entries, await adsService.selectSponsoredSlots(viewerId, entries.length));
+}
+
+function toSponsoredEntry(slot: SponsoredSlot): SponsoredFeedEntry {
+  return {
+    kind: "sponsored",
+    label: "Sponsored",
+    campaignId: slot.campaignId,
+    creativeId: slot.creativeId,
+    mediaId: slot.mediaId,
+    headline: slot.headline,
+    bodyText: slot.bodyText,
+    ctaLabel: slot.ctaLabel,
+    ctaUrl: slot.ctaUrl,
+  };
+}
+
+/**
+ * The one place ads and organic ranking ever touch: this only *inserts*
+ * sponsored entries at fixed spacing between already-fully-ranked organic
+ * entries — it never reorders, drops, or rescoring-influences a single
+ * organic entry to make room. An empty `slots` array (ads disabled,
+ * unavailable, or nothing eligible) returns `organic` completely
+ * untouched — "no ads = normal Home" holds exactly because this function
+ * has no other effect when there's nothing to insert.
+ */
+function interleaveSponsoredSlots(organic: OrganicFeedEntry[], slots: SponsoredSlot[]): FeedEntry[] {
+  if (slots.length === 0) return organic;
+  // Synchronous placement only — getSlotSpacing's own DB read already
+  // happened inside selectSponsoredSlots when it decided how many slots
+  // to hand back, so this just needs *a* spacing consistent with that
+  // decision, not a second read. Re-deriving it from the same settings
+  // selectSponsoredSlots used keeps this function pure and side-effect-free.
+  const spacing = Math.max(1, Math.floor(organic.length / (slots.length + 1)) || 1);
+  const result: FeedEntry[] = [];
+  let slotIndex = 0;
+  for (let i = 0; i < organic.length; i++) {
+    result.push(organic[i] as OrganicFeedEntry);
+    const isSpacingBoundary = (i + 1) % spacing === 0;
+    if (isSpacingBoundary && slotIndex < slots.length) {
+      result.push(toSponsoredEntry(slots[slotIndex] as SponsoredSlot));
+      slotIndex++;
+    }
+  }
+  while (slotIndex < slots.length) {
+    result.push(toSponsoredEntry(slots[slotIndex] as SponsoredSlot));
+    slotIndex++;
+  }
+  return result;
 }
