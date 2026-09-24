@@ -16,6 +16,9 @@ import { registerNotificationsRoutes } from "./modules/notifications/notificatio
 import { registerConversationsRoutes } from "./modules/conversations/conversations.routes";
 import { registerHighlightsRoutes } from "./modules/highlights/highlights.routes";
 import { registerModerationRoutes } from "./modules/moderation/moderation.routes";
+import { registerAdminRoutes } from "./modules/admin/admin.routes";
+import { registerAdminConsoleRoutes } from "./modules/admin/console.routes";
+import { registerAdsRoutes } from "./modules/ads/ads.routes";
 
 export function buildApp(): Server {
   const router = new Router();
@@ -46,6 +49,9 @@ export function buildApp(): Server {
   registerConversationsRoutes(router);
   registerHighlightsRoutes(router);
   registerModerationRoutes(router);
+  registerAdminRoutes(router);
+  registerAdminConsoleRoutes(router);
+  registerAdsRoutes(router);
 
   return createServer(router);
 }

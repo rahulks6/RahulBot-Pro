@@ -131,7 +131,10 @@ export async function deleteMyAccount(userId: string, password: string): Promise
 
   const activeStories = await storiesRepo.listActiveStoriesForOwner(userId);
   for (const story of activeStories) {
-    await storiesService.moderatorDeleteStory(story.id);
+    // The owner's own deletion, not a moderation action — deleteStory (not
+    // moderatorDeleteStory) so this never writes a moderation_status/
+    // moderation_actions row misattributing it as staff-initiated removal.
+    await storiesService.deleteStory(userId, story.id);
   }
 
   await usersRepo.softDeleteUser(userId);

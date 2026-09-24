@@ -1,4 +1,4 @@
-import { query, queryOne, type Row } from "../../db/psql";
+import { nullable, query, queryOne, type Row } from "../../db/psql";
 import type { StoryOverlay, DrawStroke, FilterKey, StoryCrop } from "./overlays";
 
 export type Audience = "public" | "followers";
@@ -119,6 +119,43 @@ export async function findStoryByMediaId(mediaId: string): Promise<StoryRecord |
 
 export async function softDeleteStory(id: string): Promise<void> {
   await query(`UPDATE stories SET deleted_at = now() WHERE id = :'id'`, { id });
+}
+
+/**
+ * The new, distinguishable moderation removal (migration 0022) — layered on
+ * top of the same deleted_at every existing "is this Story visible" query
+ * already checks (unchanged), plus moderation_status bookkeeping that makes
+ * this specific removal reason auditable and (unlike an owner's own
+ * delete) restorable. COALESCE keeps deleted_at as it already was if a
+ * report-resolution path had already soft-deleted it moments earlier.
+ */
+export async function moderateRemove(id: string, moderatorId: string, reason: string | null): Promise<void> {
+  await query(
+    `UPDATE stories
+     SET deleted_at = COALESCE(deleted_at, now()), moderation_status = 'removed_by_moderation',
+         moderated_by = :'moderated_by', moderated_at = now(), moderation_reason = ${nullable("reason")}
+     WHERE id = :'id'`,
+    { id, moderated_by: moderatorId, reason: reason ?? "" },
+  );
+}
+
+/**
+ * Restores a Story a moderator previously removed. The WHERE clause is the
+ * whole safety guarantee: it only ever un-deletes a row this exact
+ * mechanism removed (moderation_status = 'removed_by_moderation'), so a
+ * moderator can never accidentally resurrect content its own owner chose to
+ * delete themselves — that path never touches moderation_status at all.
+ * Returns false (no-op) if the Story wasn't in a moderator-removed state.
+ */
+export async function moderateRestore(id: string): Promise<boolean> {
+  const rows = await query(
+    `UPDATE stories
+     SET deleted_at = NULL, moderation_status = 'active', moderated_by = NULL, moderated_at = NULL, moderation_reason = NULL
+     WHERE id = :'id' AND moderation_status = 'removed_by_moderation'
+     RETURNING id`,
+    { id },
+  );
+  return rows.length > 0;
 }
 
 /** A user's currently-active (not expired, not deleted) Stories, oldest first — the day's sequence. */

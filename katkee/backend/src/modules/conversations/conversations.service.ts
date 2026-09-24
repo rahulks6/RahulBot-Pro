@@ -1,4 +1,5 @@
 import { HttpError } from "../../http/errors";
+import { assertNotRestricted } from "../../shared/accountStatus";
 import * as usersRepo from "../users/users.repository";
 import * as socialRepo from "../social/social.repository";
 import * as engagementService from "../stories/engagement.service";
@@ -28,6 +29,13 @@ export async function openConversationWith(viewerId: string, targetUsername: str
   const target = await requireOtherUser(targetUsername, viewerId);
   await assertNotBlocked(viewerId, target.id);
   const existing = await conversationsRepo.findConversationBetween(viewerId, target.id);
+  if (!existing) {
+    // Only a brand-new DM is blocked — an already-existing conversation
+    // keeps working, matching the spec's "restricted" (not "suspended")
+    // distinction: this is about starting new contact, not cutting off
+    // conversations that already exist.
+    await assertNotRestricted(viewerId, "start a new conversation");
+  }
   const conversation = existing ?? (await conversationsRepo.createConversation(viewerId, target.id));
   return {
     id: conversation.id,

@@ -1,6 +1,7 @@
 import { query, queryOne } from "../../db/psql";
 
 export type UserRole = "user" | "moderator" | "admin";
+export type AccountStatus = "active" | "restricted" | "suspended" | "disabled";
 
 export interface UserRecord {
   id: string;
@@ -13,11 +14,12 @@ export interface UserRecord {
   isActive: boolean;
   role: UserRole;
   isPrimaryAdmin: boolean;
+  accountStatus: AccountStatus;
   createdAt: string;
 }
 
 const SELECT_COLUMNS =
-  "id, username, email, password_hash, display_name, bio, is_private, is_active, role, is_primary_admin, created_at";
+  "id, username, email, password_hash, display_name, bio, is_private, is_active, role, is_primary_admin, account_status, created_at";
 
 function mapRow(row: Record<string, string | null>): UserRecord {
   return {
@@ -31,6 +33,7 @@ function mapRow(row: Record<string, string | null>): UserRecord {
     isActive: row.is_active === "t",
     role: row.role as UserRole,
     isPrimaryAdmin: row.is_primary_admin === "t",
+    accountStatus: row.account_status as AccountStatus,
     createdAt: row.created_at as string,
   };
 }
@@ -121,6 +124,25 @@ export async function setProfile(
 /** Moderator-only action (see moderation.service.ts) — login and token refresh both already check isActive, so this is the one lever that actually enforces a suspension. */
 export async function setActive(id: string, isActive: boolean): Promise<void> {
   await query(`UPDATE users SET is_active = :'is_active' WHERE id = :'id'`, { id, is_active: isActive });
+}
+
+/**
+ * The additive RESTRICTED/SUSPENDED/DISABLED state (migration 0023).
+ * 'restricted' leaves is_active untouched (true) — login and token refresh
+ * keep working exactly as they do today; only specific action points (see
+ * moderation.service.ts's restrictUserByUsername) check this column at all.
+ * 'suspended' and 'disabled' also flip is_active false, so the existing,
+ * already-tested login/refresh block stays the actual enforcement backstop
+ * for those two states — this column layers a more specific, auditable
+ * reason on top of it, it doesn't replace it.
+ */
+export async function setAccountStatus(id: string, status: AccountStatus): Promise<void> {
+  const isActive = status === "active" || status === "restricted";
+  await query(`UPDATE users SET account_status = :'account_status', is_active = :'is_active' WHERE id = :'id'`, {
+    id,
+    account_status: status,
+    is_active: isActive,
+  });
 }
 
 /** Admin-only action (see moderation.service.ts's requireAdmin/promoteUser/demoteUser) — grants or revokes moderator/admin access. Never touches is_primary_admin; that's set exactly once, out of band, by scripts/seedPrimaryAdmin.ts. */

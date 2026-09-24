@@ -13,3 +13,17 @@ export function sendJson(res: ServerResponse, status: number, payload: unknown):
   });
   res.end(body);
 }
+
+/**
+ * The Admin Console (see modules/admin/console.routes.ts) is server-rendered
+ * static HTML/CSS/vanilla JS with zero build step — this is its one other
+ * response shape, alongside the JSON every other route in this codebase
+ * already returns.
+ */
+export function sendHtml(res: ServerResponse, status: number, html: string, contentType = "text/html; charset=utf-8"): void {
+  res.writeHead(status, {
+    "Content-Type": contentType,
+    "Content-Length": Buffer.byteLength(html),
+  });
+  res.end(html);
+}

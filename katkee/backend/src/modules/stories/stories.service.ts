@@ -1,5 +1,6 @@
 import { config } from "../../config/env";
 import { HttpError } from "../../http/errors";
+import { assertNotRestricted } from "../../shared/accountStatus";
 import * as usersRepo from "../users/users.repository";
 import * as mediaRepo from "../media/media.repository";
 import * as socialRepo from "../social/social.repository";
@@ -89,6 +90,7 @@ export async function publishStory(
   input: PublishStoryInput,
   options: { ttlSecondsOverride?: number } = {},
 ): Promise<PublicStory> {
+  await assertNotRestricted(ownerId, "publish a new Story");
   const media = await mediaRepo.findMediaById(input.mediaId);
   if (!media || media.ownerId !== ownerId) {
     throw new HttpError(404, "Media not found.");
@@ -298,11 +300,25 @@ export async function deleteStory(ownerId: string, storyId: string): Promise<voi
   await softDeleteStoryAndCleanUp(storyId);
 }
 
-/** Privileged: no ownership check. Only ever called from moderation.service.ts after a moderator resolves a report — see requireModerator there. */
-export async function moderatorDeleteStory(storyId: string): Promise<void> {
+/**
+ * Privileged: no ownership check. Called from moderation.service.ts both
+ * after a moderator resolves a report (the legacy, role-only-gated path)
+ * and from the new, permission-gated content.remove action. Writes the
+ * same moderation_status bookkeeping (migration 0022) either way, so a
+ * removal is always specifically restorable via moderatorRestoreStory,
+ * regardless of which path triggered it.
+ */
+export async function moderatorDeleteStory(storyId: string, moderatorId: string, reason: string | null = null): Promise<void> {
   const story = await storiesRepo.findStoryById(storyId);
   if (!story || story.deletedAt !== null) throw new HttpError(404, "Story not found.");
-  await softDeleteStoryAndCleanUp(storyId);
+  await storiesRepo.moderateRemove(storyId, moderatorId, reason);
+  await highlightsRepo.removeStoryFromAllHighlights(storyId);
+}
+
+/** The undo side of moderatorDeleteStory — only ever un-deletes a Story this exact mechanism removed (see moderateRestore's own guard). */
+export async function moderatorRestoreStory(storyId: string): Promise<void> {
+  const restored = await storiesRepo.moderateRestore(storyId);
+  if (!restored) throw new HttpError(409, "This Story wasn't removed by moderation, or has already been restored.");
 }
 
 /** Every non-deleted Story an owner has ever published — the private Archive (spec), not shown to anyone else. */

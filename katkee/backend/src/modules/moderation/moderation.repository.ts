@@ -77,16 +77,26 @@ export async function listReports(status: ReportStatus, limit: number, offset: n
   return rows.map(mapRow);
 }
 
+/**
+ * Optimistic-locked: the WHERE clause requires the report to still be
+ * 'pending' at the moment of the actual write, not just at an earlier read
+ * — closing the race where two moderators both load the same pending
+ * report and both try to resolve it. Returns false (no rows updated) if
+ * someone else's resolution won the race; the caller (moderation.service.ts)
+ * turns that into a 409 rather than silently double-actioning the report.
+ */
 export async function resolveReport(
   id: string,
   moderatorId: string,
   status: "dismissed" | "actioned",
   note: string | null,
-): Promise<void> {
-  await query(
+): Promise<boolean> {
+  const rows = await query(
     `UPDATE reports
      SET status = :'status', resolution_note = ${nullable("note")}, reviewed_by = :'reviewed_by', reviewed_at = now()
-     WHERE id = :'id'`,
+     WHERE id = :'id' AND status = 'pending'
+     RETURNING id`,
     { id, status, note: note ?? "", reviewed_by: moderatorId },
   );
+  return rows.length > 0;
 }

@@ -1,4 +1,4 @@
-import { query, queryOne, type Row } from "../../db/psql";
+import { nullable, query, queryOne, type Row } from "../../db/psql";
 
 export interface CommentRecord {
   id: string;
@@ -96,6 +96,28 @@ export async function countCommentsByUserOnCreator(viewerId: string, creatorId: 
 
 export async function softDeleteComment(commentId: string): Promise<void> {
   await query(`UPDATE story_comments SET deleted_at = now() WHERE id = :'id'`, { id: commentId });
+}
+
+/** The comment-side twin of stories.repository.ts's moderateRemove/moderateRestore — same reasoning, same guarantees. */
+export async function moderateRemove(id: string, moderatorId: string, reason: string | null): Promise<void> {
+  await query(
+    `UPDATE story_comments
+     SET deleted_at = COALESCE(deleted_at, now()), moderation_status = 'removed_by_moderation',
+         moderated_by = :'moderated_by', moderated_at = now(), moderation_reason = ${nullable("reason")}
+     WHERE id = :'id'`,
+    { id, moderated_by: moderatorId, reason: reason ?? "" },
+  );
+}
+
+export async function moderateRestore(id: string): Promise<boolean> {
+  const rows = await query(
+    `UPDATE story_comments
+     SET deleted_at = NULL, moderation_status = 'active', moderated_by = NULL, moderated_at = NULL, moderation_reason = NULL
+     WHERE id = :'id' AND moderation_status = 'removed_by_moderation'
+     RETURNING id`,
+    { id },
+  );
+  return rows.length > 0;
 }
 
 export interface CommentModerationView {

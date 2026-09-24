@@ -1,4 +1,5 @@
 import { HttpError } from "../../http/errors";
+import { assertNotRestricted } from "../../shared/accountStatus";
 import * as socialRepo from "../social/social.repository";
 import * as storiesRepo from "./stories.repository";
 import * as likesRepo from "./likes.repository";
@@ -41,6 +42,7 @@ async function assertCanComment(storyId: string, viewerId: string): Promise<stor
 }
 
 export async function createComment(viewerId: string, storyId: string, body: string): Promise<CommentRecord> {
+  await assertNotRestricted(viewerId, "post a comment");
   const story = await assertCanComment(storyId, viewerId);
   const comment = await commentsRepo.createComment(storyId, viewerId, body);
   await notificationsService.notifyComment(viewerId, story.ownerId, storyId, comment.id);
@@ -67,11 +69,17 @@ export async function deleteComment(viewerId: string, commentId: string): Promis
   await commentsRepo.softDeleteComment(commentId);
 }
 
-/** Privileged: no ownership check. Only ever called from moderation.service.ts after a moderator resolves a report — see requireModerator there. */
-export async function moderatorDeleteComment(commentId: string): Promise<void> {
+/** Privileged: no ownership check. See stories.service.ts's moderatorDeleteStory for why this takes moderatorId/reason and writes moderation_status. */
+export async function moderatorDeleteComment(commentId: string, moderatorId: string, reason: string | null = null): Promise<void> {
   const comment = await commentsRepo.findCommentWithStoryOwner(commentId);
   if (!comment) throw new HttpError(404, "Comment not found.");
-  await commentsRepo.softDeleteComment(commentId);
+  await commentsRepo.moderateRemove(commentId, moderatorId, reason);
+}
+
+/** The undo side of moderatorDeleteComment. */
+export async function moderatorRestoreComment(commentId: string): Promise<void> {
+  const restored = await commentsRepo.moderateRestore(commentId);
+  if (!restored) throw new HttpError(409, "This comment wasn't removed by moderation, or has already been restored.");
 }
 
 export async function shareStory(viewerId: string, storyId: string): Promise<void> {
