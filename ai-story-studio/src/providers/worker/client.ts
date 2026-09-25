@@ -40,6 +40,8 @@ export interface WorkerModel {
   mock: boolean;
   loaded: boolean;
   default: boolean;
+  commercial_use?: string;
+  license_url?: string;
 }
 
 export interface WorkerSystem {
@@ -141,6 +143,11 @@ export class WorkerClient {
 
   getJob(id: string): Promise<WorkerJob> {
     return this.json<WorkerJob>('GET', `/jobs/${encodeURIComponent(id)}`);
+  }
+
+  /** Start a benchmark job (Phase 3). Returns immediately; poll with getJob. */
+  submitBenchmark(body: Record<string, unknown>): Promise<WorkerJob> {
+    return this.json<WorkerJob>('POST', '/benchmarks', body);
   }
 
   cancel(id: string): Promise<WorkerJob> {

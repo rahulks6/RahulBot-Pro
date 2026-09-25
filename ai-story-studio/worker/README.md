@@ -2,7 +2,7 @@
 
 The worker is the Python process that will run the open-source AI models on a GPU. The studio app talks to it over HTTP. On a local machine it runs next to the app. In Phase 5 the same container will run on a temporary cloud GPU.
 
-> **Phase 2 ships mock models only.** They produce labelled placeholders and need no model weights. When FFmpeg is installed, the mock video, upscale and lip-sync models write **real H.264 MP4 files**, so the full media path is exercised end to end. Nothing here costs money.
+> **Mock models by default.** They produce labelled placeholders and need no model weights. When FFmpeg is installed, the mock video, upscale and lip-sync models write **real H.264 MP4 files**. **Phase 3** adds real open-source adapters (diffusers image and image-to-video, Kokoro, Chatterbox, an FFmpeg upscaler) that you enable in a model catalog, behind a licence gate. It also adds a benchmark harness; see [../docs/BENCHMARKING.md](../docs/BENCHMARKING.md). Nothing here rents a GPU.
 
 ## Run it
 
@@ -82,6 +82,14 @@ pyright                  # optional, from worker/
 ```
 
 Tests that need FFmpeg are skipped when it is not installed. Set `FFMPEG_PATH`/`FFPROBE_PATH` to use a specific build.
+
+## Real models (Phase 3)
+
+- **Setup:** `pip install -r requirements-gpu.txt`, after installing a CUDA build of PyTorch.
+- **Catalog:** copy `models.example.json` to `models.json`, review the licences, and enable models. Then point the worker at it with `WORKER_MODELS_FILE=models.json`. Model downloads go to `WORKER_MODEL_CACHE_DIR`.
+- **Licence gate:** `non_commercial` and `unknown` models are refused, and `conditional` models need `"license_acknowledged": true`. `WORKER_ALLOW_NONCOMMERCIAL=true` is for private evaluation only. `GET /models` lists every catalog entry that was not registered and why.
+- **Benchmarks:** `POST /benchmarks` with `{ "models": [...], "include_mock": false, "source_image": "<base64 PNG>", "suite": {...} }`. The suite is optional; the built-in `story-studio-default` is used if omitted. The request returns a job whose `results.json` output holds per-model summaries and per-case results, and every output is downloadable. There is also a CLI: `python -m ais_worker.benchmark --models a,b`.
+- **Testing:** the adapter tests run against fake libraries that mimic the documented APIs (PyTorch and diffusers cannot be installed in the build environment). The real behaviour is verified by running the benchmark on a GPU.
 
 ## Model interfaces
 

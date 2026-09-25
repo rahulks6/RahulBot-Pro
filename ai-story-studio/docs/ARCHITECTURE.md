@@ -4,7 +4,7 @@ AI Story Studio is a private, local-first production tool for our own original s
 
 `IDEA → STORY PACKAGE → REVIEW → CREATE VIDEO → REVIEW SHOTS → BUILD FINAL → QUALITY CHECK → EXPORT`
 
-Phase 1 built the local foundation. Phase 2, the current phase, adds the local Python AI worker (§16). Generation is still **mock only** and spends ₹0. This document describes the whole architecture and marks what is mocked.
+Phase 1 built the local foundation. Phase 2 added the local Python AI worker (§16). Phase 3, the current phase, adds real open-source model adapters, a licence gate and the benchmark workflow (§17). Generation is still **mock only** and spends ₹0. This document describes the whole architecture and marks what is mocked.
 
 ## 1. System overview
 
@@ -61,7 +61,7 @@ ai-story-studio/
 │   ├── services/               business logic (see §6–§12)
 │   ├── storage/                StorageProvider + LocalStorageProvider (path-traversal safe)
 │   └── web/                    router, CSRF, HTML templating (auto-escaped), pages, static assets
-├── test/                       node:test suites (84 tests, incl. worker integration)
+├── test/                       node:test suites (88 tests, incl. worker integration)
 ├── worker/                     Python AI worker (Phase 2): ais_worker/, tests/, Dockerfile
 └── tools/                      ESLint TypeScript-stripping parser + globals
 ```
@@ -178,7 +178,7 @@ These safeguards are independent of each other, and all are tested with `MockGPU
 
 ## 15. Testing strategy
 
-`npm test` runs the Node built-in test runner, with an in-memory SQLite database and temporary storage per test. There are 84 TypeScript tests (plus 34 worker tests, §16) covering the spec §78 list: CRUD, locks, variants, ordering, Story Package validation and atomic import, prompt construction, history preservation, approve/reject, the mock queue, budget calculation and blocking, GPU safety, mock providers, audio caching, timeline and mixer, similarity, quality and export validation, backup round-trip, security validation, web CSRF/escaping/traversal, and the whole demo workflow.
+`npm test` runs the Node built-in test runner, with an in-memory SQLite database and temporary storage per test. There are 88 TypeScript tests (plus 53 worker tests, §16–§17) covering the spec §78 list: CRUD, locks, variants, ordering, Story Package validation and atomic import, prompt construction, history preservation, approve/reject, the mock queue, budget calculation and blocking, GPU safety, mock providers, audio caching, timeline and mixer, similarity, quality and export validation, backup round-trip, security validation, web CSRF/escaping/traversal, and the whole demo workflow.
 
 `npm run check` runs lint (ESLint + Prettier), typecheck (`tsc --strict`), the tests and the production build.
 
@@ -201,3 +201,25 @@ Studio (TypeScript)                                   Worker (Python, worker/ais
 - **FFmpeg / FFprobe:** the mock video model renders a real H.264 MP4 (a push-in on the approved still) at the requested fps and duration. The mock upscaler scales MP4s. The mock lip sync stream-copies the clip with a tag. Everything is probed with ffprobe. Without FFmpeg the mocks fall back to JSON clip manifests.
 - **Diagnostics:** GPU names and VRAM plus the CUDA version (via `nvidia-smi`, no shell), CPU, memory, disk, FFmpeg versions, models, worker version and job counts.
 - **App integration:** `connectWorker(studio)` runs at start-up when `WORKER_URL` is set and swaps the provider set to worker-backed adapters. Each adapter's `ProviderInfo` comes from the worker's `/models` (so mock stays mock). `WorkerClient` polls jobs, cancels them on abort or timeout, and verifies the SHA-256 and size of every download before anything becomes an asset. The token stays in the server process. The cost-safety gate still refuses non-mock models while `MOCK_GENERATION=true`. `GPUProvider` now declares `paid` and `local`: only paid providers need `ENABLE_CLOUD_GPU`, and the minimum-VRAM rental preference does not apply to a local machine.
+
+## 17. Real models, licence gate and benchmarks (Phase 3)
+
+- **Catalog:** `WORKER_MODELS_FILE` is a JSON list of candidate models with kind, adapter, repo, revision, licence, `commercial_use` (`allowed` / `conditional` / `non_commercial` / `unknown`), minimum VRAM and parameters. Nothing is hard-coded and everything is disabled until a human enables it. `worker/models.example.json` holds researched candidates with sources.
+- **Licence gate:** because our videos are published, `non_commercial` and `unknown` models are refused. `conditional` models need `license_acknowledged: true`. Refused entries are reported by `/models` together with the reason. In the app, non-commercial or unknown models can never be _selected_ for production.
+- **Adapters** (lazy imports, so the worker still starts without PyTorch):
+  - `DiffusersImageModel`: `DiffusionPipeline.from_pretrained` covers FLUX-family, Qwen-Image, SDXL and later models.
+  - `DiffusersImageToVideoModel`: covers Wan-family, LTX-family and later models. It snaps frame counts (4k+1, 8k+1) and dimensions, and encodes at the model's native fps, retimed to the project fps with FFmpeg.
+  - `KokoroTts`: speed only; it has no emotion control, and the adapter logs that.
+  - `ChatterboxTts`: emotion is mapped to the model's exaggeration control.
+  - `FfmpegUpscaler`: a real, non-AI Lanczos baseline.
+  - Every adapter passes only the arguments a pipeline accepts, and checks for cancellation between diffusion steps. Peak VRAM is recorded from PyTorch. GPU out-of-memory maps to `OUT_OF_MEMORY`, and a missing library gives an install hint (`MODEL_LOAD_FAILED`).
+- **Benchmark harness** (`ais_worker/benchmark.py`, `POST /benchmarks`, CLI `python -m ais_worker.benchmark`):
+  - One cancellable job runs a suite built around recurring-character stories against the selected models.
+  - It records load time, mean and p95 run time, peak VRAM, success rate and error codes, same-seed reproducibility, and technical output checks.
+  - A broken model is recorded as unreliable; it never aborts the run.
+- **App:**
+  - **Tables:** migration `0002` adds `benchmark_runs`, `benchmark_results`, `benchmark_ratings` and `model_selections`.
+  - **Model Benchmarks page:** start runs on the worker, import results (with SHA-256 verified downloads), and compare outputs side by side.
+  - **Human judgement:** _human_ ratings for quality and consistency, aggregates including estimated cost per output at your hourly rate, and a licence-checked selection with the rationale recorded.
+  - **Using the selection:** `connectWorker` prefers the selected model for each kind, and every worker request names its model explicitly.
+  - **Mode gate:** real models run only with `MOCK_GENERATION=false`. The local worker is never "paid", so cloud GPUs stay behind `ENABLE_CLOUD_GPU`.

@@ -2,7 +2,7 @@
 
 A private, local-first production studio for **original** story videos. It takes an idea to a Story Package, then through review, generation, shot review, BUILD FINAL and quality checks to a ready-to-upload 1080p video. It is built for our own production, not as SaaS, and human review stays in the loop.
 
-> **Phase 2: local foundation + local Python AI worker, mock generation only.** Every image, clip and sound is a clearly labelled placeholder (with the worker and FFmpeg, clips are real H.264 MP4 placeholders). No GPU is rented, no paid API is called, and running it costs ₹0. `MOCK_GENERATION=true` is the default.
+> **Phase 3: local foundation, local Python AI worker, real open-source model adapters and a benchmark workflow.** By default (`MOCK_GENERATION=true`) every image, clip and sound is a clearly labelled placeholder and nothing costs money. Real models run only on your own GPU through the local worker, after the licence gate; cloud GPUs stay disabled. See [docs/BENCHMARKING.md](docs/BENCHMARKING.md).
 
 This app is self-contained in `ai-story-studio/` and does not touch the trading-bot code in the rest of the repository.
 
@@ -25,9 +25,9 @@ npm run dev                 # http://127.0.0.1:3000
 | `npm start`            | Run the compiled build                                                                |
 | `npm run migrate`      | Apply database migrations (they also run automatically on start)                      |
 | `npm run seed`         | Create the demo project (mock mode only)                                              |
-| `npm test`             | 84 tests (Node test runner; includes a real worker integration run)                   |
+| `npm test`             | 88 tests (Node test runner; includes a real worker integration run)                   |
 | `npm run worker`       | Start the local Python AI worker (Phase 2) — see [worker/README.md](worker/README.md) |
-| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (34 tests)                                        |
+| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (53 tests)                                        |
 | `npm run lint`         | ESLint + Prettier check                                                               |
 | `npm run typecheck`    | `tsc` strict type checking                                                            |
 | `npm run check`        | lint, typecheck, test and build, in that order                                        |
@@ -48,7 +48,7 @@ Data (SQLite database, media, logs) goes to `DATA_DIR`, which defaults to `./dat
 - Simulated cost tracking, budget warnings and blocking (₹200/day and ₹1,500/month by default), GPU settings, the watchdog and the emergency kill switch.
 - Project backup and restore, either metadata-only or with full media.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, and [docs/PHASE1_REPORT.md](docs/PHASE1_REPORT.md) and [docs/PHASE2_REPORT.md](docs/PHASE2_REPORT.md) for the completion reports.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, and [docs/PHASE1_REPORT.md](docs/PHASE1_REPORT.md) [docs/PHASE2_REPORT.md](docs/PHASE2_REPORT.md) and [docs/PHASE3_REPORT.md](docs/PHASE3_REPORT.md) for the completion reports.
 
 ## Mocked vs real
 

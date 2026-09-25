@@ -88,7 +88,7 @@ export function assertGenerationAllowed(env: AppEnv, set: ProviderSet): void {
   if (infos.every((i) => i.isMock)) {
     throw new AppError(
       'MOCK_MODE_REQUIRED',
-      'MOCK_GENERATION=false, but no real generation models are installed yet (they arrive in Phase 3). Set MOCK_GENERATION=true.',
+      'MOCK_GENERATION=false, but no real models are connected: enable models in the worker catalog and connect the worker, or set MOCK_GENERATION=true.',
     );
   }
   if (infos.some((i) => i.requiresPaidResources) && !env.enableCloudGpu) {

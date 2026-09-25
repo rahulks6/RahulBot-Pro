@@ -26,6 +26,9 @@ class ModelInfo:
     min_vram_gb: int
     device: Literal["cpu", "cuda"]
     mock: bool
+    # "allowed" | "conditional" | "non_commercial" | "unknown" | "not_applicable" (mocks)
+    commercial_use: str = "not_applicable"
+    license_url: str = ""
 
 
 Req = TypeVar("Req")

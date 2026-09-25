@@ -213,11 +213,11 @@ EMOTION = {
 }
 
 
-def write_wav(path: Path, samples: list[float]) -> None:
+def write_wav(path: Path, samples: list[float], sample_rate: int = SR) -> None:
     with wave.open(str(path), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
-        w.setframerate(SR)
+        w.setframerate(sample_rate)
         w.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples))
 
 

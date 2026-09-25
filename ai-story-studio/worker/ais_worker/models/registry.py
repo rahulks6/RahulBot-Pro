@@ -69,6 +69,8 @@ class ModelRegistry:
                     "min_vram_gb": i.min_vram_gb,
                     "device": i.device,
                     "mock": i.mock,
+                    "commercial_use": i.commercial_use,
+                    "license_url": i.license_url,
                     "loaded": m.loaded,
                     "default": self._defaults.get(i.kind) == i.id,
                     "load_count": self._load_counts.get(i.id, 0),

@@ -99,7 +99,7 @@ class MediaTools:
             timeout=max(60, duration * 30),
         )
 
-    def scale_video(self, ctx: JobContext, src: Path, out: Path, *, width: int, height: int) -> None:
+    def scale_video(self, ctx: JobContext, src: Path, out: Path, *, width: int, height: int, flags: str = "lanczos") -> None:
         ffmpeg, _ = self._need()
         ctx.run(
             [
@@ -111,7 +111,7 @@ class MediaTools:
                 "-i",
                 str(src),
                 "-vf",
-                f"scale={width}:{height}:flags=lanczos,format=yuv420p",
+                f"scale={width}:{height}:flags={flags},format=yuv420p",
                 "-c:v",
                 "libx264",
                 "-preset",
@@ -124,6 +124,23 @@ class MediaTools:
                 str(out),
             ],
             timeout=600,
+        )
+
+    def frames_to_clip(self, ctx: JobContext, frames_dir: Path, out: Path, *, in_fps: float, out_fps: int) -> None:
+        """Encode frame_%05d.png at the model's native fps, retimed to the project fps (frames duplicated/dropped)."""
+        ffmpeg, _ = self._need()
+        ctx.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-framerate", str(in_fps), "-i", str(frames_dir / "frame_%05d.png"),
+             "-vf", f"fps={out_fps},format=yuv420p", "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+             "-movflags", "+faststart", str(out)],
+            timeout=1800,
+        )  # fmt: skip
+
+    def scale_image(self, ctx: JobContext, src: Path, out: Path, *, width: int, height: int, flags: str = "lanczos") -> None:
+        ffmpeg, _ = self._need()
+        ctx.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-vf", f"scale={width}:{height}:flags={flags}", str(out)],
+            timeout=300,
         )
 
     def tag_copy(self, ctx: JobContext, src: Path, out: Path, comment: str) -> None:

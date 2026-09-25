@@ -8,6 +8,7 @@ import { appRoot } from '../lib/paths.ts';
 import { mimeForKey } from '../storage/storage.ts';
 import type { SafeHtml } from './html.ts';
 import { checkCsrf, parseForm, readBody, Router, securityHeaders, type Req, type Result } from './http.ts';
+import { registerBenchmarkPages } from './pages/benchmarks.ts';
 import { registerCharacterPages } from './pages/characters.ts';
 import { registerDashboard } from './pages/dashboard.ts';
 import { registerOpsPages } from './pages/ops.ts';
@@ -66,6 +67,7 @@ export function createWebApp(
   registerProductionPages(web);
   registerQualityPages(web);
   registerOpsPages(web);
+  registerBenchmarkPages(web);
 
   // Media from local storage (keys are validated by the storage provider: no traversal).
   router.get('/media/:key*', (req) => {

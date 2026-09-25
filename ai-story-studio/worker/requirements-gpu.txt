@@ -1,0 +1,14 @@
+# Real open-source model adapters (Phase 3). Install on a machine with an NVIDIA GPU.
+# Install PyTorch FIRST with the CUDA build that matches your driver, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# Then:
+diffusers>=0.35
+transformers>=4.50
+accelerate>=1.0
+sentencepiece
+protobuf
+pillow
+# Text-to-speech adapters (install the ones you enable in the catalog):
+kokoro>=0.9
+soundfile
+chatterbox-tts

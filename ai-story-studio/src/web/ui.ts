@@ -18,6 +18,7 @@ export const NAV: Array<[string, string]> = [
   ['/quality', 'Quality Check'],
   ['/exports', 'Exports'],
   ['/gpu', 'GPU & Costs'],
+  ['/benchmarks', 'Model Benchmarks'],
   ['/settings', 'Settings'],
 ];
 
@@ -35,8 +36,8 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
         called (₹0).
       </div>`
     : html`<div class="banner danger">
-        MOCK_GENERATION=false — no real model adapters are installed yet (Phase 3), so generation is
-        disabled.${opts.cloudGpu ? ' ENABLE_CLOUD_GPU is on.' : ''}
+        MOCK_GENERATION=false — real open-source models on the local worker may run (₹0). Paid cloud GPUs
+        ${opts.cloudGpu ? 'are ENABLED (ENABLE_CLOUD_GPU=true).' : 'stay disabled.'}
       </div>`;
   return html`<!doctype html>
     <html lang="en">
@@ -49,7 +50,7 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
       </head>
       <body>
         <nav class="sidebar">
-          <div class="brand">AI Story Studio<span>Phase 2 · local</span></div>
+          <div class="brand">AI Story Studio<span>Phase 3 · local</span></div>
           ${NAV.map(
             ([href, label]) =>
               html`<a href="${href}" class="${active === href ? 'active' : ''}">${label}</a>`,

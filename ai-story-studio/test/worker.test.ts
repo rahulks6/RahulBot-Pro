@@ -7,6 +7,7 @@ import { after, before, describe, it } from 'node:test';
 import type { AppError } from '../src/lib/errors.ts';
 import { appRoot } from '../src/lib/paths.ts';
 import { connectWorker } from '../src/providers/worker/connect.ts';
+import { BenchmarkService } from '../src/services/benchmarks.ts';
 import { produceShots, seedSmall, testStudio } from './helpers.ts';
 
 const TOKEN = 'integration-test-token-0123456789';
@@ -98,6 +99,44 @@ describe('local Python worker integration', { skip: python ? false : 'python3 no
             (g) => g.provider === 'local-worker' && g.status === 'terminated' && g.hourly_rate_inr === 0,
           ),
       );
+    } finally {
+      s.cleanup();
+    }
+  });
+
+  it('benchmarks worker models, imports verified outputs and applies a human selection', async () => {
+    const s = testStudio({ env: { workerUrl: url, workerToken: TOKEN } });
+    try {
+      const conn = await connectWorker(s);
+      const ffmpeg = conn.system.ffmpeg.ffmpeg !== null;
+      const svc = new BenchmarkService(s);
+      const run = await svc.start({
+        models: ['mock-image', 'mock-tts', 'mock-upscaler', ...(ffmpeg ? ['mock-video'] : [])],
+        includeMock: true,
+        hourlyRateInr: 46,
+      });
+      let current = run;
+      for (let i = 0; i < 200 && current.status === 'running'; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        current = await svc.refresh(run.id);
+      }
+      assert.equal(current.status, 'complete', current.error_message ?? '');
+      const results = svc.results(run.id);
+      assert.ok(results.length >= 10);
+      const image = results.find((x) => x.kind === 'image' && x.status === 'complete')!;
+      assert.ok(image.storage_key && (await s.storage.exists(image.storage_key)), 'outputs stored locally');
+      svc.rate(image.id, { quality: 4, consistency: 4 });
+      const agg = svc.aggregate(run.id).find((a) => a.model.id === 'mock-image')!;
+      assert.equal(agg.avgQuality, 4);
+      assert.equal(agg.reproducible, true);
+      svc.select({
+        runId: run.id,
+        modelId: 'mock-image',
+        rationale: 'pipeline smoke test',
+        licenseAcknowledged: false,
+      });
+      await connectWorker(s);
+      assert.equal(s.providers.image.info.id, 'mock-image', 'selection applied on reconnect');
     } finally {
       s.cleanup();
     }

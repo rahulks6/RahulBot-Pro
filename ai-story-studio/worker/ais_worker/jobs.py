@@ -83,12 +83,17 @@ class Job:
 class JobContext:
     """Handed to model code: job directory, logging, progress, cancellation and safe subprocesses."""
 
-    def __init__(self, job: Job, directory: Path, cancel: threading.Event, deadline: float, manager: JobManager) -> None:
+    def __init__(self, job: Job, directory: Path, cancel: threading.Event, deadline: float, save: Callable[[Job], None]) -> None:
         self.job = job
         self.dir = directory
         self._cancel = cancel
         self._deadline = deadline
-        self._manager = manager
+        self._save = save
+
+    def child(self, job: Job, directory: Path) -> JobContext:
+        """Context for a sub-run (benchmarks): same cancellation and deadline, not persisted as a job."""
+        directory.mkdir(parents=True, exist_ok=True)
+        return JobContext(job, directory, self._cancel, self._deadline, lambda _job: None)
 
     def check(self) -> None:
         if self._cancel.is_set():
@@ -98,17 +103,17 @@ class JobContext:
 
     def log(self, message: str) -> None:
         self.job.logs.append(f"{time.strftime('%H:%M:%S')} {redact(message)}")
-        self._manager.save(self.job)
+        self._save(self.job)
 
     def set_status(self, status: str, message: str = "") -> None:
         self.job.status = status
         if message:
             self.job.message = message
-        self._manager.save(self.job)
+        self._save(self.job)
 
     def progress(self, value: float) -> None:
         self.job.progress = max(0.0, min(1.0, value))
-        self._manager.save(self.job)
+        self._save(self.job)
 
     def sleep(self, seconds: float) -> None:
         """Interruptible sleep (used by mock models to simulate work)."""
@@ -148,7 +153,7 @@ class JobContext:
         data = path.read_bytes()
         out = OutputFile(name=name, mime=mime, size=len(data), sha256=hashlib.sha256(data).hexdigest(), **meta)
         self.job.outputs.append(out)
-        self._manager.save(self.job)
+        self._save(self.job)
         return out
 
 
@@ -271,7 +276,7 @@ class JobManager:
         job.started_at = time.time()
         job.status = "running"
         self.save(job)
-        ctx = JobContext(job, self._job_dir(job.id), event, time.monotonic() + self.timeout_seconds, self)
+        ctx = JobContext(job, self._job_dir(job.id), event, time.monotonic() + self.timeout_seconds, self.save)
         try:
             runner(ctx)
             self._finish(job, "complete", None)

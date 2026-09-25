@@ -1,5 +1,6 @@
 import type { Studio } from '../../app/studio.ts';
 import { AppError } from '../../lib/errors.ts';
+import { activeSelections } from '../../services/benchmarks.ts';
 import { WorkerClient, type WorkerModel, type WorkerSystem } from './client.ts';
 import {
   LocalWorkerGpuProvider,
@@ -14,6 +15,7 @@ import {
 
 export interface WorkerConnection {
   url: string;
+  client: WorkerClient;
   connectedAt: string;
   version: string;
   system: WorkerSystem;
@@ -36,8 +38,12 @@ export async function connectWorker(studio: Studio): Promise<WorkerConnection> {
   const client = new WorkerClient({ baseUrl: workerUrl, token: workerToken, timeoutSec: workerTimeoutSec });
   const health = await client.health();
   const [models, system] = await Promise.all([client.models(), client.system()]);
+  // A human model selection (Benchmarks page) wins over the worker's default model for that kind.
+  const selected = activeSelections(studio.db);
   const pick = (kind: WorkerModel['kind']) =>
-    models.find((m) => m.kind === kind && m.default) ?? models.find((m) => m.kind === kind);
+    models.find((m) => m.kind === kind && m.id === selected.get(kind)) ??
+    models.find((m) => m.kind === kind && m.default) ??
+    models.find((m) => m.kind === kind);
   studio.gpu.useProvider(new LocalWorkerGpuProvider(client, system));
   Object.assign(studio.providers, {
     image: new WorkerImageModel(client, pick('image')),
@@ -51,6 +57,7 @@ export async function connectWorker(studio: Studio): Promise<WorkerConnection> {
   });
   const connection: WorkerConnection = {
     url: workerUrl,
+    client,
     connectedAt: new Date().toISOString(),
     version: health.version,
     system,

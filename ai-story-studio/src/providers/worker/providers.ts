@@ -115,6 +115,7 @@ export class WorkerImageModel implements ImageModel {
   }
   async generate(req: ImageRequest, ctx: RunContext): Promise<ModelResult> {
     const body: Record<string, unknown> = {
+      model: this.info.id,
       prompt: req.prompt || 'untitled',
       negative_prompt: req.negativePrompt,
       seed: req.seed,
@@ -140,6 +141,7 @@ export class WorkerVideoModel implements VideoModel {
     const { job, files } = await this.client.run(
       '/generate/image-to-video',
       {
+        model: this.info.id,
         image: b64(req.image),
         motion_prompt: req.motionPrompt,
         negative_prompt: req.negativePrompt,
@@ -167,7 +169,12 @@ export class WorkerUpscaler implements Upscaler {
   async upscale(req: UpscaleRequest, ctx: RunContext): Promise<ModelResult> {
     const { job, files } = await this.client.run(
       '/process/upscale',
-      { source: b64(req.source), target_width: req.targetWidth, target_height: req.targetHeight },
+      {
+        model: this.info.id,
+        source: b64(req.source),
+        target_width: req.targetWidth,
+        target_height: req.targetHeight,
+      },
       ctx,
     );
     return result(job, first(files, 'upscaled file'), this.info);
@@ -186,6 +193,7 @@ export class WorkerTts implements TextToSpeechProvider {
       '/generate/audio',
       {
         kind: 'tts',
+        model: this.info.id,
         text: req.text,
         language: req.language,
         emotion: req.emotion,
@@ -210,7 +218,14 @@ export class WorkerMusic implements MusicProvider {
   async compose(req: MusicRequest, ctx: RunContext): Promise<ModelResult> {
     const { job, files } = await this.client.run(
       '/generate/audio',
-      { kind: 'music', mood: req.mood, genre: req.genre, energy: req.energy, duration_sec: req.durationSec },
+      {
+        kind: 'music',
+        model: this.info.id,
+        mood: req.mood,
+        genre: req.genre,
+        energy: req.energy,
+        duration_sec: req.durationSec,
+      },
       ctx,
     );
     return result(job, first(files, 'music'), this.info);
@@ -229,6 +244,7 @@ export class WorkerSfx implements SoundEffectProvider {
       '/generate/audio',
       {
         kind: req.loopable ? 'ambience' : 'sfx',
+        model: this.info.id,
         tag: req.tag,
         duration_sec: req.durationSec,
         loopable: req.loopable,
@@ -249,7 +265,7 @@ export class WorkerLipSync implements LipSyncProvider {
   async sync(req: LipSyncRequest, ctx: RunContext): Promise<ModelResult> {
     const { job, files } = await this.client.run(
       '/process/lipsync',
-      { video: b64(req.video), audio: b64(req.audio) },
+      { model: this.info.id, video: b64(req.video), audio: b64(req.audio) },
       ctx,
     );
     return result(job, first(files, 'lip-synced clip'), this.info);

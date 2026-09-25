@@ -51,6 +51,9 @@ class WorkerConfig:
     max_jobs_kept: int = 500
     ffmpeg_path: str | None = None
     ffprobe_path: str | None = None
+    models_file: Path | None = None
+    allow_noncommercial: bool = False
+    model_cache_dir: Path | None = None
 
     @property
     def jobs_dir(self) -> Path:
@@ -74,4 +77,7 @@ class WorkerConfig:
             job_timeout_seconds=_int(e.get("WORKER_JOB_TIMEOUT_SEC"), 1800, 5, 24 * 3600),
             ffmpeg_path=e.get("FFMPEG_PATH") or shutil.which("ffmpeg"),
             ffprobe_path=e.get("FFPROBE_PATH") or shutil.which("ffprobe"),
+            models_file=Path(e["WORKER_MODELS_FILE"]).resolve() if e.get("WORKER_MODELS_FILE") else None,
+            allow_noncommercial=_bool(e.get("WORKER_ALLOW_NONCOMMERCIAL"), False),
+            model_cache_dir=Path(e["WORKER_MODEL_CACHE_DIR"]).resolve() if e.get("WORKER_MODEL_CACHE_DIR") else None,
         )
