@@ -2,3 +2,7 @@ dist
 node_modules
 data
 package-lock.json
+worker/.mypy_cache
+worker/.pytest_cache
+worker/.ruff_cache
+worker/worker-data

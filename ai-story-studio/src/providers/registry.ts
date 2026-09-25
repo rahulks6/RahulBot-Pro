@@ -66,8 +66,9 @@ export function providerInfos(set: ProviderSet): ProviderInfo[] {
 /**
  * Cost-safety gate evaluated before ANY generation work (spec §64, §86).
  *
- *  - MOCK_GENERATION=true (default): only mock providers may run.
- *  - MOCK_GENERATION=false: Phase 1 has no real providers, so generation is
+ *  - MOCK_GENERATION=true (default): only mock models may run, on a mock or
+ *    local (never paid) GPU provider.
+ *  - MOCK_GENERATION=false: no real model adapters exist yet (Phase 3), so generation is
  *    refused rather than silently falling back to mocks.
  *  - A provider that can cost money additionally needs ENABLE_CLOUD_GPU=true.
  */
@@ -75,10 +76,11 @@ export function assertGenerationAllowed(env: AppEnv, set: ProviderSet): void {
   const infos = providerInfos(set);
   if (env.mockGeneration) {
     const real = infos.filter((i) => !i.isMock);
-    if (real.length > 0 || !set.gpu.isMock) {
+    if (real.length > 0 || set.gpu.paid) {
+      const names = [...real.map((i) => i.id), ...(set.gpu.paid ? [`GPU provider ${set.gpu.id}`] : [])];
       throw new AppError(
         'MOCK_MODE_REQUIRED',
-        `MOCK_GENERATION=true but non-mock providers are configured: ${real.map((i) => i.id).join(', ')}`,
+        `MOCK_GENERATION=true but non-mock or paid providers are configured: ${names.join(', ')}`,
       );
     }
     return;
@@ -86,7 +88,7 @@ export function assertGenerationAllowed(env: AppEnv, set: ProviderSet): void {
   if (infos.every((i) => i.isMock)) {
     throw new AppError(
       'MOCK_MODE_REQUIRED',
-      'MOCK_GENERATION=false, but Phase 1 contains no real generation providers. Set MOCK_GENERATION=true.',
+      'MOCK_GENERATION=false, but no real generation models are installed yet (they arrive in Phase 3). Set MOCK_GENERATION=true.',
     );
   }
   if (infos.some((i) => i.requiresPaidResources) && !env.enableCloudGpu) {

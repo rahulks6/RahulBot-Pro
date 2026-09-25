@@ -55,6 +55,9 @@ export const MOCK_GPU_OFFERS: GpuOffer[] = [
 export class MockGPUProvider implements GPUProvider {
   readonly id = 'mock';
   readonly isMock: boolean = true;
+  /** Simulates a paid cloud provider, but never bills anything. */
+  readonly paid: boolean = false;
+  readonly local: boolean = false;
   private readonly instances = new Map<string, ProviderInstance>();
   private readonly opts: MockGpuOptions;
   failNextProvisions: number;

@@ -4,7 +4,7 @@ AI Story Studio is a private, local-first production tool for our own original s
 
 `IDEA → STORY PACKAGE → REVIEW → CREATE VIDEO → REVIEW SHOTS → BUILD FINAL → QUALITY CHECK → EXPORT`
 
-Phase 1, the current phase, is the local foundation. It runs **only mock generation** and spends ₹0. This document describes the whole architecture and marks what is mocked.
+Phase 1 built the local foundation. Phase 2, the current phase, adds the local Python AI worker (§16). Generation is still **mock only** and spends ₹0. This document describes the whole architecture and marks what is mocked.
 
 ## 1. System overview
 
@@ -25,19 +25,19 @@ Web layer (src/web)  ─────────────►  Studio composit
         │                                                                     │
         ▼                                                                     ▼
   LocalStorageProvider (data/storage)                       Phase 1: mock implementations only
-  (StorageProvider interface → S3-compatible later)         Phase 2+: Python/FastAPI GPU worker + real adapters
+  (StorageProvider interface → S3-compatible later)         Phase 2: Python worker (mock models) · Phase 3+: real adapters
 ```
 
-The planned cloud path is: local job queue → GPU provider → temporary GPU → AI worker → open-source models → generated assets downloaded locally and verified → GPU terminated. In Phase 1 the **GPU provider is `MockGPUProvider`**. It simulates provisioning, start-up, model loading, timings, prices and failures, and nothing is rented.
+The planned cloud path is: local job queue → GPU provider → temporary GPU → AI worker → open-source models → generated assets downloaded locally and verified → GPU terminated. By default the **GPU provider is `MockGPUProvider`**. It simulates provisioning, start-up, model loading, timings, prices and failures, and nothing is rented. With `WORKER_URL` set, the app uses the local worker through `LocalWorkerGpuProvider` instead (₹0/h, never paid; see §16).
 
 ### Technology decisions
 
-| Spec preference                          | Phase 1 choice                                                                                         | Why                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Next.js / React / TypeScript             | **TypeScript** on Node 22 with a small server-rendered UI (`node:http`)                                | The build environment had **no npm registry access** (network policy), so Next.js/React could not be installed. The domain core (`src/app`, `src/services`, `src/repositories`, `src/providers`) has **no framework dependency**, so a Next.js UI can later call the same `Studio` object from route handlers or server actions. Nothing in the core needs rewriting. |
-| SQLite + TypeScript ORM                  | **SQLite** via Node's built-in `node:sqlite`, a typed repository layer and **numbered SQL migrations** | No ORM was installable offline. The migrations are plain SQL (`migrations/0001_initial_schema.sql`) and can be adopted by Drizzle or Kysely later.                                                                                                                                                                                                                    |
-| Python + FastAPI worker, Docker, ComfyUI | Phase 2 (not built)                                                                                    | The spec schedules these for Phase 2.                                                                                                                                                                                                                                                                                                                                 |
-| FFmpeg / FFprobe                         | `FfprobeMediaProbe` is implemented; the mock master is probed by `MockMediaProbe`                      | Real encoding is Phase 4. The export validation rules are already the real ones.                                                                                                                                                                                                                                                                                      |
+| Spec preference                          | Phase 1 choice                                                                                                                              | Why                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Next.js / React / TypeScript             | **TypeScript** on Node 22 with a small server-rendered UI (`node:http`)                                                                     | The build environment had **no npm registry access** (network policy), so Next.js/React could not be installed. The domain core (`src/app`, `src/services`, `src/repositories`, `src/providers`) has **no framework dependency**, so a Next.js UI can later call the same `Studio` object from route handlers or server actions. Nothing in the core needs rewriting. |
+| SQLite + TypeScript ORM                  | **SQLite** via Node's built-in `node:sqlite`, a typed repository layer and **numbered SQL migrations**                                      | No ORM was installable offline. The migrations are plain SQL (`migrations/0001_initial_schema.sql`) and can be adopted by Drizzle or Kysely later.                                                                                                                                                                                                                    |
+| Python + FastAPI worker, Docker, ComfyUI | **Built in Phase 2** (`worker/`): stdlib core + stdlib HTTP server, FastAPI adapter, Dockerfile. ComfyUI is deferred to Phase 3 model work. | PyPI and Docker Hub were blocked in the build environment, so the worker core has no third-party dependencies. The FastAPI adapter and Docker image are written but could not be installed or built here.                                                                                                                                                             |
+| FFmpeg / FFprobe                         | `FfprobeMediaProbe` is implemented; the mock master is probed by `MockMediaProbe`                                                           | Real encoding is Phase 4. The export validation rules are already the real ones.                                                                                                                                                                                                                                                                                      |
 
 Runtime dependencies: **none**. Dev dependencies are TypeScript, ESLint, Prettier and `@types/node`.
 
@@ -61,7 +61,8 @@ ai-story-studio/
 │   ├── services/               business logic (see §6–§12)
 │   ├── storage/                StorageProvider + LocalStorageProvider (path-traversal safe)
 │   └── web/                    router, CSRF, HTML templating (auto-escaped), pages, static assets
-├── test/                       node:test suites (80 tests)
+├── test/                       node:test suites (84 tests, incl. worker integration)
+├── worker/                     Python AI worker (Phase 2): ais_worker/, tests/, Dockerfile
 └── tools/                      ESLint TypeScript-stripping parser + globals
 ```
 
@@ -173,10 +174,30 @@ These safeguards are independent of each other, and all are tested with `MockGPU
 - All HTML output is escaped by the template function. User content cannot inject markup.
 - All SQL is parameterised. Dynamic identifiers are checked against a pattern, and backup import checks columns against the live schema.
 - Uploads are limited by size, MIME type and magic bytes. Request bodies are capped per route.
-- Secrets live only in `.env`, which is git-ignored (`.env.example` is provided). The logger redacts secret-looking keys and values. Credentials are never rendered in the browser. When the GPU worker arrives in Phase 2 it will require token authentication, validate paths and parameters, allow no shell execution, and keep cloud credentials off the worker.
+- Secrets live only in `.env`, which is git-ignored (`.env.example` is provided). The logger redacts secret-looking keys and values. Credentials are never rendered in the browser. The GPU worker (Phase 2) requires token authentication, validates paths and parameters, allows no shell execution and holds no cloud credentials (§16).
 
 ## 15. Testing strategy
 
-`npm test` runs the Node built-in test runner, with an in-memory SQLite database and temporary storage per test. There are 80 tests covering the spec §78 list: CRUD, locks, variants, ordering, Story Package validation and atomic import, prompt construction, history preservation, approve/reject, the mock queue, budget calculation and blocking, GPU safety, mock providers, audio caching, timeline and mixer, similarity, quality and export validation, backup round-trip, security validation, web CSRF/escaping/traversal, and the whole demo workflow.
+`npm test` runs the Node built-in test runner, with an in-memory SQLite database and temporary storage per test. There are 84 TypeScript tests (plus 34 worker tests, §16) covering the spec §78 list: CRUD, locks, variants, ordering, Story Package validation and atomic import, prompt construction, history preservation, approve/reject, the mock queue, budget calculation and blocking, GPU safety, mock providers, audio caching, timeline and mixer, similarity, quality and export validation, backup round-trip, security validation, web CSRF/escaping/traversal, and the whole demo workflow.
 
 `npm run check` runs lint (ESLint + Prettier), typecheck (`tsc --strict`), the tests and the production build.
+
+## 16. Local AI worker (Phase 2)
+
+`worker/` is the Python process that will run open-source models on a GPU. It is local in Phase 2 and a temporary cloud GPU from Phase 5. See [worker/README.md](../worker/README.md).
+
+```
+Studio (TypeScript)                                   Worker (Python, worker/ais_worker)
+  GenerationService ──► Worker*Provider ──► WorkerClient ══HTTP+Bearer══► WorkerAPI ─► JobManager ─► Model (mock) ─► FFmpeg
+  GpuSupervisor ──────► LocalWorkerGpuProvider (₹0/h, local, never paid)       │           (thread pool, cancel,   │
+                                                                           /system   timeouts, persisted jobs)  job dir
+  ◄──────────── download each output, verify SHA-256 + size, store locally ◄──────────────────────────────────────┘
+```
+
+- **Core without dependencies:** config, security, schemas, jobs, diagnostics, models and media use only the Python standard library. `server.py` (stdlib `ThreadingHTTPServer`) and `fastapi_app.py` (FastAPI/uvicorn, for production and Docker) both call the same `WorkerAPI.handle`, so their behaviour is identical.
+- **Endpoints:** `/health` (no auth; liveness only), `/models`, `/system`, `/generate/image`, `/generate/image-to-video`, `/generate/audio`, `/process/lipsync`, `/process/upscale`, `/jobs`, `/jobs/{id}`, `/jobs/{id}/cancel`, `/jobs/{id}/files/{name}`.
+- **Job processing:** a thread pool (one job at a time by default) with statuses `queued → loading_model → running → complete|failed|cancelled`. Cancellation is cooperative in Python and forced for FFmpeg, which is killed. There is a per-job timeout. Job records are persisted, jobs interrupted by a restart are marked failed, and old jobs are pruned.
+- **Model interfaces:** `Model.load/unload/run` plus `ModelInfo` (kind, VRAM, licence, device, mock). The registry loads each model once and keeps at most two loaded, unloading the least recently used. Phase 2 registers mocks only. `WORKER_MOCK_MODELS=false` registers **nothing** rather than silently mocking.
+- **FFmpeg / FFprobe:** the mock video model renders a real H.264 MP4 (a push-in on the approved still) at the requested fps and duration. The mock upscaler scales MP4s. The mock lip sync stream-copies the clip with a tag. Everything is probed with ffprobe. Without FFmpeg the mocks fall back to JSON clip manifests.
+- **Diagnostics:** GPU names and VRAM plus the CUDA version (via `nvidia-smi`, no shell), CPU, memory, disk, FFmpeg versions, models, worker version and job counts.
+- **App integration:** `connectWorker(studio)` runs at start-up when `WORKER_URL` is set and swaps the provider set to worker-backed adapters. Each adapter's `ProviderInfo` comes from the worker's `/models` (so mock stays mock). `WorkerClient` polls jobs, cancels them on abort or timeout, and verifies the SHA-256 and size of every download before anything becomes an asset. The token stays in the server process. The cost-safety gate still refuses non-mock models while `MOCK_GENERATION=true`. `GPUProvider` now declares `paid` and `local`: only paid providers need `ENABLE_CLOUD_GPU`, and the minimum-VRAM rental preference does not apply to a local machine.

@@ -185,10 +185,11 @@ describe('GPU safety', () => {
     assert.equal(s.mockGpu.activeCount('personal-vm'), 1);
   });
 
-  it('refuses real (non-mock) GPU providers while MOCK_GENERATION=true or cloud is disabled', async () => {
+  it('refuses paid GPU providers while MOCK_GENERATION=true or cloud is disabled', async () => {
     const { MockGPUProvider } = await import('../src/providers/mock/gpu.ts');
     class PretendCloud extends MockGPUProvider {
       override readonly isMock = false;
+      override readonly paid = true;
     }
     const { createMockProviders } = await import('../src/providers/registry.ts');
     const { LocalStorageProvider } = await import('../src/storage/storage.ts');

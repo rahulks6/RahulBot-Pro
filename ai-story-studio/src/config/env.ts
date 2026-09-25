@@ -7,13 +7,18 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export interface AppEnv {
   /** When true (the default) nothing paid can run: mock providers only. */
   mockGeneration: boolean;
-  /** Independent second gate for cloud GPUs. Phase 1 has no real provider regardless. */
+  /** Independent second gate for cloud GPUs. No real cloud provider exists yet. */
   enableCloudGpu: boolean;
   host: string;
   port: number;
   dataDir: string;
   mockFailureRate: number;
   logLevel: LogLevel;
+  /** Local AI worker (Phase 2). Empty = in-process mock providers. */
+  workerUrl: string;
+  /** Bearer token for the worker. Server-side only: never rendered, logged or sent to the browser. */
+  workerToken: string;
+  workerTimeoutSec: number;
 }
 
 function bool(value: string | undefined, fallback: boolean): boolean {
@@ -49,5 +54,8 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     dataDir: isAbsolute(dataDir) ? dataDir : join(appRoot(), dataDir),
     mockFailureRate: Math.min(1, Math.max(0, num(source.MOCK_FAILURE_RATE, 0))),
     logLevel: (['debug', 'info', 'warn', 'error'].includes(level) ? level : 'info') as LogLevel,
+    workerUrl: (source.WORKER_URL ?? '').trim().replace(/\/+$/, ''),
+    workerToken: source.WORKER_AUTH_TOKEN ?? '',
+    workerTimeoutSec: Math.max(10, num(source.WORKER_TIMEOUT_SEC, 1800)),
   };
 }

@@ -59,7 +59,7 @@ function voiceForm(v: Partial<VoiceProfile> = {}) {
         v.role ?? 'character',
       )}
       ${field('Voice model', 'voice_model', v.voice_model ?? 'mock-tts', {
-        help: 'Phase 1: mock-tts only. Open-source TTS models arrive in Phase 3/4.',
+        help: 'Mock TTS only for now (in-process or worker). Open-source TTS models arrive in Phase 3/4.',
       })}
       ${field('Voice identity / reference id', 'voice_identity', v.voice_identity)}
     </div>

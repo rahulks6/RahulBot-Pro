@@ -107,7 +107,7 @@ export function createWebApp(
           throw new AppError('FORBIDDEN', 'Invalid or missing CSRF token; reload the page and try again.');
       }
       const result = await matched.route.handler(request);
-      send(res, result);
+      send(res, result, req.headers.range);
     } catch (err) {
       const e = toAppError(err);
       const status =
@@ -151,7 +151,7 @@ export function createWebApp(
   return { handle, web };
 }
 
-function send(res: ServerResponse, result: Result): void {
+function send(res: ServerResponse, result: Result, range?: string): void {
   switch (result.type) {
     case 'html':
       res.writeHead(result.status ?? 200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -176,11 +176,30 @@ function send(res: ServerResponse, result: Result): void {
       return;
     case 'file': {
       const size = statSync(result.path).size;
-      res.writeHead(200, {
+      const headers = {
         'Content-Type': result.mime,
-        'Content-Length': size,
         'Content-Disposition': 'inline',
-      });
+        'Accept-Ranges': 'bytes',
+      };
+      // Single byte ranges so browsers can seek in audio/video.
+      const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : null;
+      if (m && (m[1] || m[2])) {
+        const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+        const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+        if (start >= size || start > end) {
+          res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+          res.end();
+          return;
+        }
+        res.writeHead(206, {
+          ...headers,
+          'Content-Range': `bytes ${start}-${end}/${size}`,
+          'Content-Length': end - start + 1,
+        });
+        createReadStream(result.path, { start, end }).pipe(res);
+        return;
+      }
+      res.writeHead(200, { ...headers, 'Content-Length': size });
       createReadStream(result.path).pipe(res);
       return;
     }

@@ -17,7 +17,9 @@
     "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "migrate": "node --disable-warning=ExperimentalWarning src/cli/migrate.ts",
     "seed": "node --disable-warning=ExperimentalWarning src/cli/seed-demo.ts",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "worker": "cd worker && python3 -m ais_worker",
+    "check:worker": "cd worker && ruff check . && ruff format --check . && mypy && pytest"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

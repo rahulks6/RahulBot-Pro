@@ -35,7 +35,7 @@ export async function seedDemo(
     batches++;
     cost += r.simulatedCostInr;
     log(
-      `${label}: ${r.completed} complete, ${r.failed} failed, ${r.gpuSessions} simulated GPU session(s), ₹${r.simulatedCostInr} simulated`,
+      `${label}: ${r.completed} complete, ${r.failed} failed, ${r.gpuSessions} GPU session(s) on ${studio.gpu.currentProvider.id}, ₹${r.simulatedCostInr} simulated`,
     );
   };
 

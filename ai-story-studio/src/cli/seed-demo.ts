@@ -1,9 +1,14 @@
 import { createStudio } from '../app/studio.ts';
 import { seedDemo } from '../demo/seed.ts';
+import { connectWorker } from '../providers/worker/connect.ts';
 
 // Seed the Phase 1 demo project (mock mode only; spends ₹0).
 const studio = createStudio({ logSinks: [] });
 try {
+  if (studio.env.workerUrl) {
+    const w = await connectWorker(studio);
+    console.log(`• Using local worker ${w.url} (v${w.version})`);
+  }
   const result = await seedDemo(studio, (m) => console.log(`• ${m}`));
   console.log('\nDemo ready:', JSON.stringify(result, null, 2));
   console.log(`\nStart the app with "npm run dev" and open http://${studio.env.host}:${studio.env.port}/`);

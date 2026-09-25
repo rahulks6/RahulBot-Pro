@@ -146,6 +146,18 @@ describe('web app', () => {
     }
   });
 
+  it('serves media with byte ranges (video seeking)', async () => {
+    const key = 'projects/prj_test/audio/ast_range.wav';
+    await s.storage.put(key, Buffer.from('0123456789'));
+    const part = await fetch(`${base}/media/${key}`, { headers: { range: 'bytes=2-5' } });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), 'bytes 2-5/10');
+    assert.equal(await part.text(), '2345');
+    const tail = await fetch(`${base}/media/${key}`, { headers: { range: 'bytes=-3' } });
+    assert.equal(await tail.text(), '789');
+    assert.equal((await fetch(`${base}/media/${key}`, { headers: { range: 'bytes=50-' } })).status, 416);
+  });
+
   it('limits request body size', async () => {
     const res = await post('/projects', { name: 'x'.repeat(5 * 1024 * 1024), _csrf: token });
     assert.notEqual(res.status, 200);

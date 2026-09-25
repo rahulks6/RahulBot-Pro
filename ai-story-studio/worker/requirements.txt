@@ -1,0 +1,3 @@
+# Production HTTP stack (optional: the worker also runs on the Python standard library).
+fastapi>=0.110
+uvicorn[standard]>=0.29

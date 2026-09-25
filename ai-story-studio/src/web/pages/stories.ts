@@ -156,7 +156,7 @@ function attemptCard(a: GenerationAttempt, previewHtml: SafeHtml): SafeHtml {
       [
         'Resolution',
         a.width
-          ? `${a.width}×${a.height}${settings['native'] === false ? (a.kind === 'video' ? ` (upscaled from ${String(settings['generated'] ?? '?')})` : ` (generated below the ${String(settings['requested'] ?? 'target')} target)`) : ''}`
+          ? `${a.width}×${a.height}${settings['native'] === false ? (a.kind === 'video' ? ' (upscaled to the target resolution)' : ' (below the target resolution)') : ''}`
           : '—',
       ],
       ['GPU', a.gpu_model ?? a.provider],

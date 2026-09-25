@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { AppError } from '../../lib/errors.ts';
 import { appRoot } from '../../lib/paths.ts';
 import { providerInfos } from '../../providers/registry.ts';
+import { connectWorker } from '../../providers/worker/connect.ts';
 import { AnalyticsService } from '../../services/analytics.ts';
 import { KILL_ALL_CONFIRMATION, KILL_ONE_CONFIRMATION } from '../../services/gpu-supervisor.ts';
 import type { SettingsKey } from '../../services/settings.ts';
@@ -218,6 +219,46 @@ export function registerOpsPages(web: Web): void {
         ]),
       )}
       ${card(
+        'Local AI worker (Phase 2)',
+        s.env.workerUrl
+          ? html`${kv([
+              ['URL', s.env.workerUrl],
+              ['Auth token', s.env.workerToken ? 'configured (never shown)' : 'MISSING'],
+              ['Status', s.worker ? badge('connected', 'good') : badge('not connected', 'bad')],
+              ...(s.worker
+                ? ([
+                    ['Worker version', s.worker.version],
+                    [
+                      'GPU',
+                      s.worker.system.gpu.available
+                        ? s.worker.system.gpu.gpus
+                            .map((g) => `${g.name} (${Math.round(g.vram_total_mb / 1024)} GB)`)
+                            .join(', ')
+                        : `none — ${s.worker.system.gpu.reason ?? ''}`,
+                    ],
+                    ['CUDA', s.worker.system.gpu.cuda_version ?? '—'],
+                    [
+                      'FFmpeg',
+                      s.worker.system.ffmpeg.ffmpeg ?? 'not installed (mock clips fall back to manifests)',
+                    ],
+                    ['Disk free', `${s.worker.system.disk.free_gb} GB`],
+                    [
+                      'Models',
+                      s.worker.models.map((m) => `${m.kind}: ${m.id}${m.mock ? ' (mock)' : ''}`).join(', ') ||
+                        'none',
+                    ],
+                  ] as Array<[string, string]>)
+                : []),
+            ])}${button(
+              '/settings/worker/connect',
+              s.worker ? 'Refresh worker status' : 'Connect to worker',
+            )}`
+          : html`<p class="muted">
+              Not configured: generation uses the in-process mock providers. Set WORKER_URL and
+              WORKER_AUTH_TOKEN in .env and start the worker (<code>npm run worker</code>).
+            </p>`,
+      )}
+      ${card(
         'AI components (replaceable)',
         table(
           ['Slot', 'Provider', 'Mock', 'Open source', 'Runs on', 'Paid?'],
@@ -366,6 +407,13 @@ export function registerOpsPages(web: Web): void {
           ),
         ),
       ])}`,
+    );
+  });
+  r.post('/settings/worker/connect', async () => {
+    const c = await connectWorker(s);
+    return web.redirect(
+      '/settings',
+      `Connected to worker ${c.version} (${c.models.length} models${c.models.every((m) => m.mock) ? ', all mock' : ''})`,
     );
   });
   r.post('/settings/:section', (req) => {

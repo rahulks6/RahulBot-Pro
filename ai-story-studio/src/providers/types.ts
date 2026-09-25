@@ -213,6 +213,10 @@ export interface ProviderInstance {
 export interface GPUProvider {
   readonly id: string;
   readonly isMock: boolean;
+  /** True when using this provider can cost money (cloud rental). Paid providers need explicit enabling. */
+  readonly paid: boolean;
+  /** True for a machine we already own (local GPU worker): rental preferences such as minimum VRAM do not apply. */
+  readonly local: boolean;
   listOffers(minVramGb: number): Promise<GpuOffer[]>;
   /** Create an instance tagged with `tags`. Must return quickly; readiness is polled separately. */
   provision(offer: GpuOffer, tags: string[]): Promise<{ providerInstanceId: string; startupSeconds: number }>;

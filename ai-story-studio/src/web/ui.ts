@@ -35,7 +35,7 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
         called (₹0).
       </div>`
     : html`<div class="banner danger">
-        MOCK_GENERATION=false — Phase 1 has no real providers, so generation is
+        MOCK_GENERATION=false — no real model adapters are installed yet (Phase 3), so generation is
         disabled.${opts.cloudGpu ? ' ENABLE_CLOUD_GPU is on.' : ''}
       </div>`;
   return html`<!doctype html>
@@ -49,7 +49,7 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
       </head>
       <body>
         <nav class="sidebar">
-          <div class="brand">AI Story Studio<span>Phase 1 · local</span></div>
+          <div class="brand">AI Story Studio<span>Phase 2 · local</span></div>
           ${NAV.map(
             ([href, label]) =>
               html`<a href="${href}" class="${active === href ? 'active' : ''}">${label}</a>`,
@@ -243,6 +243,14 @@ export function assetPreview(a: GeneratedAsset, posterKey?: string): SafeHtml {
     </figure>`;
   if (a.mime.startsWith('audio/'))
     return html`<audio controls preload="none" src="${mediaUrl(a.storage_key)}"></audio>`;
+  if (a.mime === 'video/mp4') {
+    return html`<figure class="preview">
+      ${mockTag}<video controls muted preload="metadata" src="${mediaUrl(a.storage_key)}"></video>
+      <figcaption class="muted">
+        ${a.duration_sec ?? '?'}s · ${a.width}×${a.height}${a.is_native_resolution ? '' : ' · upscaled'}
+      </figcaption>
+    </figure>`;
+  }
   if (a.mime.includes('mock-video')) {
     return html`<figure class="preview clip">
       ${mockTag}${posterKey

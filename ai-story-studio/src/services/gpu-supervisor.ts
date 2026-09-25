@@ -85,7 +85,7 @@ export class GpuSession {
  * watchdog, never silently forgotten.
  */
 export class GpuSupervisor {
-  private readonly provider: GPUProvider;
+  private provider: GPUProvider;
   private readonly repo: GpuRepository;
   private readonly settings: SettingsService;
   private readonly budget: BudgetService;
@@ -111,6 +111,17 @@ export class GpuSupervisor {
     this.env = deps.env;
   }
 
+  get currentProvider(): GPUProvider {
+    return this.provider;
+  }
+
+  /** Swap the GPU provider (e.g. to the local worker). Refused while any instance is active. */
+  useProvider(provider: GPUProvider): void {
+    if (this.repo.active().length > 0)
+      throw new AppError('CONFLICT', 'Cannot switch GPU provider while a GPU instance is active');
+    this.provider = provider;
+  }
+
   get simulated(): boolean {
     return this.provider.isMock;
   }
@@ -123,9 +134,9 @@ export class GpuSupervisor {
     return this.clock.now().toISOString();
   }
 
-  /** Cost-safety gate: real providers need MOCK_GENERATION=false AND ENABLE_CLOUD_GPU=true. */
+  /** Cost-safety gate: paid providers need MOCK_GENERATION=false AND ENABLE_CLOUD_GPU=true. */
   assertProviderAllowed(): void {
-    if (this.provider.isMock) return;
+    if (!this.provider.paid) return;
     if (this.env.mockGeneration)
       throw new AppError('MOCK_MODE_REQUIRED', 'MOCK_GENERATION=true: real GPU providers are disabled.');
     if (!this.env.enableCloudGpu)
@@ -139,7 +150,8 @@ export class GpuSupervisor {
   async plan(minVramGb: number, estimatedGpuSeconds: number): Promise<GpuPlan> {
     this.assertProviderAllowed();
     const gpu = this.settings.get('gpu');
-    const need = Math.max(minVramGb, gpu.minVramGb);
+    // The minimum-VRAM setting is a rental preference; a local worker is used as it is.
+    const need = this.provider.local ? minVramGb : Math.max(minVramGb, gpu.minVramGb);
     const offers = (await this.provider.listOffers(need)).filter((o) => o.vramGb >= need);
     const available = offers.filter((o) => o.available);
     if (available.length === 0)

@@ -2,7 +2,7 @@
 
 A private, local-first production studio for **original** story videos. It takes an idea to a Story Package, then through review, generation, shot review, BUILD FINAL and quality checks to a ready-to-upload 1080p video. It is built for our own production, not as SaaS, and human review stays in the loop.
 
-> **Phase 1: local foundation, mock generation only.** Every image, clip and sound is a clearly labelled placeholder. No GPU is rented, no paid API is called, and running it costs ₹0. `MOCK_GENERATION=true` is the default.
+> **Phase 2: local foundation + local Python AI worker, mock generation only.** Every image, clip and sound is a clearly labelled placeholder (with the worker and FFmpeg, clips are real H.264 MP4 placeholders). No GPU is rented, no paid API is called, and running it costs ₹0. `MOCK_GENERATION=true` is the default.
 
 This app is self-contained in `ai-story-studio/` and does not touch the trading-bot code in the rest of the repository.
 
@@ -18,17 +18,19 @@ npm run seed                # build the demo project end to end in mock mode
 npm run dev                 # http://127.0.0.1:3000
 ```
 
-| Script              | What it does                                                     |
-| ------------------- | ---------------------------------------------------------------- |
-| `npm run dev`       | Run from TypeScript sources with auto-restart                    |
-| `npm run build`     | Compile to `dist/`                                               |
-| `npm start`         | Run the compiled build                                           |
-| `npm run migrate`   | Apply database migrations (they also run automatically on start) |
-| `npm run seed`      | Create the demo project (mock mode only)                         |
-| `npm test`          | 80 tests (Node test runner)                                      |
-| `npm run lint`      | ESLint + Prettier check                                          |
-| `npm run typecheck` | `tsc` strict type checking                                       |
-| `npm run check`     | lint, typecheck, test and build, in that order                   |
+| Script                 | What it does                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `npm run dev`          | Run from TypeScript sources with auto-restart                                         |
+| `npm run build`        | Compile to `dist/`                                                                    |
+| `npm start`            | Run the compiled build                                                                |
+| `npm run migrate`      | Apply database migrations (they also run automatically on start)                      |
+| `npm run seed`         | Create the demo project (mock mode only)                                              |
+| `npm test`             | 84 tests (Node test runner; includes a real worker integration run)                   |
+| `npm run worker`       | Start the local Python AI worker (Phase 2) — see [worker/README.md](worker/README.md) |
+| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (34 tests)                                        |
+| `npm run lint`         | ESLint + Prettier check                                                               |
+| `npm run typecheck`    | `tsc` strict type checking                                                            |
+| `npm run check`        | lint, typecheck, test and build, in that order                                        |
 
 Data (SQLite database, media, logs) goes to `DATA_DIR`, which defaults to `./data` and is git-ignored.
 
@@ -46,16 +48,16 @@ Data (SQLite database, media, logs) goes to `DATA_DIR`, which defaults to `./dat
 - Simulated cost tracking, budget warnings and blocking (₹200/day and ₹1,500/month by default), GPU settings, the watchdog and the emergency kill switch.
 - Project backup and restore, either metadata-only or with full media.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and [docs/PHASE1_REPORT.md](docs/PHASE1_REPORT.md) for the completion report.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, and [docs/PHASE1_REPORT.md](docs/PHASE1_REPORT.md) and [docs/PHASE2_REPORT.md](docs/PHASE2_REPORT.md) for the completion reports.
 
 ## Mocked vs real
 
-| Component                              | Phase 1                                                                                 |
-| -------------------------------------- | --------------------------------------------------------------------------------------- |
-| Images, references                     | Mock PNG placeholders                                                                   |
-| Video clips, lip sync, video upscaling | Mock JSON manifests (the UI shows the source still with a simulated camera move)        |
-| TTS, music, SFX, ambience              | Mock synthesized WAV tones and noise, which are real audio files                        |
-| Audio mix                              | Real mixing in TypeScript (ducking, fades, loops, normalisation, peak protection) → WAV |
-| Final MP4 encode                       | **Not yet.** A mock master manifest stands in; FFmpeg encoding arrives in Phase 4       |
-| GPU provisioning, costs                | Simulated by `MockGPUProvider`; costs are labelled "simulated"                          |
-| Python GPU worker, Docker              | Phase 2                                                                                 |
+| Component                              | Phase 1                                                                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Images, references                     | Mock PNG placeholders                                                                                                                             |
+| Video clips, lip sync, video upscaling | Mock JSON manifests (the UI shows the source still with a simulated camera move)                                                                  |
+| TTS, music, SFX, ambience              | Mock synthesized WAV tones and noise, which are real audio files                                                                                  |
+| Audio mix                              | Real mixing in TypeScript (ducking, fades, loops, normalisation, peak protection) → WAV                                                           |
+| Final MP4 encode                       | **Not yet.** A mock master manifest stands in; FFmpeg encoding arrives in Phase 4                                                                 |
+| GPU provisioning, costs                | Simulated by `MockGPUProvider`; costs are labelled "simulated"                                                                                    |
+| Python AI worker, Docker               | **Phase 2 — built** (`worker/`): auth, jobs, cancellation, diagnostics, mock models; renders real H.264 MP4 placeholders when FFmpeg is installed |

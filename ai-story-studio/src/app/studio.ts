@@ -7,6 +7,7 @@ import type { Clock } from '../lib/clock.ts';
 import { systemClock } from '../lib/clock.ts';
 import { fileSink, Logger, stdoutSink, type LogSink } from '../lib/logger.ts';
 import type { ProviderSet } from '../providers/registry.ts';
+import type { WorkerConnection } from '../providers/worker/connect.ts';
 import { createMockProviders } from '../providers/registry.ts';
 import { AssetRepository } from '../repositories/assets.ts';
 import { CharacterRepository } from '../repositories/characters.ts';
@@ -55,6 +56,8 @@ export interface Studio {
   timeline: TimelineService;
   quality: QualityService;
   exports: ExportService;
+  /** Set when connected to the local Python worker (Phase 2); null = in-process mock providers. */
+  worker: WorkerConnection | null;
   close(): void;
 }
 
@@ -130,6 +133,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     timeline,
     quality,
     exports: exportsService,
+    worker: null,
     close: () => db.close(),
   };
 }

@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createStudio } from '../app/studio.ts';
+import { connectWorker } from '../providers/worker/connect.ts';
 import { createWebApp } from './app.ts';
 
 /**
@@ -18,6 +19,17 @@ const server = createServer((req, res) => {
     res.end('Internal error');
   });
 });
+
+if (studio.env.workerUrl) {
+  try {
+    await connectWorker(studio);
+  } catch (err) {
+    // Keep running on the in-process mock providers; the Settings page shows the error and can reconnect.
+    studio.logger.error('worker connection failed; using in-process mock providers', {
+      error: (err as Error).message,
+    });
+  }
+}
 
 const interval = studio.settings.get('gpu').watchdogIntervalSeconds * 1000;
 const watchdog = setInterval(() => {
