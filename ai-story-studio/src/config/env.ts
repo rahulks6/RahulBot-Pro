@@ -25,6 +25,21 @@ export interface AppEnv {
    * requires FFmpeg; `mock` always writes the mock manifest.
    */
   assemblyMode: AssemblyMode;
+  /** Phase 5 cloud GPU provider. Only 'runpod' is implemented. */
+  cloudProvider: 'runpod' | 'vast' | 'tensordock';
+  /** Optional worker image override (otherwise Settings → Cloud GPU). */
+  cloudWorkerImage: string;
+  /**
+   * Hard caps from .env (rupees / minutes / count). Settings can lower them but never exceed them.
+   * Undefined = no extra cap beyond Settings.
+   */
+  caps: {
+    maxGpuHourlyRateInr?: number;
+    sessionBudgetInr?: number;
+    idleShutdownMinutes?: number;
+    maxGpuLifetimeMinutes?: number;
+    maxConcurrentGpuInstances: number;
+  };
 }
 
 export type AssemblyMode = 'auto' | 'ffmpeg' | 'mock';
@@ -38,6 +53,31 @@ function num(value: string | undefined, fallback: number): number {
   if (value === undefined || value.trim() === '') return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function cap(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function readCaps(source: NodeJS.ProcessEnv): AppEnv['caps'] {
+  const caps: AppEnv['caps'] = {
+    // Default 1: never more than one paid GPU at a time unless .env explicitly allows more.
+    maxConcurrentGpuInstances: Math.max(
+      1,
+      Math.min(4, Math.floor(cap(source.MAX_CONCURRENT_GPU_INSTANCES) ?? 1)),
+    ),
+  };
+  const rate = cap(source.MAX_GPU_HOURLY_RATE);
+  const budget = cap(source.SESSION_BUDGET);
+  const idle = cap(source.IDLE_SHUTDOWN_MINUTES);
+  const life = cap(source.MAX_GPU_LIFETIME_MINUTES);
+  if (rate !== undefined) caps.maxGpuHourlyRateInr = rate;
+  if (budget !== undefined) caps.sessionBudgetInr = budget;
+  if (idle !== undefined) caps.idleShutdownMinutes = idle;
+  if (life !== undefined) caps.maxGpuLifetimeMinutes = life;
+  return caps;
 }
 
 let envLoaded = false;
@@ -68,5 +108,11 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     assemblyMode:
       (['auto', 'ffmpeg', 'mock'] as const).find((m) => m === source.ASSEMBLY_MODE?.trim().toLowerCase()) ??
       'auto',
+    cloudProvider:
+      (['runpod', 'vast', 'tensordock'] as const).find(
+        (m) => m === source.CLOUD_GPU_PROVIDER?.trim().toLowerCase(),
+      ) ?? 'runpod',
+    cloudWorkerImage: source.CLOUD_WORKER_IMAGE?.trim() ?? '',
+    caps: readCaps(source),
   };
 }

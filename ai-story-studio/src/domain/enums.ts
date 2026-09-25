@@ -128,6 +128,24 @@ export const EXPORT_PROFILES: Record<ExportFormat, { width: number; height: numb
 };
 
 export const GPU_STATUSES = ['provisioning', 'running', 'terminating', 'terminated', 'failed'] as const;
+
+/** Cloud GPU lifecycle shown in the UI (Phase 5). */
+export const CLOUD_STATES = [
+  'DISABLED',
+  'AUTHENTICATING',
+  'PROVISIONING',
+  'BOOTING',
+  'WORKER_STARTING',
+  'READY',
+  'GENERATING',
+  'DOWNLOADING',
+  'IDLE',
+  'STOPPING',
+  'TERMINATING',
+  'STOPPED',
+  'FAILED',
+] as const;
+export type CloudLifecycleState = (typeof CLOUD_STATES)[number];
 export type GpuStatus = (typeof GPU_STATUSES)[number];
 
 export const USAGE_CATEGORIES = [

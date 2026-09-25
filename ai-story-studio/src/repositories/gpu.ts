@@ -135,6 +135,16 @@ export class GpuRepository {
     );
   }
 
+  /** Seconds already recorded against a session (used to reconcile real wall-clock billing). */
+  sessionSeconds(gpuInstanceId: string): number {
+    return (
+      this.db.scalar<number>(
+        'SELECT COALESCE(SUM(seconds), 0) FROM usage_records WHERE gpu_instance_id = ?',
+        gpuInstanceId,
+      ) ?? 0
+    );
+  }
+
   usage(limit = 200): UsageRecord[] {
     return this.db.all<UsageRecord>('SELECT * FROM usage_records ORDER BY recorded_at DESC LIMIT ?', limit);
   }

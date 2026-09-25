@@ -8,6 +8,7 @@ import { parseJson } from '../lib/json.ts';
 import { assertGenerationAllowed } from '../providers/registry.ts';
 import type { ModelResult, ProviderInfo, RunContext } from '../providers/types.ts';
 import { costFor } from '../repositories/gpu.ts';
+import { shouldUpscale } from './settings.ts';
 import type { AudioOutcome, AudioPipeline } from './audio-pipeline.ts';
 import type { GpuSession } from './gpu-supervisor.ts';
 import { buildPrompt, type BuiltPrompt, type CastMember } from './prompt-builder.ts';
@@ -278,7 +279,18 @@ export class GenerationService {
       for (const job of localJobs) await this.runJob(job, null, result, opts.signal);
 
       if (gpuJobs.length > 0) {
-        const order: JobKind[] = ['reference', 'image', 'video', 'upscale', 'lipsync'];
+        // Speech/music/SFX join the GPU batch in REAL CLOUD mode (their models run on the cloud worker).
+        const order: JobKind[] = [
+          'reference',
+          'image',
+          'video',
+          'upscale',
+          'tts',
+          'music',
+          'sfx',
+          'ambience',
+          'lipsync',
+        ];
         gpuJobs.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
         const minVram = Math.max(...gpuJobs.map((j) => this.providerFor(j.kind).minVramGb));
         const estimate = this.estimateGpuSeconds(gpuJobs);
@@ -318,6 +330,9 @@ export class GenerationService {
                 });
                 loaded.add(modelKey);
               }
+              // Paid sessions: never start the next job once the session budget is used up.
+              await session.assertWithinBudget();
+              if (this.s.gpu.currentProvider.paid) session.setState('GENERATING', `${job.kind} ${job.id}`);
               await this.runJob(job, session, result, opts.signal);
             }
           });
@@ -341,7 +356,10 @@ export class GenerationService {
   }
 
   private isGpuJob(job: GenerationJob): boolean {
-    return GPU_KINDS.has(job.kind) && this.providerFor(job.kind).computeLocation !== 'local_cpu';
+    const info = this.providerFor(job.kind);
+    // Anything running on a paid cloud worker must go through a supervised GPU session.
+    if (info.computeLocation === 'cloud_gpu' && info.requiresPaidResources) return true;
+    return GPU_KINDS.has(job.kind) && info.computeLocation !== 'local_cpu';
   }
 
   providerFor(kind: JobKind): ProviderInfo {
@@ -412,8 +430,9 @@ export class GenerationService {
         if (signal?.aborted) throw new AppError('CANCELLED', 'Batch cancelled');
         if (session && !session.isAlive())
           throw new AppError('WORKER_UNAVAILABLE', 'GPU session is no longer running');
-        const outcome = await this.execute(this.s.jobs.get(job.id), attemptNumber, session, started);
+        const outcome = await this.execute(this.s.jobs.get(job.id), attemptNumber, session, started, signal);
         this.s.jobs.setStatus(job.id, 'complete', outcome);
+        if (job.remote_job_id || this.s.jobs.get(job.id).remote_job_id) this.s.jobs.clearRemote(job.id);
         result.completed++;
         result.processed++;
         return;
@@ -593,8 +612,32 @@ export class GenerationService {
     attemptNumber: number,
     session: GpuSession | null,
     started: string,
+    signal?: AbortSignal,
   ): Promise<string> {
-    const ctx: RunContext = { attemptKey: `${job.id}:${attemptNumber}`, attemptNumber };
+    const sameSession = session && job.remote_job_id && job.gpu_instance_id === session.id;
+    const ctx: RunContext = {
+      attemptKey: `${job.id}:${attemptNumber}`,
+      attemptNumber,
+      ...(signal ? { signal } : {}),
+      ...(session
+        ? {
+            remote: {
+              // After a restart, re-poll the job already submitted to this same GPU instead of paying again.
+              ...(sameSession ? { resumeJobId: job.remote_job_id! } : {}),
+              onSubmitted: (remoteJobId: string) =>
+                this.s.jobs.setRemote(job.id, {
+                  remoteJobId,
+                  gpuInstanceId: session.id,
+                  at: this.s.clock.now().toISOString(),
+                }),
+              onDownloading: () => {
+                if (this.s.gpu.currentProvider.paid) session.setState('DOWNLOADING');
+              },
+              isCancelled: () => this.s.jobs.get(job.id).status === 'cancelled',
+            },
+          }
+        : {}),
+    };
     const params = parseJson<Record<string, unknown>>(job.params_json, {});
     const settings = { ...params };
     const project = this.s.projects.get(job.project_id);
@@ -687,7 +730,11 @@ export class GenerationService {
           label: `${shot.title || 'Shot'} — clip`,
         });
         let output = clip;
-        if (!res.isNativeResolution && this.s.settings.get('generation').upscaleOptimizedOutput) {
+        const gen = this.s.settings.get('generation');
+        if (
+          gen.upscaleOptimizedOutput &&
+          shouldUpscale(gen.upscaleMode, clip, { width: project.width, height: project.height })
+        ) {
           // OPTIMIZED: generate at an efficient resolution, then upscale. The
           // original clip is kept; the upscaled copy is flagged non-native.
           this.setStatus(

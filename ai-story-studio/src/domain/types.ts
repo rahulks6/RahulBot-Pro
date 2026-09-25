@@ -5,6 +5,7 @@ import type {
   AspectRatio,
   AssetKind,
   AudioLayer,
+  CloudLifecycleState,
   ExportFormat,
   GpuStatus,
   JobKind,
@@ -352,6 +353,12 @@ export interface GpuInstance {
   last_activity_at: string;
   terminated_at: string | null;
   termination_reason: string | null;
+  /** Phase 5 lifecycle (see CLOUD_STATES); older rows default to READY/STOPPED. */
+  lifecycle_state?: CloudLifecycleState;
+  worker_url?: string | null;
+  session_budget_inr?: number | null;
+  error_message?: string | null;
+  purpose?: 'generation' | 'test';
 }
 
 export interface GpuEvent {
@@ -365,6 +372,10 @@ export interface GpuEvent {
 }
 
 export interface GenerationJob {
+  /** Phase 5: remote worker job bookkeeping (null for local/mock work). */
+  remote_job_id?: string | null;
+  gpu_instance_id?: string | null;
+  remote_submitted_at?: string | null;
   id: string;
   project_id: string;
   story_id: string | null;

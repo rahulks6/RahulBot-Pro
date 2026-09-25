@@ -109,6 +109,45 @@ export class JobRepository {
     });
   }
 
+  /** Remember the remote (worker) job so a restart re-polls it instead of generating again. */
+  setRemote(id: string, remote: { remoteJobId: string; gpuInstanceId: string | null; at: string }): void {
+    this.db.run(
+      'UPDATE generation_jobs SET remote_job_id = ?, gpu_instance_id = ?, remote_submitted_at = ? WHERE id = ?',
+      remote.remoteJobId,
+      remote.gpuInstanceId,
+      remote.at,
+      id,
+    );
+  }
+
+  clearRemote(id: string): void {
+    this.db.run(
+      'UPDATE generation_jobs SET remote_job_id = NULL, gpu_instance_id = NULL, remote_submitted_at = NULL WHERE id = ?',
+      id,
+    );
+  }
+
+  /**
+   * After a crash or restart, jobs that were mid-flight go back to `waiting`.
+   * Their remote job id is kept: if the same cloud worker is still running,
+   * the next run re-polls that job and downloads its result instead of paying
+   * for the same generation twice.
+   */
+  recoverInterrupted(): number {
+    const stuck = this.db.all<GenerationJob>(
+      "SELECT * FROM generation_jobs WHERE status NOT IN ('waiting', 'complete', 'failed', 'cancelled')",
+    );
+    for (const job of stuck)
+      this.setStatus(
+        job.id,
+        'waiting',
+        job.remote_job_id
+          ? `recovered after restart (remote job ${job.remote_job_id} will be re-checked, not re-run)`
+          : 'recovered after restart',
+      );
+    return stuck.length;
+  }
+
   assignBatch(ids: string[], batchId: string): void {
     for (const id of ids) this.db.run('UPDATE generation_jobs SET batch_id = ? WHERE id = ?', batchId, id);
   }

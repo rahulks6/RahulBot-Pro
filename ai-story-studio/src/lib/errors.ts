@@ -34,6 +34,15 @@ export const ERROR_CODES = [
   'CANCELLED',
   'PRECONDITION_FAILED',
   'INTERNAL',
+  // Phase 5: cloud GPU
+  'CLOUD_AUTH_FAILED',
+  'CLOUD_RATE_LIMITED',
+  'CLOUD_UNAVAILABLE',
+  'CLOUD_BAD_REQUEST',
+  'WORKER_START_TIMEOUT',
+  'SESSION_BUDGET_REACHED',
+  'GPU_LIMIT',
+  'NOT_SUPPORTED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -51,6 +60,8 @@ export const RETRYABLE_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
   'SFX_FAILED',
   'LIPSYNC_FAILED',
   'UPSCALE_FAILED',
+  'CLOUD_RATE_LIMITED',
+  'CLOUD_UNAVAILABLE',
 ]);
 
 export interface FieldError {

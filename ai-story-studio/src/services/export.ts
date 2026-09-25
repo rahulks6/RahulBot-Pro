@@ -121,7 +121,12 @@ export class ExportService {
     return { segments, mockVisuals };
   }
 
+  /** BUILD FINAL keeps one cloud GPU across its speech / music / lip-sync queue runs, then releases it. */
   async buildFinal(storyId: string, format: ExportFormat = 'landscape'): Promise<ExportRecord> {
+    return this.s.gpu.hold(() => this.buildFinalInner(storyId, format));
+  }
+
+  private async buildFinalInner(storyId: string, format: ExportFormat): Promise<ExportRecord> {
     const story = this.s.stories.get(storyId);
     const project = this.s.projects.get(story.project_id);
     const profile = EXPORT_PROFILES[format];

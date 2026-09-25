@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, rm, stat, writeFile, copyFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { AppError } from '../lib/errors.ts';
 
@@ -70,7 +70,15 @@ export class LocalStorageProvider implements StorageProvider {
     if (bytes.byteLength > MAX_OBJECT_BYTES) throw new AppError('STORAGE_FAILED', 'Object too large');
     try {
       await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, bytes);
+      // Atomic: write a temporary file, then rename, so a crash never leaves a half-written asset.
+      const partial = `${path}.partial-${process.pid}-${Date.now().toString(36)}`;
+      try {
+        await writeFile(partial, bytes);
+        await rename(partial, path);
+      } catch (err) {
+        await rm(partial, { force: true }).catch(() => undefined);
+        throw err;
+      }
     } catch (err) {
       throw new AppError('STORAGE_FAILED', `Failed to write ${key}: ${(err as Error).message}`);
     }
@@ -103,7 +111,14 @@ export class LocalStorageProvider implements StorageProvider {
     const dst = this.localPath(key);
     try {
       await mkdir(dirname(dst), { recursive: true });
-      await copyFile(sourcePath, dst);
+      const partial = `${dst}.partial-${process.pid}-${Date.now().toString(36)}`;
+      try {
+        await copyFile(sourcePath, partial);
+        await rename(partial, dst);
+      } catch (err) {
+        await rm(partial, { force: true }).catch(() => undefined);
+        throw err;
+      }
     } catch (err) {
       throw new AppError('STORAGE_FAILED', `Failed to store ${key}: ${(err as Error).message}`);
     }

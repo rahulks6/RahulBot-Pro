@@ -27,6 +27,10 @@ import { QualityService } from '../services/quality/quality-service.ts';
 import { SettingsService } from '../services/settings.ts';
 import { TimelineService } from '../services/timeline.ts';
 import { VoiceReferenceService } from '../services/voice-reference.ts';
+import { CloudService, type CloudServiceDeps } from '../services/cloud.ts';
+import { CloudGpuTest } from '../services/cloud-test.ts';
+import { ModelManager } from '../services/model-manager.ts';
+import { SecretStore } from '../services/secrets.ts';
 import type { StorageProvider } from '../storage/storage.ts';
 import { LocalStorageProvider } from '../storage/storage.ts';
 
@@ -62,6 +66,14 @@ export interface Studio {
   exports: ExportService;
   /** Local FFmpeg for episode assembly (Phase 4); null = mock master manifest. */
   ffmpeg: FfmpegTools | null;
+  /** Local secret store (cloud API key, worker session tokens). Never exposed to the browser. */
+  secrets: SecretStore;
+  /** Cloud model registry (Phase 5). */
+  models: ModelManager;
+  /** Cloud GPU orchestration (Phase 5). */
+  cloud: CloudService;
+  /** Guided first real GPU test. */
+  cloudTest: CloudGpuTest;
   /** Set when connected to the local Python worker (Phase 2); null = in-process mock providers. */
   worker: WorkerConnection | null;
   close(): void;
@@ -76,6 +88,13 @@ export interface StudioOptions {
   logSinks?: LogSink[];
   /** Override FFmpeg discovery (tests); undefined = look it up per ASSEMBLY_MODE. */
   ffmpeg?: FfmpegTools | null;
+  /** Tests: point the cloud layer at a mock RunPod and speed up polling. */
+  cloud?: Pick<
+    CloudServiceDeps,
+    'runpodBaseUrl' | 'proxyUrlTemplate' | 'fetch' | 'sleep' | 'pollMs' | 'workerPollMs' | 'now'
+  >;
+  /** Tests: secret-store environment (defaults to process.env). */
+  secretEnv?: NodeJS.ProcessEnv;
 }
 
 export function createStudio(opts: StudioOptions = {}): Studio {
@@ -137,6 +156,29 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   const timeline = new TimelineService({ ...partial, audio });
   const quality = new QualityService({ ...partial, timeline });
   const exportsService = new ExportService({ ...partial, audio, generation, timeline, quality });
+  const secrets = new SecretStore(env.dataDir, opts.secretEnv ?? process.env);
+  const models = new ModelManager(db);
+  const cloud = new CloudService({
+    env,
+    db,
+    settings,
+    secrets,
+    gpu,
+    gpuRepo,
+    jobs,
+    providers,
+    models,
+    logger,
+    clock,
+    ffmpeg,
+    ...(opts.cloud ?? {}),
+  });
+  try {
+    cloud.refresh();
+  } catch (err) {
+    logger.error('cloud mode not applied', { error: (err as Error).message });
+  }
+  const cloudTest = new CloudGpuTest({ db, env, gpu, gpuRepo, cloud, models, storage, clock, logger });
   return {
     ...partial,
     audio,
@@ -145,6 +187,10 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     timeline,
     quality,
     exports: exportsService,
+    secrets,
+    models,
+    cloud,
+    cloudTest,
     worker: null,
     close: () => db.close(),
   };

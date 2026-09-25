@@ -36,6 +36,9 @@ export function testStudio(
     providers,
     logSinks: [],
     ...(opts.ffmpeg !== undefined ? { ffmpeg: opts.ffmpeg } : {}),
+    ...(opts.cloud ? { cloud: opts.cloud } : {}),
+    // Never let a real RUNPOD_API_KEY from the developer's environment reach tests.
+    secretEnv: opts.secretEnv ?? {},
   });
   return Object.assign(studio, {
     clockCtl: clock,

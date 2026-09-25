@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
 import { ERROR_CODES, type ErrorCode } from '../../lib/errors.ts';
 import type { RunContext } from '../types.ts';
 import { ProviderError } from '../types.ts';
+import { validateDownload, type ValidationOptions } from './validate.ts';
 
 export interface WorkerOutput {
   name: string;
@@ -78,22 +78,45 @@ export class WorkerClient {
   private readonly token: string;
   private readonly timeoutMs: number;
   private readonly pollMs: number;
+  private readonly maxPollMs: number;
+  private readonly downloadAttempts: number;
+  private readonly validation: ValidationOptions;
+  private readonly sleep: (ms: number) => Promise<void>;
 
-  constructor(opts: { baseUrl: string; token: string; timeoutSec?: number; pollMs?: number }) {
+  constructor(opts: {
+    baseUrl: string;
+    token: string;
+    timeoutSec?: number;
+    /** First poll interval; grows ×1.5 up to maxPollMs (cloud workers are polled gently). */
+    pollMs?: number;
+    maxPollMs?: number;
+    downloadAttempts?: number;
+    validation?: ValidationOptions;
+    sleep?: (ms: number) => Promise<void>;
+  }) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.token = opts.token;
     this.timeoutMs = (opts.timeoutSec ?? 1800) * 1000;
     this.pollMs = opts.pollMs ?? 150;
+    this.maxPollMs = opts.maxPollMs ?? this.pollMs;
+    this.downloadAttempts = Math.max(1, opts.downloadAttempts ?? 3);
+    this.validation = opts.validation ?? {};
+    this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 
-  private async request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<Response> {
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    timeoutMs = 60_000,
+  ): Promise<Response> {
     let res: Response;
     try {
       res = await fetch(this.baseUrl + path, {
         method,
         headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
       throw new ProviderError(
@@ -124,6 +147,7 @@ export class WorkerClient {
   async health(): Promise<{ status: string; version: string }> {
     try {
       const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error(`health check returned HTTP ${res.status}`);
       return (await res.json()) as { status: string; version: string };
     } catch (err) {
       throw new ProviderError(
@@ -154,21 +178,60 @@ export class WorkerClient {
     return this.json<WorkerJob>('POST', `/jobs/${encodeURIComponent(id)}/cancel`);
   }
 
+  /**
+   * Download one output and validate it (size, SHA-256, real file type,
+   * minimum size, decodability; ffprobe for video when configured). Network
+   * errors, 5xx and corrupted transfers are retried with backoff; a file that
+   * keeps failing validation is discarded and never becomes an asset.
+   */
   async download(jobId: string, out: WorkerOutput): Promise<Buffer> {
-    const res = await this.request(
-      'GET',
-      `/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(out.name)}`,
-    );
-    if (!res.ok) throw new ProviderError('DOWNLOAD_FAILED', `Download of ${out.name} failed (${res.status})`);
-    const data = Buffer.from(await res.arrayBuffer());
-    const sha = createHash('sha256').update(data).digest('hex');
-    if (sha !== out.sha256 || data.length !== out.size) {
-      throw new ProviderError(
-        'DOWNLOAD_FAILED',
-        `Checksum mismatch for ${out.name}; the file was not stored`,
-      );
+    let last: ProviderError | undefined;
+    for (let attempt = 1; attempt <= this.downloadAttempts; attempt++) {
+      if (attempt > 1) await this.sleep(Math.min(8000, 500 * 2 ** (attempt - 2)));
+      let res: Response;
+      try {
+        res = await this.request(
+          'GET',
+          `/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(out.name)}`,
+          undefined,
+          10 * 60_000,
+        );
+      } catch (err) {
+        if (err instanceof ProviderError && err.code === 'FORBIDDEN') throw err;
+        last = err instanceof ProviderError ? err : new ProviderError('DOWNLOAD_FAILED', String(err));
+        continue; // network error: retry
+      }
+      if (!res.ok) {
+        last = new ProviderError('DOWNLOAD_FAILED', `Download of ${out.name} failed (HTTP ${res.status})`);
+        if (res.status < 500 && res.status !== 429) throw last; // permanent (e.g. 404)
+        continue;
+      }
+      let data: Buffer;
+      try {
+        data = Buffer.from(await res.arrayBuffer());
+      } catch (err) {
+        last = new ProviderError(
+          'DOWNLOAD_FAILED',
+          `Download of ${out.name} was interrupted: ${(err as Error).message}`,
+        );
+        continue;
+      }
+      const declared = Number(res.headers.get('content-length'));
+      if (Number.isFinite(declared) && declared > 0 && declared !== data.length) {
+        last = new ProviderError(
+          'DOWNLOAD_FAILED',
+          `Download of ${out.name} was cut off (${data.length}/${declared} bytes)`,
+        );
+        continue;
+      }
+      try {
+        await validateDownload(out, data, this.validation);
+        return data;
+      } catch (err) {
+        last = err as ProviderError; // corrupted transfer: fetch again
+      }
     }
-    return data;
+    throw last ?? new ProviderError('DOWNLOAD_FAILED', `Download of ${out.name} failed`);
   }
 
   /** Submit, poll until finished (cancelling on abort/timeout), then download and verify every output. */
@@ -177,9 +240,23 @@ export class WorkerClient {
     body: Record<string, unknown>,
     ctx: RunContext,
   ): Promise<{ job: WorkerJob; files: Array<{ meta: WorkerOutput; data: Buffer }> }> {
-    let job = await this.json<WorkerJob>('POST', path, body);
+    let job: WorkerJob | undefined;
+    const resume = ctx.remote?.resumeJobId;
+    if (resume) {
+      // After a restart: re-check the job we already paid for instead of generating it again.
+      job = await this.getJob(resume).catch(() => undefined);
+    }
+    if (!job) {
+      job = await this.json<WorkerJob>('POST', path, body);
+      ctx.remote?.onSubmitted?.(job.id);
+    }
     const deadline = Date.now() + this.timeoutMs;
+    let pollDelay = this.pollMs;
     while (!TERMINAL.has(job.status)) {
+      if (ctx.remote?.isCancelled?.()) {
+        await this.cancel(job.id).catch(() => undefined);
+        throw new ProviderError('CANCELLED', `Worker job ${job.id} cancelled by the user`);
+      }
       if (ctx.signal?.aborted || Date.now() > deadline) {
         await this.cancel(job.id).catch(() => undefined);
         throw new ProviderError(
@@ -187,13 +264,15 @@ export class WorkerClient {
           `Worker job ${job.id} ${ctx.signal?.aborted ? 'cancelled' : 'timed out'}`,
         );
       }
-      await new Promise((r) => setTimeout(r, this.pollMs));
+      await this.sleep(pollDelay);
+      pollDelay = Math.min(this.maxPollMs, Math.round(pollDelay * 1.5));
       job = await this.getJob(job.id);
     }
     if (job.status === 'cancelled')
       throw new ProviderError('CANCELLED', `Worker job ${job.id} was cancelled`);
     if (job.status === 'failed')
       throw new ProviderError(toCode(job.error?.code), `Worker: ${job.error?.message ?? 'job failed'}`);
+    ctx.remote?.onDownloading?.();
     const files = [];
     for (const meta of job.outputs) files.push({ meta, data: await this.download(job.id, meta) });
     return { job, files };

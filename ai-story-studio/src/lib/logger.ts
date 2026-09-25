@@ -14,6 +14,9 @@ const LEVELS: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error:
 const SECRET_KEY = /(pass(word)?|secret|token|api[-_]?key|authorization|credential|cookie|private[-_]?key)/i;
 const SECRET_VALUE = [
   /\b(sk|rk|pk)[-_][A-Za-z0-9_-]{12,}\b/g, // provider-style API keys
+  /\brpa_[A-Za-z0-9]{12,}\b/g, // RunPod API keys
+  /\bhf_[A-Za-z0-9]{12,}\b/g, // Hugging Face tokens
+  /\baisw_[A-Za-z0-9]{12,}\b/g, // per-session cloud worker tokens
   /\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi,
   /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b/g, // JWT-like
 ];

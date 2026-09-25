@@ -1,3 +1,4 @@
+import type { CloudLifecycleState } from '../domain/enums.ts';
 /**
  * Replaceable AI component interfaces (spec §19–§31, §40, §89).
  *
@@ -32,6 +33,14 @@ export interface RunContext {
   attemptKey: string;
   /** 1-based attempt number of the job being executed. */
   attemptNumber?: number;
+  /** Remote worker job tracking (cloud recovery): resume instead of resubmitting. */
+  remote?: {
+    resumeJobId?: string;
+    onSubmitted?: (remoteJobId: string) => void;
+    onDownloading?: () => void;
+    /** Polled while waiting: true when the user cancelled the job (the remote job is cancelled too). */
+    isCancelled?: () => boolean;
+  };
 }
 
 export interface GeneratedFile {
@@ -210,6 +219,12 @@ export interface ProviderInstance {
   createdAt: string;
 }
 
+/** How to reach the AI worker running on a provisioned GPU (cloud providers). */
+export interface WorkerEndpoint {
+  url: string;
+  token: string;
+}
+
 export interface GPUProvider {
   readonly id: string;
   readonly isMock: boolean;
@@ -223,6 +238,20 @@ export interface GPUProvider {
   terminate(providerInstanceId: string): Promise<void>;
   /** All instances visible on the account (the watchdog filters by tag). */
   listInstances(): Promise<ProviderInstance[]>;
+  /**
+   * Cloud providers: wait until the instance runs and its worker answers an authenticated
+   * request. Providers without it (mock, local worker) are usable immediately.
+   */
+  awaitReady?(
+    providerInstanceId: string,
+    opts: {
+      timeoutMs: number;
+      signal?: AbortSignal;
+      onState?: (state: CloudLifecycleState, detail: string) => void;
+    },
+  ): Promise<WorkerEndpoint>;
+  /** Cloud providers: the worker endpoint of an existing instance (crash recovery). */
+  endpointFor?(providerInstanceId: string): WorkerEndpoint | undefined;
 }
 
 // ---------------------------------------------------------------------------

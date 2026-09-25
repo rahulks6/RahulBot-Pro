@@ -1,6 +1,6 @@
 import type { Database } from '../db/database.ts';
 import { parseJson } from '../lib/json.ts';
-import { boolean, enumOf, number, object, parseOrThrow, type Infer } from '../lib/schema.ts';
+import { boolean, enumOf, number, object, parseOrThrow, string, type Infer } from '../lib/schema.ts';
 
 /**
  * Persistent settings (spec §41–§45, §54, §69). Budgets are only ever changed
@@ -29,8 +29,49 @@ export const generationSchema = object({
   maxAttempts: number({ min: 1, max: 5, int: true }),
   upscaleOptimizedOutput: boolean(),
   suggestReuseBeforeGeneration: boolean(),
+  /** OFF never upscales; AUTO only when output is below the delivery size; FORCE always runs the upscaler. */
+  upscaleMode: enumOf(['off', 'auto', 'force'] as const),
 });
 export type GenerationSettings = Infer<typeof generationSchema>;
+
+export function shouldUpscale(
+  mode: GenerationSettings['upscaleMode'],
+  size: { width: number | null; height: number | null },
+  target: { width: number; height: number },
+): boolean {
+  if (mode === 'off') return false;
+  if (mode === 'force') return true;
+  return (size.width ?? 0) < target.width || (size.height ?? 0) < target.height;
+}
+
+/**
+ * Cloud GPU (Phase 5). The .env gates (MOCK_GENERATION=false, ENABLE_CLOUD_GPU=true)
+ * are the outer lock; `cloudEnabled` and `realGeneration` are the in-app switches.
+ * Price, lifetime and idle limits reuse the `gpu` section; .env caps can only lower them.
+ */
+export const cloudSchema = object({
+  provider: enumOf(['runpod', 'vast', 'tensordock'] as const),
+  cloudEnabled: boolean(),
+  realGeneration: boolean(),
+  workerImage: string({ min: 3, max: 300 }),
+  registryAuthId: string({ max: 120 }),
+  cloudType: enumOf(['SECURE', 'COMMUNITY'] as const),
+  /** Comma-separated provider GPU type ids to allow; empty = any GPU that meets VRAM and price. */
+  allowedGpuTypes: string({ max: 2000 }),
+  usdToInr: number({ min: 1, max: 1000 }),
+  sessionBudgetInr: number({ min: 1, max: 1_000_000 }),
+  maxConcurrentInstances: number({ min: 1, max: 4, int: true }),
+  workerStartTimeoutMinutes: number({ min: 2, max: 60 }),
+  containerDiskGb: number({ min: 10, max: 500, int: true }),
+  /** Pod volume for model downloads (deleted with the pod). Ignored when a network volume is set. */
+  volumeGb: number({ min: 0, max: 2000, int: true }),
+  /** Optional RunPod network volume id: keeps model weights between sessions (billed as storage). */
+  networkVolumeId: string({ max: 120 }),
+  /** after_batch: terminate as soon as no generation work remains; idle_timeout: keep warm until the idle timer. */
+  autoTerminate: enumOf(['after_batch', 'idle_timeout'] as const),
+  testAsset: enumOf(['tts', 'image'] as const),
+});
+export type CloudSettings = Infer<typeof cloudSchema>;
 
 export const audioMixSchema = object({
   duckingEnabled: boolean(),
@@ -78,6 +119,7 @@ export interface AllSettings {
   audioMix: AudioMixSettings;
   quality: QualitySettings;
   encoding: EncodingSettings;
+  cloud: CloudSettings;
 }
 
 export const DEFAULT_SETTINGS: AllSettings = {
@@ -91,7 +133,30 @@ export const DEFAULT_SETTINGS: AllSettings = {
     watchdogIntervalSeconds: 60,
     orphanPolicy: 'terminate',
   },
-  generation: { maxAttempts: 2, upscaleOptimizedOutput: true, suggestReuseBeforeGeneration: true },
+  generation: {
+    maxAttempts: 2,
+    upscaleOptimizedOutput: true,
+    suggestReuseBeforeGeneration: true,
+    upscaleMode: 'auto',
+  },
+  cloud: {
+    provider: 'runpod',
+    cloudEnabled: false,
+    realGeneration: false,
+    workerImage: 'ghcr.io/rahulks6/ai-story-studio-worker:1.1.0',
+    registryAuthId: '',
+    cloudType: 'SECURE',
+    allowedGpuTypes: '',
+    usdToInr: 88,
+    sessionBudgetInr: 150,
+    maxConcurrentInstances: 1,
+    workerStartTimeoutMinutes: 8,
+    containerDiskGb: 40,
+    volumeGb: 60,
+    networkVolumeId: '',
+    autoTerminate: 'after_batch',
+    testAsset: 'tts',
+  },
   audioMix: {
     duckingEnabled: true,
     duckDb: -12,
@@ -132,6 +197,7 @@ const SCHEMAS = {
   audioMix: audioMixSchema,
   quality: qualitySchema,
   encoding: encodingSchema,
+  cloud: cloudSchema,
 } as const;
 
 export type SettingsKey = keyof AllSettings;
@@ -157,6 +223,7 @@ export class SettingsService {
       audioMix: this.get('audioMix'),
       quality: this.get('quality'),
       encoding: this.get('encoding'),
+      cloud: this.get('cloud'),
     };
   }
 
