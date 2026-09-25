@@ -80,6 +80,33 @@ export class AssetRepository {
     return this.get(id);
   }
 
+  /** Record an asset from a file already on disk (large masters are streamed, not buffered). */
+  async createFromFile(a: Omit<NewAsset, 'data'>, sourcePath: string): Promise<GeneratedAsset> {
+    const id = newId('ast');
+    const key = `projects/${a.projectId}/${FOLDERS[a.kind]}/${id}.${a.ext}`;
+    const stored = await this.storage.putFile(key, sourcePath);
+    this.db.insert('generated_assets', {
+      id,
+      project_id: a.projectId,
+      kind: a.kind,
+      storage_key: key,
+      mime: a.mime,
+      width: a.width ?? null,
+      height: a.height ?? null,
+      duration_sec: a.durationSec ?? null,
+      fps: a.fps ?? null,
+      source_asset_id: a.sourceAssetId ?? null,
+      is_native_resolution: flag(a.isNativeResolution ?? true),
+      is_mock: flag(a.isMock),
+      checksum: stored.checksum,
+      size_bytes: stored.sizeBytes,
+      label: a.label ?? '',
+      tags: a.tags ?? '',
+      created_at: nowIso(),
+    });
+    return this.get(id);
+  }
+
   get(id: string): GeneratedAsset {
     return requireRow<GeneratedAsset>(this.db, 'generated_assets', id, 'Asset');
   }

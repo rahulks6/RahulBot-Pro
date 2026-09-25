@@ -536,7 +536,7 @@ export function validateExport(
       f(
         'mock_output',
         'info',
-        'Mock export: a manifest + WAV mix stands in for the MP4 (no encoding in Phase 1).',
+        'Mock export: a manifest + WAV mix stands in for the MP4 (FFmpeg not installed or ASSEMBLY_MODE=mock).',
       ),
     );
   return out;

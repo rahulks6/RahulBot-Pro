@@ -28,12 +28,14 @@ export function testStudio(
       dataDir: dir,
       logLevel: 'error',
       mockFailureRate: 0,
+      assemblyMode: 'mock',
       ...opts.env,
     },
     dbPath: ':memory:',
     clock,
     providers,
     logSinks: [],
+    ...(opts.ffmpeg !== undefined ? { ffmpeg: opts.ffmpeg } : {}),
   });
   return Object.assign(studio, {
     clockCtl: clock,

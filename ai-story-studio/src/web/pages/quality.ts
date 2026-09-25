@@ -222,10 +222,31 @@ export function registerQualityPages(web: Web): void {
             ['Status', badge(e.status)],
             [
               'Format',
-              `${e.format} ${e.width}×${e.height} @${e.fps}fps · H.264/AAC${e.is_mock ? ' (mock master — no MP4 encoded in Phase 1)' : ''}`,
+              `${e.format} ${e.width}×${e.height} @${e.fps}fps · H.264/AAC${
+                !master
+                  ? ''
+                  : master.mime !== 'video/mp4'
+                    ? ' (mock master — no MP4 encoded: FFmpeg not installed or ASSEMBLY_MODE=mock)'
+                    : master.is_mock
+                      ? ' (real MP4, mock placeholder visuals)'
+                      : ''
+              }`,
             ],
             ['Duration', e.duration_sec ? `${e.duration_sec.toFixed(2)}s` : '—'],
-            ['Master', master ? html`<a href="${mediaUrl(master.storage_key)}">${master.label}</a>` : '—'],
+            [
+              'Master',
+              master
+                ? html`${master.mime === 'video/mp4'
+                      ? html`<video
+                            class="master"
+                            controls
+                            preload="metadata"
+                            src="${mediaUrl(master.storage_key)}"
+                          ></video
+                          ><br />`
+                      : ''}<a href="${mediaUrl(master.storage_key)}" download>${master.label}</a>`
+                : '—',
+            ],
             ['Final mix', mix ? html`<audio controls src="${mediaUrl(mix.storage_key)}"></audio>` : '—'],
             [
               'Episode cost',

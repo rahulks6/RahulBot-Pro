@@ -75,7 +75,7 @@ export class MockMediaProbe implements MediaProbe {
         `audio duration ${audioDuration.toFixed(2)}s differs from video ${manifest.durationSec.toFixed(2)}s`,
       );
     }
-    notes.push('mock master: manifest + WAV mix, no MP4 encoded in Phase 1');
+    notes.push('mock master: manifest + WAV mix, no MP4 encoded');
     return {
       exists: true,
       readable: true,

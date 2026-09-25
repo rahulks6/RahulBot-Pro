@@ -6,6 +6,7 @@ import { migrate } from '../db/migrate.ts';
 import type { Clock } from '../lib/clock.ts';
 import { systemClock } from '../lib/clock.ts';
 import { fileSink, Logger, stdoutSink, type LogSink } from '../lib/logger.ts';
+import { findFfmpeg, type FfmpegTools } from '../media/ffmpeg.ts';
 import type { ProviderSet } from '../providers/registry.ts';
 import type { WorkerConnection } from '../providers/worker/connect.ts';
 import { createMockProviders } from '../providers/registry.ts';
@@ -56,6 +57,8 @@ export interface Studio {
   timeline: TimelineService;
   quality: QualityService;
   exports: ExportService;
+  /** Local FFmpeg for episode assembly (Phase 4); null = mock master manifest. */
+  ffmpeg: FfmpegTools | null;
   /** Set when connected to the local Python worker (Phase 2); null = in-process mock providers. */
   worker: WorkerConnection | null;
   close(): void;
@@ -68,6 +71,8 @@ export interface StudioOptions {
   clock?: Clock;
   providers?: ProviderSet;
   logSinks?: LogSink[];
+  /** Override FFmpeg discovery (tests); undefined = look it up per ASSEMBLY_MODE. */
+  ffmpeg?: FfmpegTools | null;
 }
 
 export function createStudio(opts: StudioOptions = {}): Studio {
@@ -101,6 +106,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     env,
   });
   ensureBuiltinStyles(projects);
+  const ffmpeg = env.assemblyMode === 'mock' ? null : opts.ffmpeg !== undefined ? opts.ffmpeg : findFfmpeg();
 
   const partial = {
     env,
@@ -120,6 +126,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     reports,
     budget,
     gpu,
+    ffmpeg,
   };
   const audio = new AudioPipeline(partial);
   const generation = new GenerationService({ ...partial, audio });
@@ -158,4 +165,5 @@ export type StudioCore = Pick<
   | 'reports'
   | 'budget'
   | 'gpu'
+  | 'ffmpeg'
 >;

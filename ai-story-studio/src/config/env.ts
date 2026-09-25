@@ -19,7 +19,15 @@ export interface AppEnv {
   /** Bearer token for the worker. Server-side only: never rendered, logged or sent to the browser. */
   workerToken: string;
   workerTimeoutSec: number;
+  /**
+   * Episode assembly (Phase 4): `auto` encodes a real MP4 with local FFmpeg when
+   * it is installed and falls back to the mock manifest otherwise; `ffmpeg`
+   * requires FFmpeg; `mock` always writes the mock manifest.
+   */
+  assemblyMode: AssemblyMode;
 }
+
+export type AssemblyMode = 'auto' | 'ffmpeg' | 'mock';
 
 function bool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value.trim() === '') return fallback;
@@ -57,5 +65,8 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     workerUrl: (source.WORKER_URL ?? '').trim().replace(/\/+$/, ''),
     workerToken: source.WORKER_AUTH_TOKEN ?? '',
     workerTimeoutSec: Math.max(10, num(source.WORKER_TIMEOUT_SEC, 1800)),
+    assemblyMode:
+      (['auto', 'ffmpeg', 'mock'] as const).find((m) => m === source.ASSEMBLY_MODE?.trim().toLowerCase()) ??
+      'auto',
   };
 }

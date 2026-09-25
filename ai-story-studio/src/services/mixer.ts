@@ -106,14 +106,17 @@ export function duckingEnvelope(
   return env;
 }
 
+/**
+ * Mix one layer at a time into the master so memory stays at about two
+ * buffers (master + current layer) even for long episodes at 48 kHz.
+ * Sources are resampled with linear interpolation.
+ */
 export function mixTimeline(input: MixInput): MixResult {
   const sr = input.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const n = Math.max(1, Math.round(input.durationSec * sr));
   const s = input.settings;
   const active = new Set(input.layers ?? AUDIO_TRACKS);
-  const buffers = new Map<AudioLayer, Float32Array>();
   const missing: string[] = [];
-  const activeSec: Partial<Record<AudioLayer, number>> = {};
 
   const speech: Array<[number, number]> = [];
   for (const item of input.items) {
@@ -126,91 +129,61 @@ export function mixTimeline(input: MixInput): MixResult {
     }
   }
   const speechIntervals = mergeIntervals(speech);
-
+  const speechRanges = speechIntervals.map(
+    ([a, b]) => [Math.round(a * sr), Math.min(n, Math.round(b * sr))] as const,
+  );
   for (const item of input.items) {
-    const layer = item.track as AudioLayer;
-    if (!AUDIO_TRACKS.includes(layer)) continue;
-    const src = item.asset_id ? input.audio.get(item.asset_id) : undefined;
-    if (!src) {
+    if (AUDIO_TRACKS.includes(item.track as AudioLayer) && !(item.asset_id && input.audio.has(item.asset_id)))
       missing.push(item.id);
-      continue;
-    }
-    if (!active.has(layer)) continue;
-    const buf = buffers.get(layer) ?? new Float32Array(n);
-    buffers.set(layer, buf);
-    activeSec[layer] = (activeSec[layer] ?? 0) + item.duration_sec;
-    const srcLevels = levels(src.samples);
-    const normalizeDb = srcLevels.rms > 1e-6 ? LAYER_TARGET_RMS_DB[layer] - srcLevels.rmsDb : 0;
-    const gain = dbToGain(normalizeDb + item.volume_db + layerGainDb(layer, s));
-    const start = Math.round(item.start_sec * sr);
-    const len = Math.round(item.duration_sec * sr);
-    const trim = Math.round(item.trim_in_sec * src.sampleRate);
-    const fi = Math.round(item.fade_in_sec * sr);
-    const fo = Math.round(item.fade_out_sec * sr);
-    const ratio = src.sampleRate / sr;
-    const srcLen = src.samples.length;
-    for (let i = 0; i < len; i++) {
-      const out = start + i;
-      if (out < 0 || out >= n) continue;
-      let si = trim + Math.floor(i * ratio);
-      if (si >= srcLen) {
-        if (!item.loop || srcLen === 0) break;
-        si = si % srcLen;
-      }
-      let g = gain;
-      if (fi > 0 && i < fi) g *= i / fi;
-      if (fo > 0 && i > len - fo) g *= Math.max(0, (len - i) / fo);
-      buf[out] = (buf[out] ?? 0) + (src.samples[si] ?? 0) * g;
-    }
-  }
-
-  // Music ducking under narration/dialogue; ambience ducks by half as much.
-  if (s.duckingEnabled && speechIntervals.length > 0) {
-    const music = buffers.get('music');
-    if (music) {
-      const env = duckingEnvelope(n, sr, speechIntervals, s.duckDb, s.duckAttackSec, s.duckReleaseSec);
-      for (let i = 0; i < n; i++) music[i] = (music[i] ?? 0) * (env[i] ?? 1);
-    }
-    const amb = buffers.get('ambience');
-    if (amb) {
-      const env = duckingEnvelope(n, sr, speechIntervals, s.duckDb / 2, s.duckAttackSec, s.duckReleaseSec);
-      for (let i = 0; i < n; i++) amb[i] = (amb[i] ?? 0) * (env[i] ?? 1);
-    }
   }
 
   const layerStats: Partial<Record<AudioLayer, LayerStats>> = {};
+  const speechEnergy: Partial<Record<AudioLayer, number>> = {};
+  let speechSamples = 0;
+  for (const [a, b] of speechRanges) speechSamples += Math.max(0, b - a);
   const master = new Float32Array(n);
-  for (const [layer, buf] of buffers) {
+
+  for (const layer of AUDIO_TRACKS) {
+    if (!active.has(layer)) continue;
+    const items = input.items.filter((i) => i.track === layer && i.asset_id && input.audio.has(i.asset_id));
+    if (items.length === 0) continue;
+    const buf = new Float32Array(n);
+    let activeSec = 0;
+    for (const item of items) {
+      const src = input.audio.get(item.asset_id!)!;
+      activeSec += item.duration_sec;
+      renderItem(buf, item, src, sr, LAYER_TARGET_RMS_DB[layer], layerGainDb(layer, s));
+    }
+    // Music ducking under narration/dialogue; ambience ducks by half as much.
+    if (s.duckingEnabled && speechIntervals.length > 0 && (layer === 'music' || layer === 'ambience')) {
+      const env = duckingEnvelope(
+        n,
+        sr,
+        speechIntervals,
+        layer === 'music' ? s.duckDb : s.duckDb / 2,
+        s.duckAttackSec,
+        s.duckReleaseSec,
+      );
+      for (let i = 0; i < n; i++) buf[i] = (buf[i] ?? 0) * (env[i] ?? 1);
+    }
     const lv = levels(buf);
     layerStats[layer] = {
       rmsDb: round1(lv.rmsDb),
       peakDb: round1(lv.peakDb),
-      activeSeconds: round1(activeSec[layer] ?? 0),
+      activeSeconds: round1(activeSec),
     };
+    let e = 0;
+    for (const [a, b] of speechRanges) for (let i = a; i < b; i++) e += (buf[i] ?? 0) ** 2;
+    speechEnergy[layer] = e;
     for (let i = 0; i < n; i++) master[i] = (master[i] ?? 0) + (buf[i] ?? 0);
   }
 
   // Music vs speech during speech (is the music overpowering dialogue?).
+  // Speech power is approximated as dialogue + narration power (they rarely overlap).
   let musicOverSpeechDb: number | null = null;
-  const music = buffers.get('music');
-  if (music && speechIntervals.length > 0) {
-    let m = 0;
-    let sp = 0;
-    let count = 0;
-    const speechBufs = ['dialogue', 'narration']
-      .map((l) => buffers.get(l as AudioLayer))
-      .filter(Boolean) as Float32Array[];
-    for (const [a, b] of speechIntervals) {
-      for (let i = Math.round(a * sr); i < Math.min(n, Math.round(b * sr)); i++) {
-        const mv = music[i] ?? 0;
-        let sv = 0;
-        for (const sb of speechBufs) sv += sb[i] ?? 0;
-        m += mv * mv;
-        sp += sv * sv;
-        count++;
-      }
-    }
-    if (count > 0 && sp > 0) musicOverSpeechDb = round1(10 * Math.log10((m / count + 1e-12) / (sp / count)));
+  const sp = (speechEnergy.dialogue ?? 0) + (speechEnergy.narration ?? 0);
+  if (speechEnergy.music !== undefined && speechSamples > 0 && sp > 0) {
+    musicOverSpeechDb = round1(10 * Math.log10((speechEnergy.music + 1e-12 * speechSamples) / sp));
   }
 
   // Peak protection: normalise so the peak sits at the ceiling (never above).
@@ -231,9 +204,49 @@ export function mixTimeline(input: MixInput): MixResult {
     preLimiterPeakDb: round1(pre.peakDb),
     limiterGainDb: round1(gainToDb(limiterGain)),
     clippedSamples: post.clippedSamples,
-    missingAudioItems: missing,
+    missingAudioItems: [...new Set(missing)],
     musicOverSpeechDb,
   };
+}
+
+/** Add one timeline item to a layer buffer: level balancing, gain, trim, loop, fades, linear-interpolated resampling. */
+function renderItem(
+  buf: Float32Array,
+  item: TimelineItem,
+  src: PcmAudio,
+  sr: number,
+  targetRmsDb: number,
+  layerDb: number,
+): void {
+  const n = buf.length;
+  const srcLevels = levels(src.samples);
+  const normalizeDb = srcLevels.rms > 1e-6 ? targetRmsDb - srcLevels.rmsDb : 0;
+  const gain = dbToGain(normalizeDb + item.volume_db + layerDb);
+  const start = Math.round(item.start_sec * sr);
+  const len = Math.round(item.duration_sec * sr);
+  const trim = item.trim_in_sec * src.sampleRate;
+  const fi = Math.round(item.fade_in_sec * sr);
+  const fo = Math.round(item.fade_out_sec * sr);
+  const ratio = src.sampleRate / sr;
+  const srcLen = src.samples.length;
+  if (srcLen === 0) return;
+  for (let i = 0; i < len; i++) {
+    const out = start + i;
+    if (out < 0 || out >= n) continue;
+    let pos = trim + i * ratio;
+    if (pos >= srcLen) {
+      if (!item.loop) break;
+      pos = pos % srcLen;
+    }
+    const i0 = Math.floor(pos);
+    const frac = pos - i0;
+    const a = src.samples[i0] ?? 0;
+    const b = src.samples[i0 + 1 < srcLen ? i0 + 1 : item.loop ? 0 : i0] ?? a;
+    let g = gain;
+    if (fi > 0 && i < fi) g *= i / fi;
+    if (fo > 0 && i > len - fo) g *= Math.max(0, (len - i) / fo);
+    buf[out] = (buf[out] ?? 0) + (a + (b - a) * frac) * g;
+  }
 }
 
 function round1(n: number): number {

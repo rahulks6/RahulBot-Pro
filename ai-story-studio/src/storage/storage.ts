@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { mkdir, readFile, rm, stat, writeFile, copyFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { AppError } from '../lib/errors.ts';
@@ -22,6 +23,8 @@ export interface StorageProvider {
   exists(key: string): Promise<boolean>;
   delete(key: string): Promise<void>;
   copy(fromKey: string, toKey: string): Promise<StoredObject>;
+  /** Store a local file (e.g. an encoded master) without loading it into memory. */
+  putFile(key: string, sourcePath: string): Promise<StoredObject>;
   /** Local filesystem path for streaming (local provider only). */
   localPath(key: string): string;
 }
@@ -94,6 +97,23 @@ export class LocalStorageProvider implements StorageProvider {
 
   async delete(key: string): Promise<void> {
     await rm(this.localPath(key), { force: true });
+  }
+
+  async putFile(key: string, sourcePath: string): Promise<StoredObject> {
+    const dst = this.localPath(key);
+    try {
+      await mkdir(dirname(dst), { recursive: true });
+      await copyFile(sourcePath, dst);
+    } catch (err) {
+      throw new AppError('STORAGE_FAILED', `Failed to store ${key}: ${(err as Error).message}`);
+    }
+    const hash = createHash('sha256');
+    let size = 0;
+    for await (const chunk of createReadStream(dst)) {
+      hash.update(chunk as Buffer);
+      size += (chunk as Buffer).length;
+    }
+    return { key, sizeBytes: size, checksum: hash.digest('hex') };
   }
 
   async copy(fromKey: string, toKey: string): Promise<StoredObject> {

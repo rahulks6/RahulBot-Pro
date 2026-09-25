@@ -205,6 +205,7 @@ export function registerOpsPages(web: Web): void {
     const gen = all.generation;
     const a = all.audioMix;
     const q = all.quality;
+    const enc = all.encoding;
     return web.render(
       req,
       'Settings',
@@ -216,6 +217,15 @@ export function registerOpsPages(web: Web): void {
           ['ENABLE_CLOUD_GPU', String(s.env.enableCloudGpu)],
           ['DATA_DIR', s.env.dataDir],
           ['Bind address', `${s.env.host}:${s.env.port}`],
+          ['ASSEMBLY_MODE', s.env.assemblyMode],
+          [
+            'FFmpeg (episode assembly)',
+            s.env.assemblyMode === 'mock'
+              ? 'not used (mock master manifest)'
+              : s.ffmpeg
+                ? `${s.ffmpeg.version} — BUILD FINAL encodes real MP4 masters`
+                : 'not found — BUILD FINAL writes a mock master manifest (install FFmpeg or set FFMPEG_PATH)',
+          ],
         ]),
       )}
       ${card(
@@ -374,6 +384,47 @@ export function registerOpsPages(web: Web): void {
           ),
         ),
         card(
+          'Encoding (BUILD FINAL master)',
+          postForm(
+            '/settings/encoding',
+            html`${field('Video quality (CRF, lower = better)', 'videoCrf', enc.videoCrf, {
+                type: 'number',
+              })}${select(
+                'x264 preset',
+                'preset',
+                ['ultrafast', 'veryfast', 'faster', 'fast', 'medium', 'slow'].map(
+                  (p) => [p, p] as [string, string],
+                ),
+                enc.preset,
+              )}
+              ${field('AAC bitrate (kbps)', 'audioBitrateKbps', enc.audioBitrateKbps, {
+                type: 'number',
+              })}${select(
+                'Sample rate (Hz)',
+                'sampleRate',
+                [
+                  ['48000', '48000'],
+                  ['44100', '44100'],
+                ],
+                enc.sampleRate,
+              )}
+              ${field('Target loudness (LUFS; YouTube ≈ −14)', 'targetLufs', enc.targetLufs, {
+                type: 'number',
+                step: '0.5',
+              })}${field('True-peak ceiling (dBTP)', 'truePeakDb', enc.truePeakDb, {
+                type: 'number',
+                step: '0.1',
+              })}
+              ${field('Crossfade length (s)', 'crossfadeSec', enc.crossfadeSec, {
+                type: 'number',
+                step: '0.05',
+              })}${field('Fade-to-black length (s)', 'fadeBlackSec', enc.fadeBlackSec, {
+                type: 'number',
+                step: '0.05',
+              })}<button class="primary">Save</button>`,
+          ),
+        ),
+        card(
           'Quality-check thresholds (configurable, not permanent rules)',
           postForm(
             '/settings/quality',
@@ -418,7 +469,7 @@ export function registerOpsPages(web: Web): void {
   });
   r.post('/settings/:section', (req) => {
     const section = req.params['section'] as SettingsKey;
-    if (!['budget', 'gpu', 'generation', 'audioMix', 'quality'].includes(section))
+    if (!['budget', 'gpu', 'generation', 'audioMix', 'quality', 'encoding'].includes(section))
       throw new AppError('NOT_FOUND', 'Unknown settings section');
     const values: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(req.form)) if (!k.startsWith('_')) values[k] = v;

@@ -24,17 +24,18 @@ function parseRate(rate: string | undefined): number {
 /**
  * Real media probe using the local `ffprobe` binary. Arguments are passed as
  * an array (no shell), and only paths resolved by the storage provider are
- * probed. Used for real MP4 masters from Phase 4 onwards; available now for
- * manually supplied files.
+ * probed. Validates the real MP4 masters written by BUILD FINAL (Phase 4).
  */
 export class FfprobeMediaProbe implements MediaProbe {
   readonly id = 'ffprobe';
   private readonly storage: StorageProvider;
   private readonly binary: string;
+  private readonly ffmpegBinary: string;
 
-  constructor(storage: StorageProvider, binary = 'ffprobe') {
+  constructor(storage: StorageProvider, binary = 'ffprobe', ffmpegBinary?: string) {
     this.storage = storage;
     this.binary = binary;
+    this.ffmpegBinary = ffmpegBinary ?? binary.replace(/ffprobe(\.exe)?$/, 'ffmpeg$1');
   }
 
   async probe(storageKey: string): Promise<ProbeResult> {
@@ -67,7 +68,7 @@ export class FfprobeMediaProbe implements MediaProbe {
     try {
       // Full decode pass; volumedetect reports the peak level for clipping checks.
       const { stderr } = await run(
-        this.binary.replace(/ffprobe$/, 'ffmpeg'),
+        this.ffmpegBinary,
         ['-v', 'info', '-nostats', '-i', path, '-af', 'volumedetect', '-f', 'null', '-'],
         { timeout: 10 * 60_000, maxBuffer: 16 * 1024 * 1024 },
       );

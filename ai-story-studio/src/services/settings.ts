@@ -58,12 +58,26 @@ export const qualitySchema = object({
 });
 export type QualitySettings = Infer<typeof qualitySchema>;
 
+/** Final master encoding (spec §22, §34). YouTube normalises playback to about -14 LUFS. */
+export const encodingSchema = object({
+  videoCrf: number({ min: 0, max: 40, int: true }),
+  preset: enumOf(['ultrafast', 'veryfast', 'faster', 'fast', 'medium', 'slow'] as const),
+  audioBitrateKbps: number({ min: 96, max: 512, int: true }),
+  sampleRate: enumOf(['44100', '48000'] as const),
+  targetLufs: number({ min: -30, max: -8 }),
+  truePeakDb: number({ min: -6, max: 0 }),
+  crossfadeSec: number({ min: 0.1, max: 3 }),
+  fadeBlackSec: number({ min: 0.1, max: 3 }),
+});
+export type EncodingSettings = Infer<typeof encodingSchema>;
+
 export interface AllSettings {
   budget: BudgetSettings;
   gpu: GpuSettings;
   generation: GenerationSettings;
   audioMix: AudioMixSettings;
   quality: QualitySettings;
+  encoding: EncodingSettings;
 }
 
 export const DEFAULT_SETTINGS: AllSettings = {
@@ -90,6 +104,16 @@ export const DEFAULT_SETTINGS: AllSettings = {
     ambienceDb: -14,
     peakCeilingDb: -1,
   },
+  encoding: {
+    videoCrf: 18,
+    preset: 'medium',
+    audioBitrateKbps: 192,
+    sampleRate: '48000',
+    targetLufs: -14,
+    truePeakDb: -1.5,
+    crossfadeSec: 0.5,
+    fadeBlackSec: 0.35,
+  },
   quality: {
     similarityWarnPercent: 60,
     similarityHighPercent: 80,
@@ -107,6 +131,7 @@ const SCHEMAS = {
   generation: generationSchema,
   audioMix: audioMixSchema,
   quality: qualitySchema,
+  encoding: encodingSchema,
 } as const;
 
 export type SettingsKey = keyof AllSettings;
@@ -131,6 +156,7 @@ export class SettingsService {
       generation: this.get('generation'),
       audioMix: this.get('audioMix'),
       quality: this.get('quality'),
+      encoding: this.get('encoding'),
     };
   }
 

@@ -571,3 +571,9 @@ audio {
     padding: 12px;
   }
 }
+video.master {
+  width: 100%;
+  max-width: 720px;
+  background: #000;
+  border-radius: 6px;
+}

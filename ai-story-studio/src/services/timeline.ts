@@ -256,6 +256,7 @@ export class TimelineService {
   async renderMix(
     storyId: string,
     layers?: readonly AudioLayer[],
+    sampleRate?: number,
   ): Promise<MixResult & { items: TimelineItem[] }> {
     const view = this.view(storyId) ?? this.build(storyId);
     const audio = new Map<string, PcmAudio>();
@@ -275,6 +276,7 @@ export class TimelineService {
       durationSec: videoEnd || view.durationSec,
       settings: this.s.settings.get('audioMix'),
       ...(layers ? { layers } : {}),
+      ...(sampleRate ? { sampleRate } : {}),
     });
     return { ...result, items: view.items };
   }
