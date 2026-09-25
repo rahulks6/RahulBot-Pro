@@ -109,6 +109,9 @@ describe('web app', () => {
       '/gpu',
       '/settings',
       '/stories/import',
+      '/cloud',
+      '/cloud/test',
+      '/logs',
     ]) {
       const res = await fetch(base + path);
       assert.equal(res.status, 200, path);

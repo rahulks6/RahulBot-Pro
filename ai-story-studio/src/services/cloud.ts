@@ -194,12 +194,12 @@ export class CloudService {
       {
         name: 'MOCK_GENERATION=false (.env)',
         ok: !env.mockGeneration,
-        detail: env.mockGeneration ? 'mock mode is on (safe default)' : 'off',
+        detail: env.mockGeneration ? 'mock mode is on (safe default)' : 'mock mode off',
       },
       {
         name: 'ENABLE_CLOUD_GPU=true (.env)',
         ok: env.enableCloudGpu,
-        detail: env.enableCloudGpu ? 'on' : 'cloud GPUs disabled (safe default)',
+        detail: env.enableCloudGpu ? 'cloud GPUs allowed' : 'cloud GPUs disabled (safe default)',
       },
       {
         name: 'Provider implemented',

@@ -105,7 +105,7 @@ export function registerOpsPages(web: Web): void {
       ${card(
         'GPU instances',
         table(
-          ['Created', 'Provider', 'GPU', 'Rate', 'Status', 'Reason', ''],
+          ['Created', 'Provider', 'GPU', 'Rate', 'Status', 'State', 'Reason', ''],
           s.gpuRepo
             .list()
             .map((g) => [
@@ -114,6 +114,7 @@ export function registerOpsPages(web: Web): void {
               `${g.gpu_model} ${g.vram_gb}GB`,
               `${inr(g.hourly_rate_inr)}/h`,
               badge(g.status),
+              g.lifecycle_state ?? '',
               g.termination_reason ?? '',
               active.some((a) => a.id === g.id)
                 ? postForm(
@@ -352,6 +353,22 @@ export function registerOpsPages(web: Web): void {
                 'Suggest reusable assets before generating',
                 'suggestReuseBeforeGeneration',
                 gen.suggestReuseBeforeGeneration,
+              )}
+              ${select(
+                'Upscaling',
+                'upscaleMode',
+                [
+                  ['auto', 'AUTO — only when output is below the delivery size (recommended)'],
+                  ['off', 'OFF — never upscale'],
+                  ['force', 'FORCE — always run the upscaler'],
+                ],
+                gen.upscaleMode,
+              )}
+              ${field(
+                'Character reference strength for real cloud images (0 = off; 0.8 recommended)',
+                'characterReferenceStrength',
+                gen.characterReferenceStrength,
+                { type: 'number', step: '0.05' },
               )}<button class="primary">Save</button>`,
           ),
         ),

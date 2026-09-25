@@ -1,6 +1,6 @@
 [project]
 name = "ais-worker"
-version = "0.2.0"
+version = "1.1.0"
 description = "AI Story Studio GPU worker (Phase 2: local worker with mock models)"
 requires-python = ">=3.11"
 dependencies = []  # the core and the stdlib server need nothing beyond Python

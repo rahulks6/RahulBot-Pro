@@ -19,7 +19,9 @@ export const NAV: Array<[string, string]> = [
   ['/exports', 'Exports'],
   ['/gpu', 'GPU & Costs'],
   ['/benchmarks', 'Model Benchmarks'],
+  ['/cloud', 'Cloud GPU'],
   ['/settings', 'Settings'],
+  ['/logs', 'Logs'],
 ];
 
 export interface PageOpts {
@@ -27,18 +29,57 @@ export interface PageOpts {
   error?: string | null;
   mock: boolean;
   cloudGpu: boolean;
+  /** Phase 5: current generation mode and live cloud GPU status (always shown). */
+  mode?: {
+    kind: 'MOCK' | 'LOCAL_WORKER' | 'REAL_CLOUD';
+    label: string;
+    gpu: { state: string; model: string; runtimeSec: number; spentInr: number } | null;
+    /** Show the global EMERGENCY STOP GPU button. */
+    emergency: boolean;
+  };
+}
+
+function modeBanner(opts: PageOpts): SafeHtml {
+  const m = opts.mode;
+  const gpu = m?.gpu
+    ? html`<span class="gpuchip"
+        >GPU ${m.gpu.state} · ${m.gpu.model} · ${Math.floor(m.gpu.runtimeSec / 60)} min ·
+        ₹${m.gpu.spentInr.toFixed(2)}</span
+      >`
+    : '';
+  const stop = m?.emergency
+    ? postForm(
+        '/cloud/emergency-stop',
+        html`<input type="hidden" name="confirm" value="STOP" /><button class="danger emergency">
+            EMERGENCY STOP GPU
+          </button>`,
+        {
+          cls: 'inline',
+          confirm:
+            'EMERGENCY STOP: terminate every cloud GPU this AI Story Studio created, right now? Running generations are lost.',
+        },
+      )
+    : '';
+  if (m?.kind === 'REAL_CLOUD')
+    return html`<div class="banner danger mode">
+      <strong>MODE: REAL CLOUD</strong> — generation rents a paid NVIDIA GPU (RunPod) and runs real AI models.
+      ${gpu} ${stop}
+    </div>`;
+  if (opts.mock)
+    return html`<div class="banner ok mode">
+      <strong>MODE: MOCK</strong> — every image, clip and sound is a labelled placeholder. No GPU is rented
+      and no paid API is called (₹0). ${gpu} ${stop}
+    </div>`;
+  return html`<div class="banner danger mode">
+    <strong>MODE: ${m?.kind === 'LOCAL_WORKER' ? 'LOCAL WORKER' : 'MOCK PROVIDERS'}</strong> —
+    MOCK_GENERATION=false. Real open-source models run only on a local worker (₹0). Paid cloud GPUs
+    ${opts.cloudGpu ? 'are allowed by .env but real cloud generation is not switched on.' : 'stay disabled.'}
+    ${gpu} ${stop}
+  </div>`;
 }
 
 export function page(title: string, active: string, body: SafeHtml, opts: PageOpts): SafeHtml {
-  const banner = opts.mock
-    ? html`<div class="banner ok">
-        MOCK MODE — every image, clip and sound is a labelled placeholder. No GPU is rented and no paid API is
-        called (₹0).
-      </div>`
-    : html`<div class="banner danger">
-        MOCK_GENERATION=false — real open-source models on the local worker may run (₹0). Paid cloud GPUs
-        ${opts.cloudGpu ? 'are ENABLED (ENABLE_CLOUD_GPU=true).' : 'stay disabled.'}
-      </div>`;
+  const banner = modeBanner(opts);
   return html`<!doctype html>
     <html lang="en">
       <head>
@@ -50,7 +91,7 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
       </head>
       <body>
         <nav class="sidebar">
-          <div class="brand">AI Story Studio<span>Phase 3 · local</span></div>
+          <div class="brand">AI Story Studio<span>v1.1.0 · Phase 5</span></div>
           ${NAV.map(
             ([href, label]) =>
               html`<a href="${href}" class="${active === href ? 'active' : ''}">${label}</a>`,

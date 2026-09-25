@@ -246,3 +246,44 @@ Studio (TypeScript)                                   Worker (Python, worker/ais
   - The recording is sent to the TTS model only while that consent is active. The worker rejects a reference without `voice_reference_consent: true` and deletes it from the job directory right after synthesis.
   - It is part of the Voice Lock and of the audio cache key. Audio made with it records `voice_consent_id`.
   - **Revoking** (always allowed, even on a locked voice) deletes the recording, unlocks a voice whose lock depended on it, detaches and rejects every line synthesised from it, and makes that cached audio unusable, so the next BUILD FINAL regenerates those lines.
+
+## 19. Real cloud GPU (Phase 5)
+
+- **Cloud layer** (`src/providers/cloud/`):
+  - `CloudGpuApi` is implemented by `RunPodApi` (REST v2, with tolerant parsing and a runtime OpenAPI contract check) and by `UnsupportedCloudApi` (Vast.ai and TensorDock placeholders).
+  - `CloudGpuProvider` adapts it to `GPUProvider`: ownership naming, per-session worker tokens and readiness waiting.
+  - `CloudWorkerBridge` gives REAL CLOUD provider slots that bind to the session's worker.
+- **Services:**
+  - `CloudService`: gates and modes, activation, diagnostics, stop, emergency stop, start-up recovery.
+  - `CloudGpuTest`: the guided first GPU test.
+  - `ModelManager`: the cloud catalog, enabled models and licence acknowledgements.
+  - `SecretStore`: the API key and worker tokens, stored locally and never sent to the browser.
+  - `effectiveLimits`: Settings values lowered by `.env` hard caps.
+- **Supervisor:**
+  - lifecycle states;
+  - the database row is written before renting;
+  - worker start-up timeout, then terminate;
+  - warm reuse;
+  - `hold()` for BUILD FINAL;
+  - session budget;
+  - concurrency limit;
+  - wall-clock billing reconciliation.
+- **Queue:**
+  - cloud jobs, including speech, music and SFX, are batched into the supervised session;
+  - the budget is checked before each job;
+  - remote job ids are persisted and re-polled after a restart;
+  - cancellation propagates to the worker.
+- **Worker:**
+  - `pod_guard.py`, the pod-side dead-man switch;
+  - per-session model selection and licence acknowledgements;
+  - cached-weights reporting;
+  - explicit pipeline classes;
+  - image-to-image from character references;
+  - a strict image-to-video check;
+  - `Dockerfile.cuda`.
+- **Migration `0004`:**
+  - `gpu_instances.lifecycle_state`, `worker_url`, `session_budget_inr`, `error_message` and `purpose`;
+  - `generation_jobs.remote_job_id`, `gpu_instance_id` and `remote_submitted_at`;
+  - the `app_meta` and `cloud_tests` tables.
+
+See [CLOUD_GPU_SETUP.md](CLOUD_GPU_SETUP.md).

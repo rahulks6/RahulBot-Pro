@@ -10,6 +10,7 @@ import type { SafeHtml } from './html.ts';
 import { checkCsrf, parseForm, readBody, Router, securityHeaders, type Req, type Result } from './http.ts';
 import { registerBenchmarkPages } from './pages/benchmarks.ts';
 import { registerCharacterPages } from './pages/characters.ts';
+import { registerCloudPages } from './pages/cloud.ts';
 import { registerDashboard } from './pages/dashboard.ts';
 import { registerOpsPages } from './pages/ops.ts';
 import { registerProductionPages } from './pages/production.ts';
@@ -32,6 +33,25 @@ const STATIC: Record<string, string> = {
   'app.js': 'text/javascript; charset=utf-8',
 };
 
+function modeInfo(studio: Studio): NonNullable<import('./ui.ts').PageOpts['mode']> {
+  const st = studio.cloud.status();
+  const anyActive = studio.gpuRepo.active().some((i) => i.is_mock === 0 && i.provider !== 'local-worker');
+  return {
+    kind: st.mode,
+    label: st.modeLabel,
+    gpu: st.instance
+      ? {
+          state: st.instance.state,
+          model: st.instance.gpu,
+          runtimeSec: st.instance.runtimeSec,
+          spentInr: st.instance.spentInr,
+        }
+      : null,
+    // Visible whenever a paid GPU could exist: cloud allowed, a GPU is tracked, or leftovers were found.
+    emergency: st.canProvision || anyActive || (st.recovery?.ownedPods.length ?? 0) > 0,
+  };
+}
+
 export function createWebApp(
   studio: Studio,
   opts: { csrfToken?: string } = {},
@@ -49,6 +69,7 @@ export function createWebApp(
           error: req.query.get('error'),
           mock: studio.env.mockGeneration,
           cloudGpu: studio.env.enableCloudGpu,
+          mode: modeInfo(studio),
         }),
       };
     },
@@ -68,6 +89,7 @@ export function createWebApp(
   registerQualityPages(web);
   registerOpsPages(web);
   registerBenchmarkPages(web);
+  registerCloudPages(web);
 
   // Media from local storage (keys are validated by the storage provider: no traversal).
   router.get('/media/:key*', (req) => {

@@ -577,3 +577,69 @@ video.master {
   background: #000;
   border-radius: 6px;
 }
+
+/* Phase 5: mode banner, GPU chip, emergency stop */
+.banner.mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.gpuchip {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  font-size: 0.85rem;
+}
+button.emergency {
+  background: #b91c1c;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 2px solid #7f1d1d;
+}
+.gates td:first-child {
+  white-space: nowrap;
+}
+.steps li {
+  margin: 0.25rem 0;
+}
+.steps .ok::marker {
+  content: '✔ ';
+  color: #15803d;
+}
+.steps .failed::marker {
+  content: '✖ ';
+  color: #b91c1c;
+}
+.steps .running::marker {
+  content: '… ';
+}
+.steps .pending::marker,
+.steps .skipped::marker {
+  content: '○ ';
+  color: #6b7280;
+}
+pre.logs {
+  max-height: 60vh;
+  overflow: auto;
+  font-size: 0.8rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.75rem;
+  border-radius: 6px;
+}
+a.button {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+a.button:hover {
+  background: #f3f4f6;
+}
