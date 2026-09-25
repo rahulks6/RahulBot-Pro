@@ -1,0 +1,28 @@
+{
+  "name": "ai-story-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private, local-first AI Story Studio (Phase 1: local foundation, mock generation only).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/web/server.ts",
+    "start": "node --disable-warning=ExperimentalWarning dist/src/web/server.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "node --disable-warning=ExperimentalWarning node_modules/eslint/bin/eslint.js . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "migrate": "node --disable-warning=ExperimentalWarning src/cli/migrate.ts",
+    "seed": "node --disable-warning=ExperimentalWarning src/cli/seed-demo.ts",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "eslint": "^10.1.0",
+    "prettier": "^3.8.1",
+    "typescript": "^6.0.2"
+  }
+}
