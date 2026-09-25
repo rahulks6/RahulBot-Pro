@@ -7,6 +7,8 @@ this module is only imported when they are installed.
 
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.responses import Response as FastResponse
@@ -14,9 +16,14 @@ from fastapi.responses import Response as FastResponse
 from . import __version__
 from .api import WorkerAPI
 from .config import WorkerConfig
+from .pod_guard import PodGuard
 
 config = WorkerConfig.from_env()
 api = WorkerAPI(config)
+_guard = PodGuard.from_env(os.environ)
+if _guard:
+    api.on_activity = _guard.touch
+    _guard.start()
 app = FastAPI(title="AI Story Studio worker", version=__version__, docs_url=None, redoc_url=None, openapi_url=None)
 
 

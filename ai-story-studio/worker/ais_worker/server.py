@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import signal
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,7 @@ from urllib.parse import urlsplit
 
 from .api import Response, WorkerAPI
 from .config import ConfigError, WorkerConfig
+from .pod_guard import PodGuard
 
 log = logging.getLogger("ais_worker.server")
 
@@ -68,6 +70,11 @@ def make_handler(api: WorkerAPI) -> type[BaseHTTPRequestHandler]:
 
 def serve(config: WorkerConfig) -> None:
     api = WorkerAPI(config)
+    guard = PodGuard.from_env(os.environ)
+    if guard:
+        api.on_activity = guard.touch
+        guard.start()
+        log.info("pod guard active (idle %s s, lifetime %s s)", guard.idle_s, guard.max_lifetime_s)
     httpd = ThreadingHTTPServer((config.host, config.port), make_handler(api))
     log.info("AI Story Studio worker on http://%s:%s (mock models: %s)", config.host, httpd.server_port, config.mock_models)
 

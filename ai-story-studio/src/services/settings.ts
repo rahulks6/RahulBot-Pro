@@ -31,6 +31,11 @@ export const generationSchema = object({
   suggestReuseBeforeGeneration: boolean(),
   /** OFF never upscales; AUTO only when output is below the delivery size; FORCE always runs the upscaler. */
   upscaleMode: enumOf(['off', 'auto', 'force'] as const),
+  /**
+   * Real cloud models: start each shot image from the character's approved reference
+   * (image-to-image) with this strength; 0 turns it off. Higher = more freedom, less likeness.
+   */
+  characterReferenceStrength: number({ min: 0, max: 1 }),
 });
 export type GenerationSettings = Infer<typeof generationSchema>;
 
@@ -138,6 +143,7 @@ export const DEFAULT_SETTINGS: AllSettings = {
     upscaleOptimizedOutput: true,
     suggestReuseBeforeGeneration: true,
     upscaleMode: 'auto',
+    characterReferenceStrength: 0.8,
   },
   cloud: {
     provider: 'runpod',

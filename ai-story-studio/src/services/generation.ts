@@ -6,7 +6,7 @@ import { seedFrom } from '../lib/hash.ts';
 import { newId } from '../lib/ids.ts';
 import { parseJson } from '../lib/json.ts';
 import { assertGenerationAllowed } from '../providers/registry.ts';
-import type { ModelResult, ProviderInfo, RunContext } from '../providers/types.ts';
+import type { ModelResult, ProviderInfo, ReferenceInput, RunContext } from '../providers/types.ts';
 import { costFor } from '../repositories/gpu.ts';
 import { shouldUpscale } from './settings.ts';
 import type { AudioOutcome, AudioPipeline } from './audio-pipeline.ts';
@@ -355,6 +355,23 @@ export class GenerationService {
     }
   }
 
+  /**
+   * Character consistency with real cloud models: the first approved character
+   * reference of the shot becomes the image-to-image starting point. Mock and
+   * local providers keep their existing behaviour.
+   */
+  private async characterReferenceInit(
+    refs: ReferenceInput[],
+  ): Promise<{ data: Uint8Array; strength: number } | undefined> {
+    const info = this.s.providers.image.info;
+    const strength = this.s.settings.get('generation').characterReferenceStrength;
+    if (info.computeLocation !== 'cloud_gpu' || !info.requiresPaidResources || strength <= 0)
+      return undefined;
+    const ref = refs.find((r) => r.role === 'character');
+    if (!ref || !(await this.s.storage.exists(ref.storageKey))) return undefined;
+    return { data: await this.s.storage.get(ref.storageKey), strength };
+  }
+
   private isGpuJob(job: GenerationJob): boolean {
     const info = this.providerFor(job.kind);
     // Anything running on a paid cloud worker must go through a supervised GPU session.
@@ -648,9 +665,11 @@ export class GenerationService {
         const prompt = this.promptFor(shot.id);
         const seed = this.seedFor(job, shot, attemptNumber);
         this.setStatus(job, 'generating_image', `seed ${seed}`);
+        const reference = await this.characterReferenceInit(prompt.references);
         const res = await this.s.providers.image.generate(
           {
-            mode: 'text_to_image',
+            mode: reference ? 'image_to_image' : 'text_to_image',
+            ...(reference ? { initImage: reference.data, strength: reference.strength } : {}),
             prompt: prompt.final.image,
             negativePrompt: prompt.final.negative,
             seed,

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import type { AppError } from '../src/lib/errors.ts';
+import { encodePng } from '../src/media/png.ts';
 import { seedSmall, testStudio, type TestStudio } from './helpers.ts';
 import { FakeCloudWorker } from './fixtures/fake-worker.ts';
 import { MockRunPod } from './fixtures/mock-runpod.ts';
@@ -155,6 +156,38 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     assert.equal(s.secrets.workerToken(pod.id), undefined, 'session token forgotten');
     assert.equal(s.cloud.bridge.instanceId, null, 'providers unbound');
     assert.equal(worker.submitted[0]!.body['kind'], 'tts');
+  });
+
+  it('starts shot images from the approved character reference (image-to-image)', async () => {
+    s = cloudStudio();
+    const { ari, shots } = seedSmall(s);
+    const png = encodePng(32, 32, () => [200, 120, 40]);
+    const ref = await s.assets.createReference(
+      s.characters.get(ari.id).project_id,
+      'character',
+      ari.id,
+      png,
+      'png',
+      'image/png',
+      'front',
+      false,
+    );
+    const cref = s.characters.addReference(ari.id, ref, { slot_type: 'view', slot: 'front' });
+    s.characters.setReferenceApproval(cref.id, true);
+    s.generation.queueImage(shots[0]!.id);
+    const r = await s.generation.processQueue();
+    assert.equal(r.completed, 1, r.messages.join(' '));
+    const body = worker.submitted.find((x) => x.path === '/generate/image')!.body;
+    assert.equal(body['init_image'], png.toString('base64'), 'the approved reference is the starting point');
+    assert.equal(body['strength'], 0.8);
+    s.settings.set('generation', { ...s.settings.get('generation'), characterReferenceStrength: 0 });
+    s.generation.queueImage(shots[1]!.id);
+    await s.generation.processQueue();
+    assert.equal(
+      worker.submitted.filter((x) => x.path === '/generate/image').at(-1)!.body['init_image'],
+      undefined,
+      '0 = off',
+    );
   });
 
   it('terminates the GPU when the worker never becomes healthy', async () => {

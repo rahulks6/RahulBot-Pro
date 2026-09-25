@@ -1,6 +1,12 @@
-tests
-worker-data
+# Keep the build context small and secret-free.
 **/__pycache__
-.pytest_cache
+**/*.pyc
+.venv
 .mypy_cache
 .ruff_cache
+.pytest_cache
+tests
+worker-data
+models.json
+.env
+*.log

@@ -1,0 +1,46 @@
+# AI Story Studio CLOUD worker image (Phase 5) — runs on a rented NVIDIA GPU (RunPod).
+#
+# Build once (GitHub Actions workflow "AI Story Studio worker image", or locally):
+#   docker build -f Dockerfile.cuda -t ghcr.io/<you>/ai-story-studio-worker:1.1.0 .
+#
+# - No secrets are baked in: WORKER_AUTH_TOKEN is a fresh random value the app passes
+#   to each pod; the worker refuses to start without it.
+# - Model weights are NOT in the image. They download on first use into /workspace
+#   (the pod volume, or a RunPod network volume that keeps them between sessions).
+# - Which models load, and which conditional licences you acknowledged, come from the
+#   app per session (WORKER_ENABLED_MODELS / WORKER_LICENSE_ACK).
+FROM pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# ffmpeg: clip encoding and probing; espeak-ng: Kokoro's fallback phonemizer.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg espeak-ng \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements-cloud.txt .
+RUN pip install -r requirements-cloud.txt
+COPY ais_worker ./ais_worker
+COPY models.cloud.json ./models.cloud.json
+
+ENV WORKER_HOST=0.0.0.0 \
+    WORKER_PORT=8765 \
+    WORKER_DATA_DIR=/workspace/worker-data \
+    WORKER_MODELS_FILE=/app/models.cloud.json \
+    WORKER_MOCK_MODELS=false \
+    WORKER_ALLOW_NONCOMMERCIAL=false \
+    WORKER_MODEL_CACHE_DIR=/workspace/models \
+    HF_HOME=/workspace/hf \
+    WORKER_MAX_UPLOAD_MB=128
+
+EXPOSE 8765
+# /health needs no token and reveals only status + version.
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=4).status == 200 else 1)"
+
+# Standard-library HTTP server (the tested entry point; no FastAPI needed in the cloud image).
+CMD ["python", "-m", "ais_worker"]

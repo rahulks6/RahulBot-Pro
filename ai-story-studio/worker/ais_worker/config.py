@@ -38,6 +38,10 @@ def _int(value: str | None, default: int, low: int, high: int) -> int:
     return n
 
 
+def _ids(value: str | None) -> frozenset[str]:
+    return frozenset(x.strip() for x in (value or "").split(",") if x.strip())
+
+
 @dataclass(frozen=True)
 class WorkerConfig:
     auth_token: str
@@ -54,6 +58,10 @@ class WorkerConfig:
     models_file: Path | None = None
     allow_noncommercial: bool = False
     model_cache_dir: Path | None = None
+    # Phase 5 (cloud): the app decides per session which catalog entries are enabled
+    # and which conditional licences the user acknowledged. None = use the catalog file.
+    enabled_models: frozenset[str] | None = None
+    license_ack: frozenset[str] = frozenset()
 
     @property
     def jobs_dir(self) -> Path:
@@ -80,4 +88,6 @@ class WorkerConfig:
             models_file=Path(e["WORKER_MODELS_FILE"]).resolve() if e.get("WORKER_MODELS_FILE") else None,
             allow_noncommercial=_bool(e.get("WORKER_ALLOW_NONCOMMERCIAL"), False),
             model_cache_dir=Path(e["WORKER_MODEL_CACHE_DIR"]).resolve() if e.get("WORKER_MODEL_CACHE_DIR") else None,
+            enabled_models=_ids(e.get("WORKER_ENABLED_MODELS")) if "WORKER_ENABLED_MODELS" in e else None,
+            license_ack=_ids(e.get("WORKER_LICENSE_ACK")),
         )

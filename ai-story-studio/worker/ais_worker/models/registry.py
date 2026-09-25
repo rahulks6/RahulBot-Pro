@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from ..jobs import JobContext, JobError
@@ -18,6 +19,19 @@ class ModelRegistry:
         self._load_counts: dict[str, int] = {}
         self._lock = threading.Lock()
         self.max_loaded = max_loaded
+        # Where model weights are cached (Hugging Face layout); used to report "cached" state.
+        self.cache_dirs: list[Path] = []
+
+    def weights_cached(self, model: Model[Any]) -> bool | None:
+        """True/False when the model's Hugging Face repo is (not) in a cache dir; None when unknown."""
+        entry = getattr(model, "entry", None)
+        repo = getattr(entry, "repo", "") if entry is not None else ""
+        if model.info.mock or entry is None:
+            return None
+        if not repo or getattr(entry, "adapter", "") in {"ffmpeg_upscale", "command_lipsync"}:
+            return True  # no downloadable weights
+        folder = "models--" + repo.replace("/", "--")
+        return any((d / folder).is_dir() or (d / "hub" / folder).is_dir() for d in self.cache_dirs)
 
     def register(self, model: Model[Any], *, default: bool = False) -> None:
         self._models[model.info.id] = model
@@ -74,6 +88,11 @@ class ModelRegistry:
                     "loaded": m.loaded,
                     "default": self._defaults.get(i.kind) == i.id,
                     "load_count": self._load_counts.get(i.id, 0),
+                    "cached": self.weights_cached(m),
+                    "recommended_vram_gb": getattr(getattr(m, "entry", None), "recommended_vram_gb", i.min_vram_gb),
+                    "precision": getattr(getattr(m, "entry", None), "precision", ""),
+                    "storage_gb": getattr(getattr(m, "entry", None), "storage_gb", 0),
+                    "capabilities": list(getattr(getattr(m, "entry", None), "capabilities", ())),
                 }
             )
         return out

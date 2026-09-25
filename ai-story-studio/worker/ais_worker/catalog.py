@@ -57,6 +57,10 @@ class CatalogEntry:
     enabled: bool
     default: bool
     params: dict[str, Any] = field(default_factory=dict)
+    recommended_vram_gb: int = 0
+    precision: str = ""
+    storage_gb: float = 0
+    capabilities: tuple[str, ...] = ()
 
 
 class LicenseError(Exception):
@@ -108,6 +112,7 @@ def _entry(raw: Any, i: int, errors: list[dict[str, str]]) -> CatalogEntry | Non
     known = {
         "id", "kind", "adapter", "display_name", "repo", "revision", "license", "commercial_use", "license_url",
         "license_notes", "license_acknowledged", "min_vram_gb", "enabled", "default", "params", "sources",
+        "recommended_vram_gb", "precision", "storage_gb", "capabilities",
     }  # fmt: skip
     for key in raw:
         if key not in known:
@@ -139,7 +144,19 @@ def _entry(raw: Any, i: int, errors: list[dict[str, str]]) -> CatalogEntry | Non
         enabled=b("enabled"),
         default=b("default"),
         params=params,
+        recommended_vram_gb=_number(raw.get("recommended_vram_gb"), vram),
+        precision=str(raw.get("precision", "")),
+        storage_gb=_number(raw.get("storage_gb"), 0),
+        capabilities=_strings(raw.get("capabilities")),
     )
+
+
+def _number(value: Any, default: float) -> Any:
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0 else default
+
+
+def _strings(value: Any) -> tuple[str, ...]:
+    return tuple(v for v in value if isinstance(v, str)) if isinstance(value, list) else ()
 
 
 def load_catalog(path: Path) -> list[CatalogEntry]:

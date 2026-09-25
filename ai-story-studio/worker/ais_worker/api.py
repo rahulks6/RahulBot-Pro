@@ -27,7 +27,7 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -55,12 +55,20 @@ class Response:
     headers: dict[str, str] = field(default_factory=dict)
 
 
+def _hf_home() -> Path | None:
+    import os
+
+    home = os.environ.get("HF_HOME")
+    return Path(home) if home else Path.home() / ".cache" / "huggingface"
+
+
 def build_registry(config: WorkerConfig, media: MediaTools) -> tuple[ModelRegistry, list[dict[str, str]]]:
     """Register mock models (if enabled) and enabled catalog entries that pass the licence gate.
 
     Returns the registry and a list of catalog entries that were NOT registered, with the reason.
     """
     registry = ModelRegistry()
+    registry.cache_dirs = [d for d in (config.model_cache_dir, _hf_home()) if d is not None]
     skipped: list[dict[str, str]] = []
     if config.mock_models:
         registry.register(MockImageModel())
@@ -72,9 +80,16 @@ def build_registry(config: WorkerConfig, media: MediaTools) -> tuple[ModelRegist
         registry.register(MockUpscaler(media))
     if config.models_file is None:
         return registry, skipped
-    for entry in load_catalog(config.models_file):
+    for catalog_entry in load_catalog(config.models_file):
+        entry = catalog_entry
+        if config.enabled_models is not None:
+            # The app's per-session selection replaces the catalog's enabled flags.
+            entry = replace(entry, enabled=entry.id in config.enabled_models)
+        if entry.id in config.license_ack and entry.commercial_use == "conditional":
+            entry = replace(entry, license_acknowledged=True)
         if not entry.enabled:
-            skipped.append({"id": entry.id, "reason": "disabled in catalog"})
+            reason = "disabled in catalog" if config.enabled_models is None else "not selected for this session"
+            skipped.append({"id": entry.id, "reason": reason})
             continue
         try:
             check_license(entry, config.allow_noncommercial)
@@ -127,6 +142,8 @@ class WorkerAPI:
         self.media = MediaTools(config.ffmpeg_path, config.ffprobe_path)
         self.registry, self.catalog_skipped = build_registry(config, self.media)
         self.jobs = JobManager(config.jobs_dir, config.max_concurrent_jobs, config.job_timeout_seconds, config.max_jobs_kept)
+        # Called after every successfully authenticated request (feeds the pod guard's idle timer).
+        self.on_activity: Callable[[], None] | None = None
 
     def close(self) -> None:
         self.jobs.shutdown()
@@ -140,6 +157,8 @@ class WorkerAPI:
             if method == "GET" and path == "/health":
                 return Response(200, {"status": "ok", "version": __version__})
             check_bearer(headers.get("authorization"), self.config.auth_token)
+            if self.on_activity:
+                self.on_activity()
             return self._route(method, path, body)
         except SecurityError as exc:
             return Response(exc.status, {"error": {"code": "FORBIDDEN" if exc.status != 404 else "NOT_FOUND", "message": str(exc)}})

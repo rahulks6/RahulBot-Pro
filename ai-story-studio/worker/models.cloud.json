@@ -28,7 +28,7 @@
         "max_sequence_length": 256,
         "max_side": 1344,
         "dim_multiple": 16,
-        "img2img_strength": 0.65
+        "img2img_strength": 0.8
       }
     },
     {

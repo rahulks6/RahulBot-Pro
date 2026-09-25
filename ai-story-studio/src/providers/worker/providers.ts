@@ -124,7 +124,10 @@ export class WorkerImageModel implements ImageModel {
       quality: req.quality,
       settings: workerSettings(req.settings, ctx, 'IMAGE_GENERATION_FAILED'),
     };
-    if (req.initImage) body['init_image'] = b64(req.initImage);
+    if (req.initImage) {
+      body['init_image'] = b64(req.initImage);
+      if (req.strength) body['strength'] = Math.min(1, Math.max(0.05, req.strength));
+    }
     const { job, files } = await this.client.run('/generate/image', body, ctx);
     return result(job, first(files, 'image'), this.info);
   }

@@ -192,6 +192,8 @@ class ImageRequest:
     model: str
     init_image: bytes | None
     settings: dict[str, Any]
+    # Image-to-image strength (0.05 to 1.0); None = the model's default.
+    strength: float | None = None
 
 
 @dataclass(frozen=True)
@@ -269,6 +271,7 @@ def parse_image(body: Any, max_bytes: int) -> ImageRequest:
         model=v.str_("model", max_len=120),
         init_image=v.file("init_image", ("png", "jpeg", "webp"), required=False),
         settings=v.dict_("settings"),
+        strength=v.float_("strength", low=0.05, high=1.0, default=0) or None,
     )
     v.done()
     return req

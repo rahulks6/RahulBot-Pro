@@ -1,5 +1,5 @@
 # AI Story Studio worker image (Phase 2: mock models, no weights, no CUDA base yet).
-# Phase 3 switches the base to an NVIDIA CUDA runtime image once real models are chosen.
+# The cloud GPU image is Dockerfile.cuda (Phase 5).
 FROM python:3.11-slim
 
 RUN apt-get update \
