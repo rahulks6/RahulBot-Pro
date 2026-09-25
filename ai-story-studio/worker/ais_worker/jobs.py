@@ -125,10 +125,12 @@ class JobContext:
     def path(self, name: str) -> Path:
         return safe_child(self.dir, name)
 
-    def run(self, args: list[str], timeout: float = 600) -> subprocess.CompletedProcess[bytes]:
+    def run(
+        self, args: list[str], timeout: float = 600, *, cwd: Path | None = None, error_code: str = "FFMPEG_FAILED"
+    ) -> subprocess.CompletedProcess[bytes]:
         """Run a subprocess WITHOUT a shell; killed on cancellation or timeout."""
         self.check()
-        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.dir)
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd or self.dir)
         end = time.monotonic() + timeout
         try:
             while proc.poll() is None:
@@ -145,7 +147,7 @@ class JobContext:
                 proc.kill()
         if proc.returncode != 0:
             tail = err.decode(errors="replace")[-400:]
-            raise JobError("FFMPEG_FAILED", f"{Path(args[0]).name} exited with {proc.returncode}: {tail}")
+            raise JobError(error_code, f"{Path(args[0]).name} exited with {proc.returncode}: {tail}")
         return subprocess.CompletedProcess(args, proc.returncode, out, err)
 
     def add_output(self, name: str, mime: str, **meta: Any) -> OutputFile:

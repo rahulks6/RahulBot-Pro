@@ -1,4 +1,4 @@
-# AI Story Studio worker (Phase 2)
+# AI Story Studio worker (Phases 2–4)
 
 The worker is the Python process that will run the open-source AI models on a GPU. The studio app talks to it over HTTP. On a local machine it runs next to the app. In Phase 5 the same container will run on a temporary cloud GPU.
 
@@ -90,6 +90,17 @@ Tests that need FFmpeg are skipped when it is not installed. Set `FFMPEG_PATH`/`
 - **Licence gate:** `non_commercial` and `unknown` models are refused, and `conditional` models need `"license_acknowledged": true`. `WORKER_ALLOW_NONCOMMERCIAL=true` is for private evaluation only. `GET /models` lists every catalog entry that was not registered and why.
 - **Benchmarks:** `POST /benchmarks` with `{ "models": [...], "include_mock": false, "source_image": "<base64 PNG>", "suite": {...} }`. The suite is optional; the built-in `story-studio-default` is used if omitted. The request returns a job whose `results.json` output holds per-model summaries and per-case results, and every output is downloadable. There is also a CLI: `python -m ais_worker.benchmark --models a,b`.
 - **Testing:** the adapter tests run against fake libraries that mimic the documented APIs (PyTorch and diffusers cannot be installed in the build environment). The real behaviour is verified by running the benchmark on a GPU.
+
+## Phase 4 adapters
+
+| Adapter            | Kind(s)        | Notes                                                                                                                                 |
+| ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `stable_audio`     | `music`, `sfx` | diffusers `StableAudioPipeline`; long beds tiled with crossfades; ambience made loopable; `seed` is honoured                          |
+| `spandrel_upscale` | `upscale`      | Real-ESRGAN and other SR weights from `params.weights_file` (or `params.hf_filename`); tiled; Lanczos to the exact target             |
+| `command_lipsync`  | `lipsync`      | Runs `params.argv` (no shell) in `params.cwd` with `{video}`, `{audio}`, `{output}` placeholders; output re-encoded and probed        |
+| `chatterbox_tts`   | `tts`          | Accepts `voice_reference` (WAV) only with `voice_reference_consent: true`; the recording is deleted from the job directory afterwards |
+
+Invalid adapter parameters are reported in `GET /models` → `catalog_skipped`; they never stop the worker.
 
 ## Model interfaces
 

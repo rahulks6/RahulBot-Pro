@@ -227,6 +227,11 @@ class AudioRequest:
     duration_sec: float
     loopable: bool
     settings: dict[str, Any]
+    seed: int = 0
+    # Optional reference recording for voice cloning (TTS only). The app sends it
+    # only for voice profiles with recorded consent; the flag is re-checked here.
+    voice_reference: bytes | None = None
+    voice_reference_consent: bool = False
 
 
 @dataclass(frozen=True)
@@ -315,7 +320,15 @@ def parse_audio(body: Any, max_bytes: int) -> AudioRequest:
         duration_sec=v.float_("duration_sec", low=0.2, high=600, default=5),
         loopable=v.bool_("loopable", kind == "ambience"),
         settings=v.dict_("settings"),
+        seed=v.int_("seed", low=0, high=2**31 - 1, default=0),
+        voice_reference=v.file("voice_reference", ("wav",), required=False),
+        voice_reference_consent=v.bool_("voice_reference_consent", False),
     )
+    if req.voice_reference is not None:
+        if kind != "tts":
+            v.err("voice_reference", "is only accepted for tts")
+        if not req.voice_reference_consent:
+            v.err("voice_reference_consent", "must be true: reference audio needs the speaker's recorded consent")
     v.done()
     return req
 

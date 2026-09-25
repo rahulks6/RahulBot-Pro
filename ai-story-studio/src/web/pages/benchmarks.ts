@@ -64,14 +64,14 @@ export function registerBenchmarkPages(web: Web): void {
           '/benchmarks/start',
           html`<p class="muted">
               Choose models to compare. Each runs the built-in suite: the same original character in several
-              situations, an establishing shot, in-image text, gentle motion, and expressive narration and
-              dialogue. Real models need <code>MOCK_GENERATION=false</code> and run only on this local worker;
-              cloud GPUs stay off.
+              situations, an establishing shot, in-image text, gentle motion, expressive narration and
+              dialogue, music beds, SFX, a loopable ambience and upscaling. Real models need
+              <code>MOCK_GENERATION=false</code> and run only on this local worker; cloud GPUs stay off.
             </p>
             ${table(
               ['', 'Model', 'Kind', 'Licence', 'VRAM', ''],
               w.models
-                .filter((m) => ['image', 'video', 'tts', 'upscale'].includes(m.kind))
+                .filter((m) => ['image', 'video', 'tts', 'music', 'sfx', 'upscale'].includes(m.kind))
                 .map((m) => [
                   html`<input type="checkbox" name="model" value="${m.id}" />`,
                   m.display_name,

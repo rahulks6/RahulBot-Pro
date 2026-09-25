@@ -26,6 +26,7 @@ import { GpuSupervisor } from '../services/gpu-supervisor.ts';
 import { QualityService } from '../services/quality/quality-service.ts';
 import { SettingsService } from '../services/settings.ts';
 import { TimelineService } from '../services/timeline.ts';
+import { VoiceReferenceService } from '../services/voice-reference.ts';
 import type { StorageProvider } from '../storage/storage.ts';
 import { LocalStorageProvider } from '../storage/storage.ts';
 
@@ -54,6 +55,8 @@ export interface Studio {
   gpu: GpuSupervisor;
   generation: GenerationService;
   audio: AudioPipeline;
+  /** Consented voice reference recordings (Phase 4). */
+  voiceRefs: VoiceReferenceService;
   timeline: TimelineService;
   quality: QualityService;
   exports: ExportService;
@@ -128,7 +131,8 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     gpu,
     ffmpeg,
   };
-  const audio = new AudioPipeline(partial);
+  const voiceRefs = new VoiceReferenceService(partial);
+  const audio = new AudioPipeline({ ...partial, voiceRefs });
   const generation = new GenerationService({ ...partial, audio });
   const timeline = new TimelineService({ ...partial, audio });
   const quality = new QualityService({ ...partial, timeline });
@@ -136,6 +140,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   return {
     ...partial,
     audio,
+    voiceRefs,
     generation,
     timeline,
     quality,

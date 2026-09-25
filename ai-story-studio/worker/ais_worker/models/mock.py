@@ -232,6 +232,9 @@ class MockAudioModel(Model[AudioRequest]):
     def run(self, request: AudioRequest, ctx: JobContext) -> None:
         _controls(request.settings, ctx)
         ctx.set_status("running", f"synthesising {request.kind}")
+        if request.voice_reference is not None:
+            ctx.log("mock TTS: reference audio received (consent confirmed) but not used; the output is a placeholder voice")
+            ctx.job.metrics["voice_reference_used"] = False
         if request.kind == "tts":
             samples = self._speech(request)
         elif request.kind == "music":

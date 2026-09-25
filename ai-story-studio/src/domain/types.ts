@@ -315,7 +315,24 @@ export interface AudioAsset {
   duration_sec: number;
   provider: string;
   model: string;
+  /** Set when the line was synthesised from a consented reference recording. */
+  voice_consent_id?: string | null;
   created_at: string;
+}
+
+export interface VoiceConsent {
+  id: string;
+  project_id: string;
+  voice_profile_id: string;
+  reference_asset_id: string;
+  speaker_name: string;
+  relationship: 'self' | 'consenting_person';
+  method: 'self' | 'written' | 'recorded_statement' | 'contract';
+  scope: string;
+  evidence: string;
+  created_at: string;
+  revoked_at: string | null;
+  revoke_reason: string | null;
 }
 
 export interface GpuInstance {

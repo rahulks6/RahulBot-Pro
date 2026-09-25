@@ -1,5 +1,5 @@
 {
-  "_readme": "Candidate open-source models to BENCHMARK (Phase 3). Everything is disabled. Before enabling an entry: open its model card, confirm the repo id, revision and licence, then set enabled=true. Licence data was collected from public sources in September 2026 (see each entry's sources) and may change. Being listed here is not a recommendation; the choice is made from your benchmark results.",
+  "_readme": "Candidate open-source models to BENCHMARK (Phase 3–4). Everything is disabled. Before enabling an entry: open its model card, confirm the repo id, revision and licence, then set enabled=true. Licence data was collected from public sources in September 2026 (see each entry's sources) and may change. Being listed here is not a recommendation; the choice is made from your benchmark results.",
   "models": [
     {
       "id": "qwen-image",
@@ -64,7 +64,10 @@
       "min_vram_gb": 24,
       "enabled": false,
       "default": false,
-      "params": { "dtype": "bfloat16", "cpu_offload": true },
+      "params": {
+        "dtype": "bfloat16",
+        "cpu_offload": true
+      },
       "sources": [
         "https://www.simplismart.ai/comparisons/qwen-image-vs-flux-2-which-open-weight-image-model-should-you-deploy"
       ]
@@ -84,7 +87,12 @@
       "min_vram_gb": 10,
       "enabled": false,
       "default": false,
-      "params": { "dtype": "float16", "num_inference_steps": 30, "guidance_scale": 6.0, "max_side": 1344 },
+      "params": {
+        "dtype": "float16",
+        "num_inference_steps": 30,
+        "guidance_scale": 6.0,
+        "max_side": 1344
+      },
       "sources": ["https://localaimaster.com/blog/best-local-image-models-compared"]
     },
     {
@@ -188,7 +196,11 @@
       "params": {
         "lang_code": "a",
         "default_voice": "af_heart",
-        "voices": { "female": "af_heart", "male": "am_michael", "neutral": "af_sky" }
+        "voices": {
+          "female": "af_heart",
+          "male": "am_michael",
+          "neutral": "af_sky"
+        }
       },
       "sources": [
         "https://www.bentoml.com/blog/exploring-the-world-of-open-source-text-to-speech-models",
@@ -246,31 +258,38 @@
       "min_vram_gb": 0,
       "enabled": true,
       "default": false,
-      "params": { "flags": "lanczos" },
+      "params": {
+        "flags": "lanczos"
+      },
       "sources": ["https://ffmpeg.org/legal.html"]
     },
     {
       "id": "real-esrgan",
       "kind": "upscale",
-      "adapter": "none",
-      "display_name": "Real-ESRGAN (adapter planned for Phase 4)",
+      "adapter": "spandrel_upscale",
+      "display_name": "Real-ESRGAN x4plus (via spandrel)",
       "repo": "xinntao/Real-ESRGAN",
       "revision": "",
       "license": "BSD-3-Clause",
       "commercial_use": "allowed",
-      "license_notes": "Verify the licence of the specific weights file you download.",
+      "license_notes": "Download RealESRGAN_x4plus.pth from the official GitHub release and verify the licence of that weights file. The x4 result is resized to the exact target with Lanczos.",
       "license_url": "https://github.com/xinntao/Real-ESRGAN",
       "min_vram_gb": 4,
       "enabled": false,
       "default": false,
-      "params": {},
-      "sources": ["https://github.com/xinntao/Real-ESRGAN"]
+      "params": {
+        "weights_file": "~/models/RealESRGAN_x4plus.pth",
+        "tile": 512,
+        "tile_pad": 16,
+        "half": true
+      },
+      "sources": ["https://github.com/xinntao/Real-ESRGAN", "https://github.com/chaiNNer-org/spandrel"]
     },
     {
       "id": "ace-step-1.5",
       "kind": "music",
       "adapter": "none",
-      "display_name": "ACE-Step 1.5 (adapter planned for Phase 4)",
+      "display_name": "ACE-Step 1.5 (no adapter yet)",
       "repo": "ace-step/ACE-Step-1.5",
       "revision": "",
       "license": "Apache-2.0",
@@ -306,8 +325,8 @@
     {
       "id": "stable-audio-open",
       "kind": "sfx",
-      "adapter": "none",
-      "display_name": "Stable Audio Open 1.0 (SFX / ambience; adapter planned for Phase 4)",
+      "adapter": "stable_audio",
+      "display_name": "Stable Audio Open 1.0 (SFX / ambience)",
       "repo": "stabilityai/stable-audio-open-1.0",
       "revision": "",
       "license": "Stability AI Community License",
@@ -318,7 +337,41 @@
       "min_vram_gb": 12,
       "enabled": false,
       "default": false,
-      "params": {},
+      "params": {
+        "dtype": "float16",
+        "num_inference_steps": 100,
+        "guidance_scale": 7.0,
+        "crossfade_sec": 1.0
+      },
+      "sources": [
+        "https://stability.ai/news-updates/introducing-stable-audio-open",
+        "https://www.therundown.ai/tools/stable-audio-3-0"
+      ]
+    },
+    {
+      "id": "stable-audio-open-music",
+      "kind": "music",
+      "adapter": "stable_audio",
+      "display_name": "Stable Audio Open 1.0 (music beds)",
+      "repo": "stabilityai/stable-audio-open-1.0",
+      "revision": "",
+      "license": "Stability AI Community License",
+      "commercial_use": "conditional",
+      "license_notes": "Free commercial use under US$1M annual revenue; the licence is revocable and has conditions. Generates up to ~47 s per call; longer beds are tiled with crossfades. Community reports say it is stronger at SFX/ambience than at music, so benchmark it against ACE-Step.",
+      "license_url": "https://huggingface.co/stabilityai/stable-audio-open-1.0",
+      "license_acknowledged": false,
+      "min_vram_gb": 12,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "float16",
+        "num_inference_steps": 100,
+        "guidance_scale": 7.0,
+        "max_section_sec": 47,
+        "max_sections": 3,
+        "crossfade_sec": 1.0,
+        "music_style": "cinematic, warm, well mixed, no vocals"
+      },
       "sources": [
         "https://stability.ai/news-updates/introducing-stable-audio-open",
         "https://www.therundown.ai/tools/stable-audio-3-0"
@@ -327,18 +380,40 @@
     {
       "id": "latentsync",
       "kind": "lipsync",
-      "adapter": "none",
-      "display_name": "LatentSync (adapter planned for Phase 4)",
+      "adapter": "command_lipsync",
+      "display_name": "LatentSync (local checkout, command adapter)",
       "repo": "bytedance/LatentSync",
       "revision": "",
       "license": "Apache-2.0",
       "commercial_use": "allowed",
-      "license_notes": "",
+      "license_notes": "Runs your local LatentSync checkout. Check the argv against the version you installed; the example follows the project README (September 2026).",
       "license_url": "https://github.com/bytedance/LatentSync",
       "min_vram_gb": 18,
       "enabled": false,
       "default": false,
-      "params": {},
+      "params": {
+        "cwd": "/opt/LatentSync",
+        "argv": [
+          "/opt/LatentSync/.venv/bin/python",
+          "-m",
+          "scripts.inference",
+          "--unet_config_path",
+          "configs/unet/stage2.yaml",
+          "--inference_ckpt_path",
+          "checkpoints/latentsync_unet.pt",
+          "--inference_steps",
+          "20",
+          "--guidance_scale",
+          "1.5",
+          "--video_path",
+          "{video}",
+          "--audio_path",
+          "{audio}",
+          "--video_out_path",
+          "{output}"
+        ],
+        "timeout_sec": 1800
+      },
       "sources": [
         "https://github.com/bytedance/LatentSync",
         "https://tomodahinata.com/en/blog/ai-lip-sync-talking-head-model-selection-guide-2026"
@@ -348,7 +423,7 @@
       "id": "musetalk",
       "kind": "lipsync",
       "adapter": "none",
-      "display_name": "MuseTalk (adapter planned for Phase 4)",
+      "display_name": "MuseTalk (no adapter yet: MuseTalk inference is config-file driven; use command_lipsync with a wrapper script)",
       "repo": "TMElyralab/MuseTalk",
       "revision": "",
       "license": "MIT (code); model weights usable commercially per the README",

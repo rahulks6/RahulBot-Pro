@@ -7,6 +7,7 @@ import { Logger, MemorySink, redact } from '../src/lib/logger.ts';
 import { array, object, string, validate } from '../src/lib/schema.ts';
 import { validateStorageKey } from '../src/storage/storage.ts';
 import { readEnv } from '../src/config/env.ts';
+import { encodeWav } from '../src/media/wav.ts';
 import { createWebApp } from '../src/web/app.ts';
 import { seedSmall, testStudio, type TestStudio } from './helpers.ts';
 
@@ -133,6 +134,33 @@ describe('web app', () => {
     const html = await (await fetch(`${base}/projects/${p.id}`)).text();
     assert.ok(!html.includes('<script>alert(1)</script>'));
     assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+  });
+
+  it('attaches a voice reference only with consent, and revokes it', async () => {
+    const voice = s.db.get<{ id: string }>("SELECT id FROM voice_profiles WHERE role = 'character' LIMIT 1")!;
+    const wav = encodeWav({ sampleRate: 16000, samples: new Float32Array(16000 * 4).fill(0.1) });
+    const fields = {
+      reference: `data:audio/wav;base64,${wav.toString('base64')}`,
+      speaker_name: 'Me',
+      relationship: 'self',
+      method: 'self',
+      scope: 'stories',
+      evidence: '',
+      confirm: 'false',
+      _csrf: token,
+    };
+    const refused = await post(`/voices/${voice.id}/reference`, fields);
+    assert.equal(s.voiceRefs.list(voice.id).length, 0, `no consent → nothing stored (${refused.status})`);
+    const ok = await post(`/voices/${voice.id}/reference`, { ...fields, confirm: 'true' });
+    assert.equal(ok.status, 303);
+    const consent = s.voiceRefs.active(s.characters.getVoice(voice.id))!;
+    assert.equal(consent.speaker_name, 'Me');
+    const page = await (await fetch(`${base}/voices/${voice.id}`)).text();
+    assert.match(page, /consent required/);
+    assert.match(page, /Revoke consent/);
+    const revoked = await post(`/voice-consents/${consent.id}/revoke`, { reason: 'test', _csrf: token });
+    assert.equal(revoked.status, 303);
+    assert.equal(s.voiceRefs.active(s.characters.getVoice(voice.id)), undefined);
   });
 
   it('blocks path traversal on media URLs', async () => {

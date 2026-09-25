@@ -201,6 +201,13 @@ export class WorkerTts implements TextToSpeechProvider {
         voice_identity: `${req.voice.voiceModel}:${req.voice.voiceIdentity}`,
         presentation: req.voice.presentation,
         pitch: req.voice.pitch,
+        // Only present when the voice has an active consent record (VoiceReferenceService).
+        ...(req.voice.referenceAudio
+          ? {
+              voice_reference: Buffer.from(req.voice.referenceAudio).toString('base64'),
+              voice_reference_consent: true,
+            }
+          : {}),
       },
       ctx,
     );

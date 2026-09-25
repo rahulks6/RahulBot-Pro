@@ -1,4 +1,4 @@
-# Benchmarking real models on your GPU (Phase 3)
+# Benchmarking real models on your GPU (Phases 3–4)
 
 The build environment has no GPU and no access to the model hub, so **real benchmarks must be run on your own GPU machine**. Everything below runs locally and **rents nothing**.
 
@@ -77,8 +77,14 @@ The default suite puts the **same original character** in different situations, 
 
 For each kind, pick a model, write down **why**, and acknowledge conditional licences. The app keeps the decision history and refuses non-commercial or unknown licences. After you reconnect the worker (Settings → Local AI worker), the selected model is used for generation.
 
-## Not in Phase 3
+## Phase 4 candidates: music, SFX, upscaling, lip sync
 
-- **Music, SFX and lip-sync adapters** are listed in the catalog as candidates with `adapter: "none"`; their adapters come in Phase 4.
-- **An AI upscaler (Real-ESRGAN)** is also Phase 4. The FFmpeg Lanczos resize is the non-AI baseline.
+- **Stable Audio Open** (`stable-audio-open` for SFX/ambience, `stable-audio-open-music` for music beds): `pip install torchsde` (in `requirements-gpu.txt`). Its licence is _conditional_ (Stability AI Community Licence, free under US$1M annual revenue), so read it and set `license_acknowledged`. Compare the music beds against ACE-Step once an adapter exists; community reports rate Stable Audio Open higher for SFX than for music.
+- **Real-ESRGAN via spandrel** (`real-esrgan`): download `RealESRGAN_x4plus.pth` from the official release, check the licence of that weights file, and set `params.weights_file`. Lower `params.tile` if you run out of VRAM. Compare it against the enabled `ffmpeg-lanczos` baseline in the upscale section.
+- **LatentSync** (`latentsync`): install it in its own checkout and environment, following its README, then adjust `params.cwd` and `params.argv` to your install. The adapter runs that command without a shell. Lip sync is judged on real clips from the image-to-video model, not in the benchmark suite.
+- **Voice cloning (Chatterbox)**: attach a reference recording on a voice profile, with a consent record (Characters → voice → _Reference recording_). Only then is it sent to the worker.
+
+## Still not built
+
+- **An ACE-Step or MuseTalk adapter.** Their catalog entries keep `adapter: "none"`. MuseTalk can run through `command_lipsync` with a small wrapper script.
 - **Cloud GPUs** stay off until Phase 5, and paid runs until you explicitly approve them.

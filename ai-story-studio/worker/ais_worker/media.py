@@ -136,6 +136,21 @@ class MediaTools:
             timeout=1800,
         )  # fmt: skip
 
+    def video_to_frames(self, ctx: JobContext, src: Path, frames_dir: Path) -> float:
+        """Decode every frame of a clip to frame_%05d.png; returns the clip's frame rate."""
+        ffmpeg, _ = self._need()
+        info = video_stream_info(self.probe(ctx, src))
+        fps = float(info.get("fps") or 0)
+        if fps <= 0:
+            raise JobError("UPSCALE_FAILED", "cannot read the clip's frame rate")
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        ctx.run(
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-fps_mode", "passthrough",
+             str(frames_dir / "frame_%05d.png")],
+            timeout=1800,
+        )  # fmt: skip
+        return fps
+
     def scale_image(self, ctx: JobContext, src: Path, out: Path, *, width: int, height: int, flags: str = "lanczos") -> None:
         ffmpeg, _ = self._need()
         ctx.run(

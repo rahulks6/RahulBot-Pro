@@ -62,6 +62,16 @@ const TABLES: TableSpec[] = [
     select: 'SELECT * FROM voice_profiles WHERE project_id = ?',
   },
   {
+    table: 'voice_consents',
+    prefix: 'vcn',
+    fks: {
+      project_id: 'projects',
+      voice_profile_id: 'voice_profiles',
+      reference_asset_id: 'reference_assets',
+    },
+    select: 'SELECT * FROM voice_consents WHERE project_id = ?',
+  },
+  {
     table: 'characters',
     prefix: 'chr',
     fks: { project_id: 'projects', voice_profile_id: 'voice_profiles' },
@@ -162,6 +172,7 @@ const TABLES: TableSpec[] = [
       generated_asset_id: 'generated_assets',
       voice_profile_id: 'voice_profiles',
       character_id: 'characters',
+      voice_consent_id: 'voice_consents',
     },
     select: 'SELECT * FROM audio_assets WHERE project_id = ?',
   },

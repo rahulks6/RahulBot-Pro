@@ -14,10 +14,13 @@ from ..models.base import ModelInfo
 
 INSTALL_HINT = {
     "torch": "pip install torch --index-url https://download.pytorch.org/whl/cu124",
-    "diffusers": "pip install diffusers transformers accelerate sentencepiece",
+    "diffusers": "pip install diffusers transformers accelerate sentencepiece torchsde",
     "PIL": "pip install pillow",
     "kokoro": "pip install kokoro soundfile",
     "chatterbox": "pip install chatterbox-tts",
+    "spandrel": "pip install spandrel",
+    "huggingface_hub": "pip install huggingface_hub",
+    "numpy": "pip install numpy",
 }
 
 

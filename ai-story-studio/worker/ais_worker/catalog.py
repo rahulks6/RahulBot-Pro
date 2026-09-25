@@ -27,7 +27,17 @@ from .schemas import ValidationError
 
 KINDS = ("image", "video", "tts", "music", "sfx", "lipsync", "upscale")
 COMMERCIAL = ("allowed", "conditional", "non_commercial", "unknown")
-ADAPTERS = ("diffusers_image", "diffusers_i2v", "kokoro_tts", "chatterbox_tts", "ffmpeg_upscale", "none")
+ADAPTERS = (
+    "diffusers_image",
+    "diffusers_i2v",
+    "kokoro_tts",
+    "chatterbox_tts",
+    "stable_audio",
+    "ffmpeg_upscale",
+    "spandrel_upscale",
+    "command_lipsync",
+    "none",
+)
 
 
 @dataclass(frozen=True)

@@ -10,7 +10,22 @@ import type { Character, Location, Prop, VoiceProfile } from '../../domain/types
 import { AppError } from '../../lib/errors.ts';
 import type { Web } from '../app.ts';
 import { formPatch } from '../forms.ts';
-import { badge, button, card, field, grid, html, mediaUrl, options, postForm, select, table } from '../ui.ts';
+import {
+  badge,
+  button,
+  card,
+  checkbox,
+  field,
+  grid,
+  html,
+  kv,
+  mediaUrl,
+  options,
+  postForm,
+  select,
+  table,
+  type SafeHtml,
+} from '../ui.ts';
 
 const CHARACTER_FIELDS: Array<[keyof Character, string, boolean]> = [
   ['species', 'Species', false],
@@ -484,6 +499,7 @@ export function registerCharacterPages(web: Web): void {
             ? html`<audio controls src="${mediaUrl(previewKey)}?t=${Date.now()}"></audio>`
             : ''}`,
         )}
+        ${voiceReferenceCard(web, v)}
         ${card(
           v.locked ? 'Voice settings (identity locked)' : 'Voice settings',
           postForm(`/voices/${v.id}/update`, html`${voiceForm(v)}<button class="primary">Save</button>`),
@@ -494,6 +510,33 @@ export function registerCharacterPages(web: Web): void {
           {},
           { kind: 'danger', confirm: 'Delete this voice profile?' },
         )}`,
+    );
+  });
+  r.post(
+    '/voices/:id/reference',
+    async (req) => {
+      const m = /^data:audio\/(?:wav|x-wav|wave|vnd\.wave);base64,([A-Za-z0-9+/=]+)$/.exec(
+        req.form['reference'] ?? '',
+      );
+      if (!m) throw new AppError('VALIDATION_FAILED', 'Choose a WAV recording of the speaker');
+      await s.voiceRefs.attach(req.params['id']!, Buffer.from(m[1]!, 'base64'), {
+        speaker_name: req.form['speaker_name'],
+        relationship: req.form['relationship'],
+        method: req.form['method'],
+        scope: req.form['scope'],
+        evidence: req.form['evidence'],
+        confirm: req.form['confirm'],
+      });
+      return web.redirect(`/voices/${req.params['id']}`, 'Reference recording attached with consent record');
+    },
+    16 * 1024 * 1024,
+  );
+  r.post('/voice-consents/:id/revoke', async (req) => {
+    const consent = s.voiceRefs.get(req.params['id']!);
+    const r2 = await s.voiceRefs.revoke(consent.id, req.form['reason'] ?? '');
+    return web.redirect(
+      `/voices/${consent.voice_profile_id}`,
+      `Consent revoked; recording deleted; ${r2.detachedLines} line(s) detached for regeneration${r2.unlocked ? '; voice unlocked' : ''}. Do not publish earlier exports that contain this voice.`,
     );
   });
   r.post('/voices/:id/update', (req) => {
@@ -515,7 +558,7 @@ export function registerCharacterPages(web: Web): void {
   });
   r.post('/voices/:id/preview', async (req) => {
     const v = s.characters.getVoice(req.params['id']!);
-    const vs = s.audio.voiceSettings(v);
+    const vs = await s.audio.resolveVoice(v);
     const res = await s.providers.tts.synthesize(
       {
         text: (req.form['text'] ?? '').slice(0, 300) || 'Hello.',
@@ -734,4 +777,98 @@ export function registerCharacterPages(web: Web): void {
     s.characters.deleteProp(p.id);
     return web.redirect(`/props?project=${p.project_id}`, 'Prop deleted');
   });
+}
+
+function voiceReferenceCard(web: Web, v: VoiceProfile): SafeHtml {
+  const s = web.studio;
+  const active = s.voiceRefs.active(v);
+  const history = s.voiceRefs.list(v.id);
+  const refKey = active
+    ? s.db.get<{ storage_key: string }>(
+        'SELECT storage_key FROM reference_assets WHERE id = ?',
+        active.reference_asset_id,
+      )?.storage_key
+    : undefined;
+  const upload = v.locked
+    ? html`<p class="muted">
+        The voice is locked: unlock it (with a reason) to change the reference recording.
+      </p>`
+    : postForm(
+        `/voices/${v.id}/reference`,
+        html`<p class="muted">
+            Voice cloning is used only by TTS models that support a reference (e.g. Chatterbox). Upload 3–60 s
+            of clean speech. <strong>Never clone a real person's voice without their consent.</strong> The
+            recording is stored locally, sent only to your own worker, and deleted if consent is revoked.
+          </p>
+          <label class="field"
+            ><span>Reference recording (WAV, ≤10 MB)</span
+            ><input type="file" accept="audio/wav,.wav" data-read-into="reference" data-as="dataurl" /></label
+          ><textarea name="reference" hidden></textarea>
+          <div class="row">
+            ${field('Speaker name', 'speaker_name', '', { required: true })}${select(
+              'Whose voice is it?',
+              'relationship',
+              [
+                ['self', 'My own voice'],
+                ['consenting_person', 'Another person who consented'],
+              ],
+              'self',
+            )}${select(
+              'How was consent given?',
+              'method',
+              [
+                ['self', 'Self (my own voice)'],
+                ['written', 'Written / signed'],
+                ['recorded_statement', 'Recorded spoken statement'],
+                ['contract', 'Contract'],
+              ],
+              'self',
+            )}
+          </div>
+          ${field('Permitted use (scope)', 'scope', "This channel's animated stories", {})}${field(
+            'Where the consent evidence is kept',
+            'evidence',
+            '',
+            {},
+          )}
+          ${checkbox(
+            'I confirm the speaker has consented to having their voice cloned for this use (or it is my own voice).',
+            'confirm',
+            false,
+          )}<button class="primary">Attach reference</button>`,
+      );
+  return card(
+    'Reference recording (voice cloning — consent required)',
+    html`${active
+      ? html`${kv([
+          ['Speaker', active.speaker_name],
+          [
+            'Consent',
+            `${active.relationship === 'self' ? 'own voice' : active.method.replace('_', ' ')} · ${active.created_at.slice(0, 10)}`,
+          ],
+          ['Scope', active.scope || '—'],
+          ['Evidence', active.evidence || '—'],
+        ])}${refKey ? html`<audio controls preload="none" src="${mediaUrl(refKey)}"></audio>` : ''}`
+      : html`<p class="muted">No reference recording: the model's preset voice for this profile is used.</p>`}
+    ${history.length
+      ? table(
+          ['Speaker', 'Method', 'Given', 'Status', ''],
+          history.map((c) => [
+            c.speaker_name,
+            c.method.replace('_', ' '),
+            c.created_at.slice(0, 10),
+            c.revoked_at ? badge(`revoked ${c.revoked_at.slice(0, 10)}`, 'bad') : badge('active', 'good'),
+            c.revoked_at
+              ? (c.revoke_reason ?? '')
+              : postForm(
+                  `/voice-consents/${c.id}/revoke`,
+                  html`${field('Reason', 'reason', '', { required: true })}<button class="danger">
+                      Revoke consent
+                    </button>`,
+                ),
+          ]),
+        )
+      : ''}
+    ${upload}`,
+  );
 }

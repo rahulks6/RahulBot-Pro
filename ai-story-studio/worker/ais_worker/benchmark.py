@@ -81,6 +81,22 @@ DEFAULT_SUITE: dict[str, Any] = {
             {"key": "dialogue-whisper", "text": "Shh. Did you hear that sound?", "emotion": "whispering", "presentation": "male"},
         ]
     },
+    "music": {
+        "seed": 11,
+        "cases": [
+            {"key": "bed-wonder", "mood": "gentle wonder", "genre": "orchestral", "energy": "low", "duration_sec": 20},
+            {"key": "bed-adventure", "mood": "playful adventure", "genre": "folk", "energy": "high", "duration_sec": 20},
+            {"key": "bed-long", "mood": "calm evening", "genre": "piano", "energy": "low", "duration_sec": 75},
+        ],
+    },
+    "sfx": {
+        "seed": 5,
+        "cases": [
+            {"key": "footsteps-gravel", "tag": "small footsteps on gravel", "duration_sec": 3},
+            {"key": "door-creak", "tag": "old wooden door creaks open", "duration_sec": 3},
+            {"key": "forest-ambience", "kind": "ambience", "tag": "forest birds and gentle wind", "duration_sec": 15},
+        ],
+    },
     "upscale": {"cases": [{"key": "to-1080p", "target_width": 1920, "target_height": 1080, "source_width": 960, "source_height": 540}]},
 }
 
@@ -110,7 +126,7 @@ def validate_suite(suite: Any, max_bytes: int) -> dict[str, Any]:
     if not isinstance(suite, dict):
         raise ValidationError([{"path": "suite", "message": "must be an object"}])
     errors: list[dict[str, str]] = []
-    for kind in ("image", "video", "tts", "upscale"):
+    for kind in ("image", "video", "tts", "music", "sfx", "upscale"):
         section = suite.get(kind)
         if section is None:
             continue
@@ -162,6 +178,8 @@ def _request(
         return parse_video(body, max_bytes)
     if kind == "tts":
         return parse_audio({"kind": "tts", **body}, max_bytes)
+    if kind in ("music", "sfx"):
+        return parse_audio({"kind": kind, **body, "seed": seed}, max_bytes)
     body = {**body, "source": base64.b64encode(image if not check_only else _test_card(64, 36)).decode()}
     return parse_upscale(body, max_bytes)
 
@@ -286,7 +304,7 @@ class BenchmarkRunner:
     def _seeds(kind: str, section: dict[str, Any]) -> list[int]:
         if kind == "image":
             return [int(s) for s in section.get("seeds", [0])]
-        if kind == "video":
+        if kind in ("video", "music", "sfx"):
             return [int(section.get("seed", 0))]
         return [0]
 
@@ -295,7 +313,9 @@ class BenchmarkRunner:
     ) -> BenchmarkResult:
         kind = model.info.kind
         key = case["key"] + (f"-{suffix}" if suffix else "")
-        res = BenchmarkResult(model=model.info.id, kind=kind, case=key, seed=seed if kind in ("image", "video") else None, status="failed")
+        res = BenchmarkResult(
+            model=model.info.id, kind=kind, case=key, seed=seed if kind in ("image", "video", "music", "sfx") else None, status="failed"
+        )
         sub = Job(id=ctx.job.id, kind=f"benchmark:{kind}")
         scratch = ctx.dir / "scratch"
         shutil.rmtree(scratch, ignore_errors=True)

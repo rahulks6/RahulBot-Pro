@@ -1,4 +1,4 @@
-# Real open-source model adapters (Phase 3). Install on a machine with an NVIDIA GPU.
+# Real open-source model adapters (Phases 3–4). Install on a machine with an NVIDIA GPU.
 # Install PyTorch FIRST with the CUDA build that matches your driver, e.g.:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu124
 # Then:
@@ -12,3 +12,10 @@ pillow
 kokoro>=0.9
 soundfile
 chatterbox-tts
+# Music / SFX / ambience (Stable Audio Open via diffusers StableAudioPipeline):
+torchsde
+# AI upscaling (Real-ESRGAN and other super-resolution weights):
+spandrel>=0.4
+huggingface_hub
+# Lip sync (LatentSync / MuseTalk) runs from its own checkout and environment;
+# see the command_lipsync adapter in models.example.json.

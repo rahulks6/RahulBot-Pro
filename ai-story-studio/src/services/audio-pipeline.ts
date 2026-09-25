@@ -13,6 +13,7 @@ import { hashObject } from '../lib/hash.ts';
 import { parseJson } from '../lib/json.ts';
 import { decodeWav, encodeWav, DEFAULT_SAMPLE_RATE } from '../media/wav.ts';
 import type { ModelResult, ProviderInfo, RunContext, VoiceSettings } from '../providers/types.ts';
+import type { VoiceReferenceService } from './voice-reference.ts';
 
 export interface AudioOutcome {
   audio: AudioAsset;
@@ -37,9 +38,11 @@ export const SPEECH_LEAD_SEC = 0.3;
  */
 export class AudioPipeline {
   private readonly s: StudioCore;
+  private readonly voiceRefs: VoiceReferenceService;
 
-  constructor(core: StudioCore) {
+  constructor(core: StudioCore & { voiceRefs: VoiceReferenceService }) {
     this.s = core;
+    this.voiceRefs = core.voiceRefs;
   }
 
   /** Voice settings from the profile; a locked voice always uses its frozen identity. */
@@ -65,8 +68,19 @@ export class AudioPipeline {
         presentation: f.presentation,
         style: f.speaking_style,
         settings: f.settings_json,
+        // A consented reference recording changes the voice; revoking it changes the key.
+        reference: this.voiceRefs.active(v)?.id ?? null,
       },
     };
+  }
+
+  /** Voice settings plus the consented reference recording (sent to the TTS model only while consent is active). */
+  async resolveVoice(
+    v: VoiceProfile,
+  ): Promise<ReturnType<AudioPipeline['voiceSettings']> & { consentId?: string }> {
+    const vs = this.voiceSettings(v);
+    const ref = await this.voiceRefs.referenceAudio(v);
+    return ref ? { ...vs, referenceAudio: ref.data, consentId: ref.consent.id } : vs;
   }
 
   private async store(
@@ -110,6 +124,7 @@ export class AudioPipeline {
       duration_sec: durationSec,
       provider: provider.id,
       model: result.model,
+      voice_consent_id: meta.voice_consent_id ?? null,
     });
   }
 
@@ -127,7 +142,7 @@ export class AudioPipeline {
     }
     const voice = this.s.characters.getVoice(character.voice_profile_id);
     const projectId = character.project_id;
-    const vs = this.voiceSettings(voice);
+    const vs = await this.resolveVoice(voice);
     const provider = this.s.providers.tts;
     const request = {
       layer: 'dialogue',
@@ -159,6 +174,7 @@ export class AudioPipeline {
       provider.info,
       {
         voice_profile_id: voice.id,
+        voice_consent_id: vs.consentId ?? null,
         character_id: character.id,
         language: line.language,
         text: line.text,
@@ -183,7 +199,7 @@ export class AudioPipeline {
     if (!project.narrator_voice_id)
       throw new AppError('PRECONDITION_FAILED', 'Project has no narrator voice');
     const voice = this.s.characters.getVoice(project.narrator_voice_id);
-    const vs = this.voiceSettings(voice);
+    const vs = await this.resolveVoice(voice);
     const provider = this.s.providers.tts;
     const request = {
       layer: 'narration',
@@ -215,6 +231,7 @@ export class AudioPipeline {
       provider.info,
       {
         voice_profile_id: voice.id,
+        voice_consent_id: vs.consentId ?? null,
         language: line.language,
         text: line.text,
         emotion: line.emotion,

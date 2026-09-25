@@ -81,7 +81,11 @@ def build_registry(config: WorkerConfig, media: MediaTools) -> tuple[ModelRegist
         except LicenseError as exc:
             skipped.append({"id": entry.id, "reason": str(exc)})
             continue
-        model = make_adapter(entry, config, media)
+        try:
+            model = make_adapter(entry, config, media)
+        except ValueError as exc:  # invalid adapter params: report, keep the worker running
+            skipped.append({"id": entry.id, "reason": f"invalid params: {exc}"})
+            continue
         if model is None:
             skipped.append({"id": entry.id, "reason": f"no adapter for '{entry.adapter}' yet"})
             continue
@@ -91,9 +95,11 @@ def build_registry(config: WorkerConfig, media: MediaTools) -> tuple[ModelRegist
 
 def make_adapter(entry: CatalogEntry, config: WorkerConfig, media: MediaTools) -> Model[Any] | None:
     # Imported here so the worker starts without heavy optional packages.
+    from .adapters.audio_gen import StableAudioModel
     from .adapters.diffusers_models import DiffusersImageModel, DiffusersImageToVideoModel
+    from .adapters.lipsync import CommandLipSync
     from .adapters.tts import ChatterboxTts, KokoroTts
-    from .adapters.upscale import FfmpegUpscaler
+    from .adapters.upscale import FfmpegUpscaler, SpandrelUpscaler
 
     cache = config.model_cache_dir
     if entry.adapter == "diffusers_image":
@@ -106,6 +112,12 @@ def make_adapter(entry: CatalogEntry, config: WorkerConfig, media: MediaTools) -
         return ChatterboxTts(entry)
     if entry.adapter == "ffmpeg_upscale":
         return FfmpegUpscaler(entry, media)
+    if entry.adapter == "spandrel_upscale":
+        return SpandrelUpscaler(entry, cache, media)
+    if entry.adapter == "stable_audio":
+        return StableAudioModel(entry, cache)
+    if entry.adapter == "command_lipsync":
+        return CommandLipSync(entry, media)
     return None
 
 

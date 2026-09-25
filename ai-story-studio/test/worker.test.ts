@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import type { AppError } from '../src/lib/errors.ts';
 import { appRoot } from '../src/lib/paths.ts';
+import { encodeWav } from '../src/media/wav.ts';
 import { connectWorker } from '../src/providers/worker/connect.ts';
 import { BenchmarkService } from '../src/services/benchmarks.ts';
 import { produceShots, seedSmall, testStudio } from './helpers.ts';
@@ -56,6 +57,34 @@ describe('local Python worker integration', { skip: python ? false : 'python3 no
     try {
       await assert.rejects(connectWorker(s), (e: AppError) => e.code === 'FORBIDDEN');
       assert.equal(s.worker, null);
+    } finally {
+      s.cleanup();
+    }
+  });
+
+  it('sends a consented voice reference to the worker, and nothing without consent', async () => {
+    const s = testStudio({ env: { workerUrl: url, workerToken: TOKEN } });
+    try {
+      await connectWorker(s);
+      const { ari, story } = seedSmall(s);
+      const line = s.stories
+        .listStoryShots(story.id)
+        .flatMap((sh) => s.stories.listDialogue(sh.id))
+        .find((d) => d.character_id === ari.id)!;
+      const plain = await s.audio.dialogue(line, { attemptKey: 'plain' });
+      assert.ok(!(plain.result?.logs ?? []).some((l) => l.includes('reference audio')));
+      const wav = encodeWav({ sampleRate: 16000, samples: new Float32Array(16000 * 4).fill(0.05) });
+      await s.voiceRefs.attach(ari.voice_profile_id!, wav, {
+        speaker_name: 'Owner',
+        relationship: 'self',
+        method: 'self',
+        confirm: true,
+      });
+      const cloned = await s.audio.dialogue(s.stories.getDialogue(line.id), { attemptKey: 'ref' });
+      assert.ok(
+        (cloned.result?.logs ?? []).some((l) => l.includes('reference audio received (consent confirmed)')),
+        'the worker received the recording with the consent flag',
+      );
     } finally {
       s.cleanup();
     }
