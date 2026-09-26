@@ -43,7 +43,8 @@ def test_every_endpoint_but_health_requires_auth(api: WorkerAPI) -> None:
         assert api.handle(method, path, {}, b"{}").status == 401, path
         assert api.handle(method, path, {"authorization": "Bearer nope"}, b"{}").status == 401, path
     health = api.handle("GET", "/health", {}, b"").body or {}
-    assert set(health) == {"status", "version"}
+    assert set(health) == {"status", "version", "ready"}
+    assert health["ready"] is True
 
 
 def test_path_sandbox(tmp_path: Path) -> None:

@@ -91,7 +91,14 @@ export interface StudioOptions {
   /** Tests: point the cloud layer at a mock RunPod and speed up polling. */
   cloud?: Pick<
     CloudServiceDeps,
-    'runpodBaseUrl' | 'proxyUrlTemplate' | 'fetch' | 'sleep' | 'pollMs' | 'workerPollMs' | 'now'
+    | 'runpodBaseUrl'
+    | 'proxyUrlTemplate'
+    | 'fetch'
+    | 'sleep'
+    | 'pollMs'
+    | 'workerPollMs'
+    | 'now'
+    | 'registryBaseUrlFor'
   >;
   /** Tests: secret-store environment (defaults to process.env). */
   secretEnv?: NodeJS.ProcessEnv;

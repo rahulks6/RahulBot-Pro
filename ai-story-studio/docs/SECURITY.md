@@ -12,10 +12,23 @@ A private, single-user desktop tool. The main risks are leaking the cloud API ke
 
 The logger redacts secret-looking keys and values (`rpa_…`, `hf_…`, `aisw_…`, `Bearer …`, `apiKey`, `token` fields) before writing. Tests assert that the key never appears in the page, the log file or the Logs page. `.env`, `data/` and `secrets.json` are git-ignored and excluded from the release zip.
 
+## Container registry (worker image)
+
+- **The image is public on purpose**, so RunPod can pull it without credentials. It contains only the open-source worker code and libraries: no keys, tokens, model weights or user content. The Dockerfile test checks that no credential pattern or token variable is in it.
+- **The upload token** (GitHub classic token with `write:packages`) is only needed to push. The Windows scripts:
+  - read it as hidden input;
+  - pass it to `docker login --password-stdin` (never on a command line, never written to a file by the scripts);
+  - run `docker logout ghcr.io` afterwards.
+
+  Use a short expiration. The GitHub Actions route needs no personal token at all (it uses the workflow's own short-lived `GITHUB_TOKEN`).
+
+- **The pullability check** is anonymous: it never sends any credential to the registry.
+- **Error messages from RunPod** are sanitized before they are shown or logged. `Bearer …`, `rpa_…`, `hf_…`, `aisw_…`, `ghp_…`, `key=`/`token=` values and long opaque strings are replaced with `[redacted]`, HTML error pages are dropped, and the text is capped at 400 characters.
+
 ## Cloud worker exposure
 
 - The worker listens on port 8765 inside the pod and is reached through RunPod's HTTPS proxy.
-- Every endpoint except `/health` (status and version only) requires the session bearer token, compared in constant time.
+- Every endpoint except `/health` (status, version and readiness only) requires the session bearer token, compared in constant time.
 - Paths are confined to the job directory; uploads are size-limited; FFmpeg and lip-sync commands are argument lists with no shell.
 - The pod guard uses only RunPod's pod-scoped credentials to terminate its own pod.
 

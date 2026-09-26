@@ -30,6 +30,12 @@ export class FakeCloudWorker {
   unhealthyFor = 0;
   /** Never become healthy (startup timeout). */
   neverHealthy = false;
+  /** /health answers {ready: false} this many times first (worker process up, not yet accepting jobs). */
+  notReadyFor = 0;
+  /** Simulate a machine without a usable NVIDIA GPU. */
+  noGpu = false;
+  /** Simulate a GPU that PyTorch cannot use (CUDA/driver mismatch). */
+  torchNoCuda = false;
   /** Corrupt the next N downloads (flip a byte). */
   corruptDownloads = 0;
   /** Jobs stay running this many polls. */
@@ -117,18 +123,28 @@ export class FakeCloudWorker {
     if (!pod || pod.status !== 'RUNNING') return send(502, { error: 'pod not running' });
     if (path === '/health') {
       if (this.neverHealthy || this.unhealthyFor-- > 0) return send(503, { error: 'starting' });
-      return send(200, { status: 'ok', version: '1.1.0-fake' });
+      if (this.notReadyFor-- > 0) return send(200, { status: 'ok', version: '1.1.0-fake', ready: false });
+      return send(200, { status: 'ok', version: '1.1.0-fake', ready: true });
     }
     if (req.headers.authorization !== `Bearer ${pod.env['WORKER_AUTH_TOKEN']}`)
       return send(401, { error: { code: 'FORBIDDEN', message: 'invalid token' } });
     if (path === '/system')
       return send(200, {
         worker_version: '1.1.0-fake',
-        gpu: {
-          available: true,
-          cuda_version: '12.6',
-          gpus: [{ name: 'NVIDIA RTX A5000', vram_total_mb: 24564, vram_used_mb: 0 }],
+        gpu: this.noGpu
+          ? { available: false, reason: 'nvidia-smi not found', gpus: [] }
+          : {
+              available: true,
+              cuda_version: '12.6',
+              gpus: [{ name: 'NVIDIA RTX A5000', vram_total_mb: 24564, vram_used_mb: 0 }],
+            },
+        torch: {
+          installed: true,
+          version: '2.7.1+cu126',
+          cuda_available: !this.torchNoCuda && !this.noGpu,
+          device: this.noGpu ? null : 'NVIDIA RTX A5000',
         },
+        mock_models: false,
         models: [],
         jobs: {},
       });

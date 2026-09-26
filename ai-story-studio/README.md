@@ -24,19 +24,20 @@ npm run seed                # build the demo project end to end in mock mode
 npm run dev                 # http://127.0.0.1:3000
 ```
 
-| Script                 | What it does                                                                           |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `npm run dev`          | Run from TypeScript sources with auto-restart                                          |
-| `npm run build`        | Compile to `dist/`                                                                     |
-| `npm start`            | Run the compiled build                                                                 |
-| `npm run migrate`      | Apply database migrations (they also run automatically on start)                       |
-| `npm run seed`         | Create the demo project (mock mode only)                                               |
-| `npm test`             | 136 tests (Node test runner; mock RunPod + fake cloud worker; real worker run; FFmpeg) |
-| `npm run worker`       | Start the local Python AI worker (Phase 2) — see [worker/README.md](worker/README.md)  |
-| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (80 tests)                                         |
-| `npm run lint`         | ESLint + Prettier check                                                                |
-| `npm run typecheck`    | `tsc` strict type checking                                                             |
-| `npm run check`        | lint, typecheck, test and build, in that order                                         |
+| Script                 | What it does                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| `npm run dev`          | Run from TypeScript sources with auto-restart                                                          |
+| `npm run build`        | Compile to `dist/`                                                                                     |
+| `npm start`            | Run the compiled build                                                                                 |
+| `npm run migrate`      | Apply database migrations (they also run automatically on start)                                       |
+| `npm run seed`         | Create the demo project (mock mode only)                                                               |
+| `npm test`             | 164 tests (Node test runner; mock RunPod + mock registry + fake cloud worker; real worker run; FFmpeg) |
+| `npm run check:image`  | Can RunPod pull the worker image? (anonymous check; see docs/RUNPOD_SETUP.md step 3)                   |
+| `npm run worker`       | Start the local Python AI worker (Phase 2) — see [worker/README.md](worker/README.md)                  |
+| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (84 tests)                                                         |
+| `npm run lint`         | ESLint + Prettier check                                                                                |
+| `npm run typecheck`    | `tsc` strict type checking                                                                             |
+| `npm run check`        | lint, typecheck, test and build, in that order                                                         |
 
 Data (SQLite database, media, logs) goes to `DATA_DIR`, which defaults to `./data` and is git-ignored.
 

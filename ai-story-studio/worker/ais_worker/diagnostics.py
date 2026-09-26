@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+import importlib.util
 import os
 import platform
 import shutil
@@ -36,6 +38,26 @@ def gpu_info() -> dict[str, Any]:
     return {"available": bool(gpus), "cuda_version": cuda_version, "gpus": gpus}
 
 
+@functools.lru_cache(maxsize=1)
+def torch_info() -> dict[str, Any]:
+    """Whether PyTorch can actually use CUDA (nvidia-smi alone does not prove that). Cached: importing torch is slow."""
+    if importlib.util.find_spec("torch") is None:
+        return {"installed": False, "version": None, "cuda_available": False, "cuda_runtime": None, "device": None}
+    try:
+        import torch  # type: ignore[import-not-found]
+
+        ok = bool(torch.cuda.is_available())
+        return {
+            "installed": True,
+            "version": str(torch.__version__),
+            "cuda_available": ok,
+            "cuda_runtime": str(torch.version.cuda) if torch.version.cuda else None,
+            "device": str(torch.cuda.get_device_name(0)) if ok else None,
+        }
+    except Exception as exc:  # noqa: BLE001 - a broken CUDA install must not break /system
+        return {"installed": True, "version": None, "cuda_available": False, "cuda_runtime": None, "device": None, "error": str(exc)[:200]}
+
+
 def memory_info() -> dict[str, int]:
     info: dict[str, int] = {}
     try:
@@ -65,6 +87,7 @@ def system_report(
         "memory": memory_info(),
         "disk": disk_info(data_dir),
         "gpu": gpu_info(),
+        "torch": torch_info(),
         "ffmpeg": media_versions,
         "mock_models": mock_models,
         "models": models,

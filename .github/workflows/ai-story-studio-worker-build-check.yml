@@ -1,0 +1,62 @@
+# Proves that the cloud worker image BUILDS (all pinned libraries install and import, PyTorch is
+# not replaced) whenever its files change. It pushes nothing, stores nothing and uses no secrets.
+# Publishing is a separate, deliberate step: the "AI Story Studio worker image" workflow.
+name: AI Story Studio worker build check
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ai-story-studio/worker/Dockerfile.cuda'
+      - 'ai-story-studio/worker/requirements-cloud.txt'
+      - 'ai-story-studio/worker/models.cloud.json'
+      - 'ai-story-studio/worker/ais_worker/**'
+      - '.github/workflows/ai-story-studio-worker-build-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space (the CUDA base image is large)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ai-story-studio/worker
+          file: ai-story-studio/worker/Dockerfile.cuda
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ai-story-studio-worker:check
+
+      - name: Start the worker the way RunPod does, and check /health and /system (CPU only)
+        run: |
+          token="aisw_$(openssl rand -hex 32)"
+          docker run -d --name w -p 8765:8765 -e WORKER_AUTH_TOKEN="$token" ai-story-studio-worker:check
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8765/health; then break; fi
+            sleep 2
+          done
+          echo
+          curl -fsS http://127.0.0.1:8765/health | grep -q '"ready": true'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/models)" = 401
+          curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:8765/system | python3 -c "import json,sys; s=json.load(sys.stdin); print('torch:', s['torch']); print('gpu:', s['gpu']); assert s['torch']['installed'] and not s['mock_models']"
+          curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:8765/models | python3 -c "import json,sys; m=json.load(sys.stdin); print([x['id'] for x in m['models']]); assert not m['mock_only']"
+          docker logs w | tail -20
+          docker rm -f w

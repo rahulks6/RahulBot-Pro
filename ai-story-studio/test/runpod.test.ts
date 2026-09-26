@@ -139,7 +139,8 @@ describe('RunPod API v2 adapter (against a local mock RunPod; nothing is billed)
   it('gives up after bounded retries when RunPod is down', async () => {
     rp.failNext('GET', /^\/catalog\/gpus$/, 502, 10);
     await assert.rejects(api().listGpuTypes(), (e: AppError) => e.code === 'CLOUD_UNAVAILABLE');
-    assert.equal(rp.requests.length, 3, 'attempts = 3');
+    assert.equal(rp.requests.filter((r) => r.path === '/catalog/gpus').length, 3, 'attempts = 3');
+    assert.equal(sleeps.length, 2, 'bounded backoff between the attempts');
   });
 
   it('builds the pod proxy URL', () => {

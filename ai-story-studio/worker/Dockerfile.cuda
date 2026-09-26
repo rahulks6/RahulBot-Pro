@@ -1,15 +1,27 @@
 # AI Story Studio CLOUD worker image (Phase 5) — runs on a rented NVIDIA GPU (RunPod).
 #
-# Build once (GitHub Actions workflow "AI Story Studio worker image", or locally):
-#   docker build -f Dockerfile.cuda -t ghcr.io/<you>/ai-story-studio-worker:1.1.0 .
+# Build and publish it once (see docs/RUNPOD_SETUP.md, step 3):
+#   - GitHub Actions: workflow "AI Story Studio worker image" (no Docker needed on your PC), or
+#   - Windows + Docker Desktop: scripts\Build-Worker-Image.bat, then scripts\Push-Worker-Image.bat
+#   - by hand: docker build --platform linux/amd64 -f Dockerfile.cuda -t ghcr.io/<you>/ai-story-studio-worker:1.1.0 .
 #
 # - No secrets are baked in: WORKER_AUTH_TOKEN is a fresh random value the app passes
 #   to each pod; the worker refuses to start without it.
-# - Model weights are NOT in the image. They download on first use into /workspace
-#   (the pod volume, or a RunPod network volume that keeps them between sessions).
+# - Model weights are NOT in the image (tens of GB). They download on first use into /workspace
+#   (the pod volume, or a RunPod network volume that keeps them between sessions):
+#     /app                        container image: code + libraries (read-only in practice)
+#     /workspace/models, /workspace/hf   model cache (reused when /workspace is a network volume)
+#     /workspace/worker-data      job files; the app downloads, validates and stores every result
 # - Which models load, and which conditional licences you acknowledged, come from the
 #   app per session (WORKER_ENABLED_MODELS / WORKER_LICENSE_ACK).
+# - The build fails (it never costs GPU money) if a pinned library does not install or import,
+#   or if it would replace the base image's PyTorch.
 FROM pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime
+
+ARG SOURCE_URL=""
+LABEL org.opencontainers.image.title="AI Story Studio cloud worker" \
+      org.opencontainers.image.description="AI Story Studio GPU worker (no model weights, no secrets)" \
+      org.opencontainers.image.source="${SOURCE_URL}"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -23,9 +35,22 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY requirements-cloud.txt .
-RUN pip install -r requirements-cloud.txt
+# Keep the base image's PyTorch/CUDA build: a library asking for another torch fails the build
+# instead of silently downloading a different (possibly CPU-only) torch.
+RUN python -c "import importlib.metadata as m, importlib.util as u; \
+[print(f'{p}=={m.version(p)}') for p in ('torch', 'torchvision', 'torchaudio') if u.find_spec(p)]" \
+      > /tmp/torch-constraints.txt \
+ && cat /tmp/torch-constraints.txt \
+ && grep -q '^torch==' /tmp/torch-constraints.txt \
+ && pip install -r requirements-cloud.txt -c /tmp/torch-constraints.txt \
+ && python -m spacy download en_core_web_sm \
+ && python -c "import torch, diffusers, transformers, accelerate, kokoro, soundfile, spandrel, torchsde; \
+print('torch', torch.__version__, 'cuda', torch.version.cuda, '| diffusers', diffusers.__version__)"
 COPY ais_worker ./ais_worker
 COPY models.cloud.json ./models.cloud.json
+# The worker package itself must import (catches a broken build before any GPU is rented).
+RUN python -c "import ais_worker.api, ais_worker.adapters.diffusers_models, ais_worker.adapters.tts; print('ais_worker imports ok')" \
+ && mkdir -p /workspace
 
 ENV WORKER_HOST=0.0.0.0 \
     WORKER_PORT=8765 \

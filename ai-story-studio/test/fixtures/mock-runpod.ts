@@ -28,6 +28,10 @@ export interface InjectedFailure {
   retryAfter?: string;
   /** Simulate a dropped connection instead of an HTTP status. */
   drop?: boolean;
+  /** Response body (default {error: "injected <status>"}). */
+  body?: unknown;
+  /** Send the body as raw text instead of JSON. */
+  text?: string;
 }
 
 export class MockRunPod {
@@ -41,6 +45,26 @@ export class MockRunPod {
   pageSize = 2;
   /** Remove fields from the published create schema to simulate API drift. */
   dropCreateFields: string[] = [];
+  /**
+   * GPU catalog validation (like a strict API): unknown query parameters, and
+   * cloudType / gpuCount without include=AVAILABILITY, are rejected with HTTP 400.
+   *  - requireCloudTypeWithInclude: include=AVAILABILITY also needs cloudType (a 400 of the
+   *    kind the studio hit in real use: `include=AVAILABILITY&gpuCount=1`).
+   *  - rejectAvailability: any include=AVAILABILITY query is refused (stock unavailable).
+   */
+  catalog = {
+    requireCloudTypeWithInclude: false,
+    rejectAvailability: false,
+    /** Replace the whole catalog response (malformed-response tests). */
+    rawResponse: undefined as unknown,
+    /** Publish the catalog parameters in openapi.json (false = old document without them). */
+    declareParams: true,
+    /** Entries per page (0 = no pagination). */
+    pageSize: 0,
+    /** Declare an extra REQUIRED query parameter the studio does not know (API drift). */
+    extraRequiredParam: '',
+    secretInError: false,
+  };
   gpus = [
     {
       id: 'NVIDIA GeForce RTX 4090',
@@ -151,15 +175,108 @@ export class MockRunPod {
         },
         '/v2/pods/{podId}': { get: {}, delete: {} },
         '/v2/pods/{podId}/action': { post: {} },
-        '/v2/catalog/gpus': { get: {} },
+        '/v2/catalog/gpus': {
+          get: this.catalog.declareParams
+            ? {
+                parameters: [
+                  { $ref: '#/components/parameters/CatalogInclude' },
+                  {
+                    name: 'cloudType',
+                    in: 'query',
+                    required: false,
+                    schema: { type: 'string', enum: ['SECURE', 'COMMUNITY'], default: 'SECURE' },
+                  },
+                  { name: 'gpuCount', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+                  { name: 'minCudaVersion', in: 'query', schema: { type: 'string' } },
+                  ...(this.catalog.extraRequiredParam
+                    ? [
+                        {
+                          name: this.catalog.extraRequiredParam,
+                          in: 'query',
+                          required: true,
+                          schema: { type: 'string' },
+                        },
+                      ]
+                    : []),
+                  ...(this.catalog.pageSize
+                    ? [
+                        { name: 'limit', in: 'query', schema: { type: 'integer', maximum: 50 } },
+                        { name: 'cursor', in: 'query', schema: { type: 'string' } },
+                      ]
+                    : []),
+                ],
+              }
+            : {},
+        },
       },
       components: {
+        parameters: {
+          CatalogInclude: {
+            name: 'include',
+            in: 'query',
+            schema: { type: 'array', items: { type: 'string', enum: ['AVAILABILITY'] } },
+            style: 'form',
+            explode: false,
+          },
+        },
         schemas: {
           CreatePodRequest: { type: 'object', required: ['name', 'image'], properties: createProps },
           GpuRequest: { type: 'object', properties: { id: { type: 'string' }, count: { type: 'integer' } } },
         },
       },
     };
+  }
+
+  private catalogResponse(url: URL, send: (status: number, payload: unknown) => void): void {
+    const q = url.searchParams;
+    const bad = (field: string, message: string) =>
+      send(400, {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid query parameters',
+          details: [
+            {
+              field,
+              message: this.catalog.secretInError
+                ? `${message} (request key rpa_LEAKEDKEY1234567890)`
+                : message,
+            },
+          ],
+        },
+      });
+    const known = new Set(['include', 'cloudType', 'gpuCount', 'minCudaVersion']);
+    if (this.catalog.pageSize) ['limit', 'cursor'].forEach((k) => known.add(k));
+    for (const k of q.keys()) if (!known.has(k)) return bad(k, 'unknown query parameter');
+    const include = q.get('include');
+    if (include !== null && include !== 'AVAILABILITY') return bad('include', 'must be one of: AVAILABILITY');
+    if (!include && (q.has('cloudType') || q.has('gpuCount')))
+      return bad(q.has('cloudType') ? 'cloudType' : 'gpuCount', 'valid only with include=AVAILABILITY');
+    if (include && this.catalog.rejectAvailability)
+      return bad('include', 'availability is temporarily unavailable');
+    if (include && this.catalog.requireCloudTypeWithInclude && !q.has('cloudType'))
+      return bad('cloudType', 'is required with include=AVAILABILITY');
+    const cloud = q.get('cloudType') ?? 'SECURE';
+    if (cloud !== 'SECURE' && cloud !== 'COMMUNITY') return bad('cloudType', 'must be SECURE or COMMUNITY');
+    if (this.catalog.rawResponse !== undefined) return send(200, this.catalog.rawResponse);
+    const rows = this.gpus.map((g) => {
+      const { stockStatus, ...base } = g;
+      return include
+        ? {
+            ...base,
+            availability: {
+              cloudType: cloud,
+              gpuCount: Number(q.get('gpuCount') ?? 1),
+              stockStatus,
+              available: stockStatus !== 'None',
+            },
+          }
+        : base;
+    });
+    if (!this.catalog.pageSize) return send(200, { gpus: rows });
+    const start = Number(q.get('cursor') ?? 0);
+    const size = Math.min(this.catalog.pageSize, Number(q.get('limit') ?? this.catalog.pageSize));
+    const next = start + size < rows.length ? String(start + size) : null;
+    return send(200, { gpus: rows.slice(start, start + size), nextCursor: next });
   }
 
   private async handle(req: IncomingMessage, res: import('node:http').ServerResponse): Promise<void> {
@@ -182,16 +299,21 @@ export class MockRunPod {
         req.socket.destroy();
         return;
       }
+      if (failure.text !== undefined) {
+        res.writeHead(failure.status, { 'Content-Type': 'text/html' });
+        res.end(failure.text);
+        return;
+      }
       send(
         failure.status,
-        { error: `injected ${failure.status}` },
+        failure.body ?? { error: `injected ${failure.status}` },
         failure.retryAfter ? { 'Retry-After': failure.retryAfter } : {},
       );
       return;
     }
     if (req.headers.authorization !== `Bearer ${this.apiKey}`) return send(401, { error: 'Unauthorized' });
     if (method === 'GET' && path === '/openapi.json') return send(200, this.openapi());
-    if (method === 'GET' && path === '/catalog/gpus') return send(200, { data: this.gpus });
+    if (method === 'GET' && path === '/catalog/gpus') return this.catalogResponse(url, send);
     if (method === 'GET' && path === '/pods') {
       const all = [...this.pods.values()].filter((p) => p.status !== 'TERMINATED');
       const start = Number(url.searchParams.get('cursor') ?? 0);

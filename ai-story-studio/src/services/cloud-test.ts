@@ -151,8 +151,14 @@ export class CloudGpuTest {
           'PRECONDITION_FAILED',
           `No ${kind === 'tts' ? 'text-to-speech' : 'image'} model is enabled for the cloud.`,
         );
+      const image = await this.d.cloud.assertImagePullable();
       const plan = await this.d.gpu.plan(model.minVramGb, kind === 'tts' ? 600 : 900);
-      this.setStep(id, 2, 'ok', `${plan.offer.gpuModel} (${plan.offer.vramGb} GB VRAM)`);
+      this.setStep(
+        id,
+        2,
+        'ok',
+        `${plan.offer.gpuModel} (${plan.offer.vramGb} GB VRAM) · worker image ${image.registry}/${image.repository}:${image.reference} is public`,
+      );
       this.setStep(
         id,
         3,
@@ -228,7 +234,13 @@ export class CloudGpuTest {
           'CUDA_FAILURE',
           `The worker sees no CUDA GPU (${system.gpu.reason ?? 'unknown reason'}).`,
         );
-      this.setStep(id, 7, 'ok', `healthy · ${gpuName} · worker ${system.worker_version}`);
+      const g = system.gpu.gpus[0];
+      this.setStep(
+        id,
+        7,
+        'ok',
+        `healthy · ${gpuName}${g ? `, ${Math.round(g.vram_total_mb / 1024)} GB VRAM` : ''}${system.gpu.cuda_version ? ` · CUDA ${system.gpu.cuda_version}` : ''} · worker ${system.worker_version}`,
+      );
       this.setStep(
         id,
         8,

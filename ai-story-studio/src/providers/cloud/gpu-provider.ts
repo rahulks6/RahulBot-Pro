@@ -4,7 +4,7 @@ import { AppError, toAppError } from '../../lib/errors.ts';
 import type { Logger } from '../../lib/logger.ts';
 import { SecretStore } from '../../services/secrets.ts';
 import type { CloudSettings, GpuSettings } from '../../services/settings.ts';
-import { WorkerClient } from '../worker/client.ts';
+import { WorkerClient, type WorkerSystem } from '../worker/client.ts';
 import type { GPUProvider, GpuOffer, ProviderInstance, WorkerEndpoint } from '../types.ts';
 import { realSleep, type SleepFn } from './http.ts';
 import type { CloudGpuApi, CloudPodSpec, CloudProviderId } from './types.ts';
@@ -33,6 +33,8 @@ export interface CloudGpuProviderDeps {
   pollMs?: number;
   /** Per-session worker settings (enabled models, acknowledged licences). */
   extraEnv?: () => Record<string, string>;
+  /** Refuses (throws) when the worker image cannot be pulled; runs before anything is rented. */
+  preflightImage?: (image: string) => Promise<void>;
 }
 
 export function ownedPodPrefix(installId: string): string {
@@ -108,6 +110,8 @@ export class CloudGpuProvider implements GPUProvider {
     if (!tags.includes(STUDIO_TAG))
       throw new AppError('PRECONDITION_FAILED', 'Cloud resources must carry the studio tag');
     const cloud = this.d.cloud();
+    // A pod whose image cannot be pulled never starts but may still be billed: check first.
+    if (!cloud.registryAuthId) await this.d.preflightImage?.(this.image());
     const token = SecretStore.newWorkerToken();
     const suffix = Math.random().toString(36).slice(2, 8);
     const limits = this.d.limits();
@@ -226,16 +230,39 @@ export class CloudGpuProvider implements GPUProvider {
           state = 'WORKER_STARTING';
           opts.onState?.('WORKER_STARTING', 'GPU is running; waiting for the AI worker');
         }
+        let system: WorkerSystem | null = null;
         try {
           const client = new WorkerClient({ baseUrl: endpoint.url, token: endpoint.token, timeoutSec: 60 });
           await client.health();
-          await client.system(); // authenticated: proves the token and the worker both work
-          opts.onState?.('READY', 'worker healthy');
-          return endpoint;
+          system = await client.system(); // authenticated: proves the token and the worker both work
         } catch (err) {
           lastError = toAppError(err).message;
           if (toAppError(err).code === 'FORBIDDEN')
             throw new AppError('WORKER_UNAVAILABLE', 'The cloud worker rejected its session token.');
+        }
+        if (system) {
+          // Healthy but unusable: fail now (the caller terminates the pod) instead of waiting out the timeout.
+          if (!system.gpu?.available)
+            throw new AppError(
+              'PROVISION_FAILED',
+              `The rented machine reports no usable NVIDIA GPU (${system.gpu?.reason ?? 'none detected'}).`,
+            );
+          if (system.torch?.installed && !system.torch.cuda_available)
+            throw new AppError(
+              'PROVISION_FAILED',
+              `The GPU is visible but PyTorch cannot use it${system.torch.error ? ` (${system.torch.error.slice(0, 120)})` : ''}. Check the worker image's CUDA version.`,
+            );
+          if (system.mock_models)
+            throw new AppError(
+              'PROVISION_FAILED',
+              'The cloud worker started with placeholder models (WORKER_MOCK_MODELS). Check the worker image.',
+            );
+          const gpu = system.gpu.gpus[0];
+          opts.onState?.(
+            'READY',
+            `worker healthy${gpu ? ` · ${gpu.name}, ${Math.round(gpu.vram_total_mb / 1024)} GB VRAM` : ''}${system.gpu.cuda_version ? ` · CUDA ${system.gpu.cuda_version}` : ''}`,
+          );
+          return endpoint;
         }
       }
       await this.sleep(delay);

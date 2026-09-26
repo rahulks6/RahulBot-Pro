@@ -22,12 +22,68 @@ You need about 30 minutes the first time.
 
 ## Step 3: Publish the AI worker image (once)
 
-The rented GPU runs a small program, the "AI worker", from a container image. You build it once, for free, with GitHub Actions:
+The rented GPU runs a small program, the "AI worker", from a **container image**. RunPod downloads that image when the GPU starts, so it must be published somewhere RunPod can read it **without a password**: your GitHub account's container registry (`ghcr.io`), with the image set to **public**. The image holds program code only. It has **no model weights** (those download on the GPU the first time) and **no secrets**.
 
-1. Open your repository on **github.com**, then the **Actions** tab.
-2. Choose **AI Story Studio worker image** on the left, then **Run workflow** → **Run workflow**. It takes about 20–40 minutes. It contains no secrets and no model weights.
-3. When it has finished, open your GitHub profile → **Packages** → **ai-story-studio-worker** → **Package settings** → **Change visibility** → **Public**. RunPod can then download it without a password.
-4. The image name is `ghcr.io/<your-github-name>/ai-story-studio-worker:1.1.0`, all in lower case. The app is preset to `ghcr.io/rahulks6/ai-story-studio-worker:1.1.0`. If your GitHub name differs, change it in **Cloud GPU → Advanced → Worker image**.
+Your image name is `ghcr.io/<your-github-name>/ai-story-studio-worker:1.1.0`, in lower case. The app is preset to `ghcr.io/rahulks6/ai-story-studio-worker:1.1.0`. If your GitHub name is different, change it in **Cloud GPU → Advanced → Worker image**.
+
+Choose **one** of the two ways to build and publish it.
+
+### Option A (recommended): let GitHub build it
+
+This needs no Docker and uses none of your PC's disk space. It is free for a public repository.
+
+1. Open your repository on **github.com**.
+2. Click **Releases** (right side), then **Draft a new release**.
+3. Click **Choose a tag** and type exactly `ai-story-studio-worker-v1.1.0`, then click **Create new tag: ai-story-studio-worker-v1.1.0 on publish**.
+4. Set **Target** to the branch that contains AI Story Studio (for example `claude/story-studio-audio-pipeline-w7vu3o`, or `main` once it is merged).
+5. Enter any title (for example `Worker image 1.1.0`) and click **Publish release**.
+6. Open the **Actions** tab. The run **AI Story Studio worker image** starts by itself. Wait until it shows a green tick (about 20–40 minutes).
+
+   Once the app is merged into your default branch, you can instead use **Actions → AI Story Studio worker image → Run workflow**.
+
+Then go to **Make it public** below.
+
+### Option B: build it on this PC with Docker Desktop
+
+This needs about 25 GB of free disk space. It downloads about 6 GB and uploads about 6 GB, so it can take hours on a slow connection. Your PC needs no NVIDIA GPU to build it.
+
+1. **Install Docker Desktop**, if you do not have it: https://www.docker.com/products/docker-desktop/. Keep the default options (WSL 2) and restart Windows if it asks. Start **Docker Desktop** and wait until it shows **Engine running**.
+2. **Build:** in the AI Story Studio folder, double-click `scripts\Build-Worker-Image.bat` and type your GitHub user name when asked. It builds `ghcr.io/<you>/ai-story-studio-worker:1.1.0`. The same command in PowerShell:
+   ```
+   powershell -ExecutionPolicy Bypass -File scripts\build-worker-image.ps1 -Owner <your-github-name>
+   ```
+3. **Create a GitHub token for uploading:**
+   - On github.com, open your picture → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**.
+   - Tick **only** `write:packages`, choose a short expiration (7 days), then click **Generate token** and copy it.
+   - Never put the token in a file, in `.env`, or in a chat.
+4. **Upload:** double-click `scripts\Push-Worker-Image.bat`, type your GitHub user name, and paste the token when asked (it is not shown). The script:
+   - signs in with `docker login --password-stdin`, so the token never appears on a command line;
+   - uploads the image;
+   - **signs out again**, so Docker no longer keeps the token.
+
+   The same command in PowerShell:
+
+   ```
+   powershell -ExecutionPolicy Bypass -File scripts\push-worker-image.ps1 -Owner <your-github-name>
+   ```
+
+### Make it public (once, for either option)
+
+1. Open `https://github.com/users/<your-github-name>/packages/container/package/ai-story-studio-worker`. You can also get there from your GitHub profile → **Packages** → **ai-story-studio-worker**.
+2. Click **Package settings** (right side). Under **Danger Zone**, click **Change visibility** → **Public**, type the name to confirm, and click the button.
+
+A public image can be downloaded by anyone. It contains only the open-source worker code, which is also in your repository: no keys, no tokens, no model weights and no stories.
+
+### Check it without a password
+
+Double-click `scripts\Verify-Worker-Image.bat`, or run `npm run check:image` in the AI Story Studio folder. This is the same check as the app's diagnostics. The result is one of four answers:
+
+| Result                                 | Meaning and what to do                                                                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **IMAGE EXISTS AND PUBLICLY PULLABLE** | Done. RunPod can download it.                                                                                                                                      |
+| **IMAGE REQUIRES AUTHENTICATION**      | The package is still private, **or it was never pushed**: GitHub answers both the same way to anonymous users. Finish option A or B, then **Make it public**.      |
+| **IMAGE DOES NOT EXIST**               | The name or tag is wrong (for example `1.1.0` was not pushed), or the image has no `linux/amd64` build. Check the name in **Cloud GPU → Advanced → Worker image**. |
+| **REGISTRY UNREACHABLE**               | This PC could not reach `ghcr.io` (internet, proxy, firewall or antivirus). This says nothing about the image. Try again later or on another network.              |
 
 ## Step 4: Unlock cloud mode in the `.env` file
 
@@ -56,7 +112,26 @@ The banner at the top now says **MODE: MOCK PROVIDERS**: cloud is unlocked but n
 2. Under **Provider and API key**, choose **RunPod**, paste your key into **API key**, and click **Save**. The key is stored only on this PC (`data\secrets.json`), and the page only ever shows its last four characters.
 3. Click **Test Connection**. You should see "key accepted" and "API contract verified".
    - "RunPod authentication failed. Check your API key." means the key was mistyped or has no write permission. Create a new one.
-4. Click **Run dry-run diagnostics (free)**. It checks the key, the GPU prices, the worker image and the models **without renting anything**. Every line should be green, or say "note".
+4. Click **Run dry-run diagnostics (free)**. It checks the key, the GPU list and prices, the worker image and the models **without renting anything**. You should see:
+
+   ```
+   OK   Provider implemented
+   OK   API key saved
+   OK   API credentials and connectivity
+   OK   Compatible GPUs and price      (e.g. "3 GPU type(s) with ≥ 24 GB VRAM within your ₹60/h limit; cheapest: …")
+   OK   Worker image                   (IMAGE EXISTS AND PUBLICLY PULLABLE)
+   OK   Model: image / video / tts
+   OK   Cost limits
+   ```
+
+   The four real-generation gate lines show **FAIL/OFF** until you turn them on, and that is expected:
+   - `MOCK_GENERATION=false` and `ENABLE_CLOUD_GPU=true` are set in `.env` (step 4);
+   - **Cloud GPU enabled** is switched on in step 6;
+   - **Real generation enabled** is switched on in step 7.
+
+   You can run the diagnostics before any of that. Nothing is rented either way.
+   - If **Compatible GPUs and price** fails, the message now includes RunPod's own reason, or explains the problem: no GPU with enough VRAM, none in stock, or none below your price limit (it then shows the cheapest one).
+   - The app never rents a GPU while **Worker image** is not OK.
 
 ## Step 6: Switch on Cloud GPU and run the first test
 

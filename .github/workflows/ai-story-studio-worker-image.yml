@@ -1,12 +1,19 @@
 # Builds the AI Story Studio CLOUD worker image and publishes it to GitHub Container Registry.
-# Manual only (Actions tab → "AI Story Studio worker image" → Run workflow): building never
-# happens on push, so it can never surprise you with storage or compute use.
+# It never runs on an ordinary push, so it can never surprise you with storage or compute use.
+# Start it in one of two ways (both free for a public repository; no GPU is involved):
+#   A. Create a tag named  ai-story-studio-worker-v1.1.0  (github.com → Releases → Draft a new
+#      release → "Choose a tag" → type the name → Target: the branch with the app → Publish).
+#      This works from any branch, before anything is merged.
+#   B. Once this file is on the default branch: Actions → "AI Story Studio worker image" → Run workflow.
 # After the first run, make the package PUBLIC once (GitHub → your profile → Packages →
 # ai-story-studio-worker → Package settings → Change visibility → Public) so RunPod can pull it
 # without credentials. The image contains no secrets and no model weights.
 name: AI Story Studio worker image
 
 on:
+  push:
+    tags:
+      - 'ai-story-studio-worker-v*'
   workflow_dispatch:
     inputs:
       tag:
@@ -21,7 +28,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Free disk space (the CUDA base image is large)
         run: |
@@ -31,9 +38,15 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - name: Image name (lower-case owner)
+      - name: Image name and tag
         id: name
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ai-story-studio-worker" >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="${INPUT_TAG:-${GITHUB_REF_NAME#ai-story-studio-worker-v}}"
+          if ! [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]]; then echo "invalid tag: $tag"; exit 1; fi
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ai-story-studio-worker" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -47,10 +60,25 @@ jobs:
         with:
           context: ai-story-studio/worker
           file: ai-story-studio/worker/Dockerfile.cuda
+          platforms: linux/amd64
           push: true
+          provenance: false
+          build-args: |
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
           tags: |
-            ${{ steps.name.outputs.image }}:${{ inputs.tag }}
+            ${{ steps.name.outputs.image }}:${{ steps.name.outputs.tag }}
             ${{ steps.name.outputs.image }}:latest
           labels: |
             org.opencontainers.image.title=AI Story Studio cloud worker
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Is it public yet? (anonymous check, like RunPod)
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}:${{ steps.name.outputs.tag }}
+        run: |
+          docker logout ghcr.io
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "IMAGE EXISTS AND PUBLICLY PULLABLE: $IMAGE"
+          else
+            echo "::warning::$IMAGE was pushed but is still PRIVATE. Make it public once: GitHub → your profile → Packages → ai-story-studio-worker → Package settings → Change visibility → Public."
+          fi

@@ -6,7 +6,7 @@ around it, so both behave identically and the logic is testable without a
 web framework.
 
 Endpoints (all require ``Authorization: Bearer <token>`` except /health):
-  GET  /health                     liveness: {"status": "ok"} only
+  GET  /health                     liveness + readiness: {"status", "version", "ready"} only
   GET  /models                     installed models, loaded state
   GET  /system                     GPU / VRAM / CUDA / disk / FFmpeg / models / version / jobs
   POST /generate/image             text-to-image (or image-to-image)
@@ -144,8 +144,12 @@ class WorkerAPI:
         self.jobs = JobManager(config.jobs_dir, config.max_concurrent_jobs, config.job_timeout_seconds, config.max_jobs_kept)
         # Called after every successfully authenticated request (feeds the pod guard's idle timer).
         self.on_activity: Callable[[], None] | None = None
+        # The registry is built before the server listens, so a responding worker is ready;
+        # it stops being ready while shutting down.
+        self.accepting = True
 
     def close(self) -> None:
+        self.accepting = False
         self.jobs.shutdown()
 
     # ------------------------------------------------------------------------------
@@ -155,7 +159,8 @@ class WorkerAPI:
             if len(body) > self.config.max_upload_bytes * 2:
                 raise SecurityError(413, "request body too large")
             if method == "GET" and path == "/health":
-                return Response(200, {"status": "ok", "version": __version__})
+                # Unauthenticated: status, version and readiness only (no models, GPU or paths).
+                return Response(200, {"status": "ok", "version": __version__, "ready": self.accepting})
             check_bearer(headers.get("authorization"), self.config.auth_token)
             if self.on_activity:
                 self.on_activity()

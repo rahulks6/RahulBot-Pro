@@ -2,15 +2,90 @@
 
 **Summary:** the code is implemented and the RunPod integration is mock-tested; **live provider validation is pending.** No RunPod API key, no GPU and no model downloads were available in the build environment. Nothing below has run against the real RunPod API, a real GPU or a real model. Mock mode remains the default, and the whole phase cost ₹0.
 
-| Level                                          | Status                                                                                                                                                             |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Code implemented                               | **Yes**: RunPod v2 adapter, GPU lifecycle, cost protection, auto termination, recovery, worker image, UI, installer, docs                                          |
-| Tested against a mock RunPod and a fake worker | **Yes**: 36 new app tests and 12 new worker tests                                                                                                                  |
-| Tested against the real RunPod API             | **No.** The RunPod documentation and API hosts were blocked here; the details came from search results and are verified at runtime against RunPod's `openapi.json` |
-| Tested with a real GPU                         | **No**                                                                                                                                                             |
-| Tested with a real AI model                    | **No** (adapters contract-tested against stand-ins for the libraries)                                                                                              |
-| Full real episode generated                    | **No**                                                                                                                                                             |
-| Windows installer run on Windows               | **No.** There is no Windows and no PowerShell here; the scripts were statically checked only                                                                       |
+| Level                                          | Status                                                                                                                                                                                                                 |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Code implemented                               | **Yes**: RunPod v2 adapter, GPU lifecycle, cost protection, auto termination, recovery, worker image, UI, installer, docs                                                                                              |
+| Tested against a mock RunPod and a fake worker | **Yes**: 64 new app tests and 16 new worker tests (including section 0)                                                                                                                                                |
+| Tested against the real RunPod API             | **Partly, by the owner's dry run:** key, connectivity and `openapi.json` contract passed. The GPU list failed with HTTP 400; it is fixed (section 0) and needs one more dry run to confirm.                            |
+| Tested with a real GPU                         | **No**                                                                                                                                                                                                                 |
+| Tested with a real AI model                    | **No** (adapters contract-tested against stand-ins for the libraries)                                                                                                                                                  |
+| Full real episode generated                    | **No**                                                                                                                                                                                                                 |
+| Windows installer run on Windows               | **On a GitHub Windows runner:** the setup `.exe` installed the app, started it in MOCK mode and upgraded it. It has not been run on your PC yet. The new `scripts\*-Worker-Image` scripts are statically checked only. |
+
+## 0. Update: fixes after the first real dry run (Sept 2026)
+
+The owner ran **Run dry-run diagnostics (free)** against a real RunPod account. It passed:
+
+- RunPod API v2 reachable;
+- API key accepted;
+- API contract verified against RunPod's `openapi.json`;
+- models and cost limits configured.
+
+It found two real blockers, both fixed here. **No GPU was rented and nothing was spent.**
+
+### Blocker 1: GPU list and prices (HTTP 400)
+
+**Root cause.** Two parts:
+
+1. **A hard-coded request.** The GPU list request `GET /v2/catalog/gpus?include=AVAILABILITY&gpuCount=1` was hard-coded from search results. It was **not** built from the `openapi.json` contract the app had just verified, and it did not send `cloudType`. RunPod documents `cloudType`, `gpuCount` and `minCudaVersion` as valid only together with `include=AVAILABILITY`.
+2. **A hidden error message.** The error reporter only read `error` / `message` strings. RunPod's validation details were therefore dropped, and only "HTTP 400" was shown.
+
+The exact parameter RunPod objected to cannot be confirmed from the build environment: RunPod's API and docs are unreachable there, and no key was available.
+
+**Fix.**
+
+- **Request built from the contract:** the query is now built **from the parameters `openapi.json` declares** for that endpoint, with enum spellings taken from the document. Only declared parameters are sent, and `cloudType`/`gpuCount` go only alongside `include`. An unknown _required_ parameter is reported as API drift instead of guessed.
+- **Prices without stock:** if RunPod still refuses the stock query, prices are read without it (one free GET), so the price ceiling is still enforced.
+- **Pagination** is followed, and more response shapes are parsed: `gpus` wrapper, per-data-centre availability, nested prices, per-cloud flags.
+- **A useful message:** the error now shows **RunPod's own validation message, with credentials removed**.
+- **A clear GPU diagnostic:** the dry run reports the minimum VRAM, the price ceiling and the cheapest GPU, and names which of these ruled a GPU out.
+
+**Tests:** a strict mock of the catalog reproduces an HTTP 400 for the old query and accepts the new one.
+
+**Status:** fixed and mock-tested. It is **not yet confirmed against the live RunPod API**; your next dry run is the confirmation.
+
+### Blocker 2: worker image not pullable (HTTP 403)
+
+**Root cause.** Two parts:
+
+1. **The image was never published.** Its build workflow could only be started by hand (`workflow_dispatch`), and GitHub only offers **Run workflow** for workflows on the default branch. The app is still on its feature branch, so GitHub never listed that workflow, and the image `ghcr.io/rahulks6/ai-story-studio-worker:1.1.0` was never built or pushed.
+2. **The check could not tell why.** GHCR gives anonymous users the same 403 for a missing package as for a private one, and the old check reported every refusal as "not pullable (HTTP 403)".
+
+**Fix.**
+
+- **Publishing from any branch:** a tag `ai-story-studio-worker-v1.1.0` (created from GitHub's Releases page) now starts the publishing workflow, without merging first.
+- **Build check:** a new build-check workflow builds the image (without pushing) on every worker change, then starts it on a CPU runner and checks `/health`, authentication, `/system` and `/models`.
+- **Windows scripts:** `scripts\Build-Worker-Image.bat`, `Push-Worker-Image.bat` and `Verify-Worker-Image.bat` build, push and check the image with Docker Desktop. The token is read hidden, passed with `--password-stdin`, and Docker signs out afterwards.
+- **Dockerfile hardening:**
+  - the base image's PyTorch/CUDA is pinned, so the build fails rather than replacing it;
+  - the Kokoro language data is pre-installed;
+  - a build-time import check covers every AI library and the worker;
+  - an OCI source label is added.
+- **Image check with four answers:** a registry-protocol check (anonymous token, manifest, `linux/amd64`) now answers **IMAGE EXISTS AND PUBLICLY PULLABLE / IMAGE REQUIRES AUTHENTICATION / IMAGE DOES NOT EXIST / REGISTRY UNREACHABLE**. A plain-text 403 from a proxy or firewall is reported as unreachable, not as "private".
+- **Preflight:** the app now **refuses to rent a GPU unless the image is publicly pullable**, both in generation and in the guided test.
+
+**Status:**
+
+- **Build:** ready; see the build-check workflow run for the real build result.
+- **Public image:** not verified, because it is not published yet (your step).
+
+### Worker readiness (also added)
+
+- `/health` now returns `ready`.
+- `/system` also reports whether PyTorch can use CUDA.
+- READY requires a usable NVIDIA GPU. A pod without one fails at once and is terminated, instead of waiting out the timeout.
+- A new test starts the worker exactly as `Dockerfile.cuda`'s `CMD` and `ENV` do, and checks port, readiness, authentication, capabilities, GPU info, jobs, cancellation, metadata and clean SIGTERM exit.
+
+### Results of this update
+
+- **App:** **164/164** (`npm run check`: lint, typecheck, tests with FFmpeg, build). This is the 136 earlier tests plus 28 new ones:
+  - catalog discovery, pricing, VRAM and price filtering;
+  - malformed responses, HTTP 400 and error sanitization;
+  - the image states;
+  - readiness;
+  - the no-rent preflight.
+- **Worker:** **84/84** (ruff, format, `mypy --strict`, pyright clean). This is the 80 earlier tests plus 4 new container start-up tests.
+- **What was not tested:** no RunPod call, no GPU, no real model and no image push. Safe defaults unchanged: `MOCK_GENERATION=true`, `ENABLE_CLOUD_GPU=false`, and both switches off.
 
 ## 1. Files changed
 

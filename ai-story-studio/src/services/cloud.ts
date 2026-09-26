@@ -19,6 +19,7 @@ import { WorkerClient } from '../providers/worker/client.ts';
 import type { JobRepository } from '../repositories/jobs.ts';
 import type { GpuRepository } from '../repositories/gpu.ts';
 import { effectiveLimits, type EffectiveLimits } from './cloud-limits.ts';
+import { checkImagePullable, IMAGE_STATUS_LABEL, type ImageCheckResult } from './image-check.ts';
 import type { GpuSupervisor } from './gpu-supervisor.ts';
 import type { ModelManager } from './model-manager.ts';
 import type { SecretStore } from './secrets.ts';
@@ -95,6 +96,8 @@ export interface CloudServiceDeps {
   pollMs?: number;
   workerPollMs?: number;
   now?: () => number;
+  /** Tests: point the container-registry check at a mock registry. */
+  registryBaseUrlFor?: (apiHost: string) => string;
 }
 
 const INSTALL_KEY = 'installation_id';
@@ -114,6 +117,7 @@ export class CloudService {
   private saved: Partial<ProviderSet> | null = null;
   private apiCache: { key: string; api: CloudGpuApi } | undefined;
   private lastConnection: CloudStatus['connection'] = null;
+  lastImageCheck: (ImageCheckResult & { at: string }) | null = null;
   lastRecovery: RecoveryReport | null = null;
   lastHealthAt: string | null = null;
 
@@ -136,6 +140,9 @@ export class CloudService {
         return { idleMinutes: l.idleMinutes, maxLifetimeMinutes: l.maxLifetimeMinutes };
       },
       extraEnv: () => deps.models.workerEnv(),
+      preflightImage: async (image) => {
+        await this.assertImagePullable(image);
+      },
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
       ...(deps.pollMs ? { pollMs: deps.pollMs } : {}),
       ...(deps.now ? { now: deps.now } : {}),
@@ -372,56 +379,85 @@ export class CloudService {
     }
   }
 
+  /** Minimum VRAM a cloud GPU needs for the enabled image and video models (and the GPU setting). */
+  minVramGb(): number {
+    return Math.max(this.d.settings.get('gpu').minVramGb, this.d.models.minVramFor(['image', 'video']));
+  }
+
   async offers(): Promise<Array<GpuOffer & { withinLimit: boolean }>> {
     const limits = effectiveLimits(this.d.settings, this.d.env, true);
-    const minVram = Math.max(
-      this.d.settings.get('gpu').minVramGb,
-      this.d.models.minVramFor(['image', 'video']),
-    );
-    return (await this.cloudProvider.listOffers(minVram))
+    return (await this.cloudProvider.listOffers(this.minVramGb()))
       .map((o) => ({ ...o, withinLimit: o.available && o.hourlyRateInr <= limits.maxHourlyRateInr }))
       .sort((a, b) => a.hourlyRateInr - b.hourlyRateInr);
   }
 
-  /** Is the worker image pullable anonymously? (ghcr.io and Docker Hub; others are not checked.) */
-  async checkImage(image: string): Promise<DiagnosticStep> {
-    const fetchFn = this.d.fetch ?? fetch;
-    const m = /^(?:(ghcr\.io|docker\.io|registry-1\.docker\.io)\/)?([a-z0-9._/-]+):([A-Za-z0-9._-]+)$/.exec(
-      image,
-    );
-    if (!m) return { step: 'Worker image', ok: null, detail: `${image} — registry not checked` };
-    const registry = m[1] ?? 'docker.io';
-    const repo = registry === 'ghcr.io' || m[2]!.includes('/') ? m[2]! : `library/${m[2]}`;
+  /** Can RunPod pull the worker image anonymously? Distinguishes public / private / missing / unreachable. */
+  async checkImage(image: string): Promise<DiagnosticStep & { result: ImageCheckResult }> {
+    const result = await checkImagePullable(image, {
+      ...(this.d.fetch ? { fetch: this.d.fetch } : {}),
+      ...(this.d.registryBaseUrlFor ? { baseUrlFor: this.d.registryBaseUrlFor } : {}),
+    });
+    const advice: Record<ImageCheckResult['status'], string> = {
+      PUBLIC: '',
+      AUTH_REQUIRED:
+        ' Make the package public (RUNPOD_SETUP.md step 3), or push it first if you never did. Nothing was rented.',
+      NOT_FOUND: ' Build and push the worker image (RUNPOD_SETUP.md step 3). Nothing was rented.',
+      UNREACHABLE: ' This says nothing about the image itself; run the diagnostics again later.',
+      INVALID: ' Fix the name under Cloud GPU → Advanced → Worker image.',
+    };
+    this.lastImageCheck = { ...result, at: this.d.clock.now().toISOString() };
+    return {
+      step: 'Worker image',
+      ok: result.status === 'PUBLIC' ? true : result.status === 'UNREACHABLE' ? null : false,
+      detail: `${IMAGE_STATUS_LABEL[result.status]} — ${result.detail}${advice[result.status]}`,
+      result,
+    };
+  }
+
+  /** Throws unless RunPod can pull the worker image without credentials. Rents nothing. */
+  async assertImagePullable(image = this.workerImage()): Promise<ImageCheckResult> {
+    const { result, detail } = await this.checkImage(image);
+    if (result.status !== 'PUBLIC') throw new AppError('PRECONDITION_FAILED', `No GPU was rented. ${detail}`);
+    return result;
+  }
+
+  workerImage(): string {
+    return this.d.env.cloudWorkerImage || this.d.settings.get('cloud').workerImage;
+  }
+
+  /** The dry-run GPU step: VRAM filter, price ceiling and stock, with a useful reason when nothing fits. */
+  private async gpuStep(): Promise<DiagnosticStep> {
+    const step = 'Compatible GPUs and price';
+    const limits = effectiveLimits(this.d.settings, this.d.env, true);
+    const minVram = this.minVramGb();
+    const cloud = this.d.settings.get('cloud').cloudType;
     try {
-      const tokenUrl =
-        registry === 'ghcr.io'
-          ? `https://ghcr.io/token?scope=repository:${repo}:pull`
-          : `https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repo}:pull`;
-      const t = (await (await fetchFn(tokenUrl, { signal: AbortSignal.timeout(10_000) })).json()) as {
-        token?: string;
-      };
-      const host = registry === 'ghcr.io' ? 'ghcr.io' : 'registry-1.docker.io';
-      const res = await fetchFn(`https://${host}/v2/${repo}/manifests/${m[3]}`, {
-        method: 'HEAD',
-        headers: {
-          Authorization: `Bearer ${t.token ?? ''}`,
-          Accept:
-            'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json',
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (res.ok) return { step: 'Worker image', ok: true, detail: `${image} is published and public` };
-      return {
-        step: 'Worker image',
-        ok: false,
-        detail: `${image} is not pullable (HTTP ${res.status}). Build it once (see RUNPOD_SETUP.md) and make the package public, or set a registry credential.`,
-      };
+      const offers = await this.offers();
+      const api = this.api();
+      const notes = api instanceof RunPodApi ? api.catalogNotes.join(' ') : '';
+      const tail = notes ? ` [${notes}]` : '';
+      const priced = offers.filter((o) => Number.isFinite(o.hourlyRateInr));
+      const good = offers.filter((o) => o.withinLimit);
+      if (good.length)
+        return {
+          step,
+          ok: true,
+          detail: `${good.length} GPU type(s) with ≥ ${minVram} GB VRAM within your ₹${limits.maxHourlyRateInr}/h limit (${cloud.toLowerCase()} cloud); cheapest: ${good[0]!.gpuModel} (${good[0]!.vramGb} GB) at ₹${good[0]!.hourlyRateInr}/h.${tail}`,
+        };
+      let why: string;
+      if (!offers.length)
+        why = `RunPod lists no GPU type with at least ${minVram} GB VRAM${this.d.settings.get('cloud').allowedGpuTypes.trim() ? ' among your allowed GPU types' : ''}.`;
+      else if (!priced.length)
+        why = `RunPod listed ${offers.length} GPU type(s) with ≥ ${minVram} GB VRAM but no ${cloud.toLowerCase()} price, so none can be rented safely. Try the other cloud type under Advanced.`;
+      else if (!priced.some((o) => o.available))
+        why = `The ${priced.length} compatible GPU type(s) are out of stock in ${cloud.toLowerCase()} cloud right now. Try later or allow Community Cloud.`;
+      else {
+        const cheapest = priced.filter((o) => o.available)[0]!;
+        why = `No compatible GPU is currently available below your configured hourly price (₹${limits.maxHourlyRateInr}/h). Cheapest compatible: ${cheapest.gpuModel} (${cheapest.vramGb} GB) at ₹${cheapest.hourlyRateInr}/h. Raise the limit or allow Community Cloud.`;
+      }
+      return { step, ok: false, detail: `${why}${tail}` };
     } catch (err) {
-      return {
-        step: 'Worker image',
-        ok: null,
-        detail: `Could not check ${image}: ${(err as Error).message}`,
-      };
+      return { step, ok: false, detail: toAppError(err).message };
     }
   }
 
@@ -431,24 +467,9 @@ export class CloudService {
     for (const g of this.gates()) steps.push({ step: `Gate: ${g.name}`, ok: g.ok, detail: g.detail });
     const conn = await this.testConnection();
     steps.push({ step: 'API credentials and connectivity', ok: conn.ok, detail: conn.detail });
-    if (conn.ok) {
-      try {
-        const offers = await this.offers();
-        const good = offers.filter((o) => o.withinLimit);
-        steps.push({
-          step: 'Compatible GPUs and price',
-          ok: good.length > 0,
-          detail: good.length
-            ? `${good.length} GPU type(s) within your limit; cheapest: ${good[0]!.gpuModel} (${good[0]!.vramGb} GB) at ₹${good[0]!.hourlyRateInr}/h`
-            : `No compatible GPU is currently available below your configured hourly price (${offers.length} type(s) seen).`,
-        });
-      } catch (err) {
-        steps.push({ step: 'Compatible GPUs and price', ok: false, detail: toAppError(err).message });
-      }
-    }
-    steps.push(
-      await this.checkImage(this.d.env.cloudWorkerImage || this.d.settings.get('cloud').workerImage),
-    );
+    if (conn.ok) steps.push(await this.gpuStep());
+    const { result: _image, ...imageStep } = await this.checkImage(this.workerImage());
+    steps.push(imageStep);
     for (const kind of ['image', 'video', 'tts', 'music', 'sfx'] as const) {
       const m = this.d.models.selected(kind);
       steps.push({

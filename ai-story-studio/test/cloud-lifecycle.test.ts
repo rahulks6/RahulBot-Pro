@@ -4,6 +4,7 @@ import type { AppError } from '../src/lib/errors.ts';
 import { encodePng } from '../src/media/png.ts';
 import { seedSmall, testStudio, type TestStudio } from './helpers.ts';
 import { FakeCloudWorker } from './fixtures/fake-worker.ts';
+import { MockRegistry } from './fixtures/mock-registry.ts';
 import { MockRunPod } from './fixtures/mock-runpod.ts';
 
 /**
@@ -13,6 +14,8 @@ import { MockRunPod } from './fixtures/mock-runpod.ts';
  */
 const rp = new MockRunPod();
 const worker = new FakeCloudWorker(rp);
+const registry = new MockRegistry();
+const WORKER_REPO = 'rahulks6/ai-story-studio-worker';
 const noSleep = async () => undefined;
 
 function cloudStudio(
@@ -32,6 +35,7 @@ function cloudStudio(
       sleep: noSleep,
       pollMs: 1,
       workerPollMs: 1,
+      registryBaseUrlFor: () => registry.base,
       ...(opts.now ? { now: opts.now } : {}),
     },
   });
@@ -63,10 +67,12 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
   before(async () => {
     await rp.start();
     await worker.start();
+    await registry.start();
   });
   after(async () => {
     await worker.stop();
     await rp.stop();
+    await registry.stop();
   });
   beforeEach(() => {
     rp.pods.clear();
@@ -77,8 +83,18 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     worker.cancels = [];
     worker.unhealthyFor = 0;
     worker.neverHealthy = false;
+    worker.notReadyFor = 0;
+    worker.noGpu = false;
+    worker.torchNoCuda = false;
     worker.corruptDownloads = 0;
     worker.jobPolls = 0;
+    rp.catalog.requireCloudTypeWithInclude = false;
+    rp.catalog.rejectAvailability = false;
+    registry.repos.clear();
+    registry.repos.set(WORKER_REPO, {
+      visibility: 'public',
+      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+    });
   });
   afterEach(() => {
     s?.cleanup();
@@ -437,5 +453,108 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     );
     assert.equal(byName.get('Model: music')!.ok, null, 'Stable Audio needs a licence acknowledgement first');
     assert.equal(rp.requests.filter((r) => r.method === 'POST').length, 0);
+  });
+
+  it('dry-run acceptance target: every non-gate check is OK, even where the old catalog query got HTTP 400', async () => {
+    rp.catalog.requireCloudTypeWithInclude = true;
+    s = cloudStudio();
+    const steps = await s.cloud.diagnostics();
+    const byName = new Map(steps.map((x) => [x.step, x]));
+    for (const name of [
+      'API credentials and connectivity',
+      'Compatible GPUs and price',
+      'Worker image',
+      'Model: image',
+      'Model: video',
+      'Model: tts',
+      'Cost limits',
+    ])
+      assert.equal(byName.get(name)?.ok, true, `${name}: ${byName.get(name)?.detail}`);
+    assert.match(byName.get('Worker image')!.detail, /^IMAGE EXISTS AND PUBLICLY PULLABLE/);
+    assert.match(byName.get('Compatible GPUs and price')!.detail, /stock included/);
+    assert.equal(rp.livePods().length, 0, 'nothing rented');
+  });
+
+  it('dry-run GPU step filters by minimum VRAM and the price ceiling, and says what to change', async () => {
+    s = cloudStudio();
+    s.settings.set('gpu', { ...s.settings.get('gpu'), maxHourlyRateInr: 20 });
+    let step = (await s.cloud.diagnostics()).find((x) => x.step === 'Compatible GPUs and price')!;
+    assert.equal(step.ok, false);
+    assert.match(
+      step.detail,
+      /below your configured hourly price \(₹20\/h\)\. Cheapest compatible: RTX A5000 \(24 GB\) at ₹23\.76\/h/,
+    );
+    s.settings.set('gpu', { ...s.settings.get('gpu'), maxHourlyRateInr: 100, minVramGb: 48 });
+    step = (await s.cloud.diagnostics()).find((x) => x.step === 'Compatible GPUs and price')!;
+    assert.equal(step.ok, false, 'only the 80 GB H100 is big enough, and it costs more than ₹100/h');
+    assert.match(step.detail, /Cheapest compatible: H100 SXM \(80 GB\)/);
+    s.settings.set('gpu', { ...s.settings.get('gpu'), minVramGb: 96 });
+    step = (await s.cloud.diagnostics()).find((x) => x.step === 'Compatible GPUs and price')!;
+    assert.match(step.detail, /no GPU type with at least 96 GB VRAM/);
+    assert.equal(rp.livePods().length, 0);
+  });
+
+  it('worker readiness: waits for ready=true, then checks the GPU the worker reports', async () => {
+    s = cloudStudio();
+    worker.notReadyFor = 2;
+    const t = await s.cloudTest.prepare('tts');
+    const done = await s.cloudTest.confirm(t.prepared!.id);
+    assert.equal(done.status, 'success', done.error_message ?? '');
+    const steps = s.cloudTest.steps(done);
+    assert.match(steps.find((x) => x.n === 7)!.detail, /NVIDIA RTX A5000, 24 GB VRAM · CUDA 12\.6/);
+    assert.equal(rp.livePods().length, 0);
+  });
+
+  it('a machine without a usable NVIDIA GPU fails fast and is terminated', async () => {
+    s = cloudStudio();
+    worker.noGpu = true;
+    const t = await s.cloudTest.prepare('tts');
+    const done = await s.cloudTest.confirm(t.prepared!.id);
+    assert.equal(done.status, 'failed');
+    assert.match(done.error_message ?? '', /no usable NVIDIA GPU \(nvidia-smi not found\)/);
+    assert.equal(rp.livePods().length, 0, 'the pod was terminated');
+    worker.noGpu = false;
+    worker.torchNoCuda = true;
+    const again = await s.cloudTest.confirm((await s.cloudTest.prepare('tts')).prepared!.id);
+    assert.equal(again.status, 'failed');
+    assert.match(again.error_message ?? '', /PyTorch cannot use it/);
+    assert.equal(rp.livePods().length, 0);
+  });
+
+  it('never rents a GPU when RunPod could not pull the worker image', async () => {
+    registry.repos.set(WORKER_REPO, {
+      visibility: 'private',
+      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+    });
+    s = cloudStudio();
+    const t = await s.cloudTest.prepare('tts');
+    assert.equal(t.prepared, null);
+    assert.equal(t.record.status, 'failed');
+    assert.match(t.record.error_message ?? '', /No GPU was rented\. IMAGE REQUIRES AUTHENTICATION/);
+    queueNarration(s);
+    await s.generation.processQueue().catch(() => undefined);
+    assert.equal(rp.pods.size, 0, 'no pod was ever created');
+    assert.equal(rp.requests.filter((r) => r.method === 'POST' && r.path === '/pods').length, 0);
+  });
+
+  it('dry-run reports a private, missing or unreachable worker image distinctly', async () => {
+    s = cloudStudio();
+    const image = async () => (await s!.cloud.diagnostics()).find((x) => x.step === 'Worker image')!;
+    registry.repos.set(WORKER_REPO, {
+      visibility: 'private',
+      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+    });
+    let step = await image();
+    assert.equal(step.ok, false);
+    assert.match(step.detail, /^IMAGE REQUIRES AUTHENTICATION/);
+    registry.repos.set(WORKER_REPO, { visibility: 'public', tags: {} });
+    step = await image();
+    assert.equal(step.ok, false);
+    assert.match(step.detail, /^IMAGE DOES NOT EXIST/);
+    registry.failWith = 503;
+    step = await image();
+    assert.equal(step.ok, null, 'unknown, not failed');
+    assert.match(step.detail, /^REGISTRY UNREACHABLE/);
+    registry.failWith = null;
   });
 });

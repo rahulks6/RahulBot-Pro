@@ -7,6 +7,7 @@ import { after, before, describe, it } from 'node:test';
 import { Logger, fileSink } from '../src/lib/logger.ts';
 import { createWebApp } from '../src/web/app.ts';
 import { FakeCloudWorker } from './fixtures/fake-worker.ts';
+import { MockRegistry } from './fixtures/mock-registry.ts';
 import { MockRunPod } from './fixtures/mock-runpod.ts';
 import { seedSmall, testStudio, type TestStudio } from './helpers.ts';
 
@@ -26,6 +27,7 @@ async function serve(s: TestStudio): Promise<{ base: string; server: Server }> {
 describe('Cloud GPU pages', () => {
   const rp = new MockRunPod(KEY);
   const worker = new FakeCloudWorker(rp);
+  const registry = new MockRegistry();
   let mock: TestStudio;
   let cloud: TestStudio;
   let mockWeb: { base: string; server: Server };
@@ -41,6 +43,11 @@ describe('Cloud GPU pages', () => {
   before(async () => {
     await rp.start();
     await worker.start();
+    await registry.start();
+    registry.repos.set('rahulks6/ai-story-studio-worker', {
+      visibility: 'public',
+      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+    });
     mock = testStudio();
     seedSmall(mock);
     mockWeb = await serve(mock);
@@ -52,6 +59,7 @@ describe('Cloud GPU pages', () => {
         sleep: async () => undefined,
         pollMs: 1,
         workerPollMs: 1,
+        registryBaseUrlFor: () => registry.base,
       },
     });
     // Write logs to the studio's real log file so the redaction test reads what a user would see.
@@ -68,6 +76,7 @@ describe('Cloud GPU pages', () => {
     cloud.cleanup();
     await worker.stop();
     await rp.stop();
+    await registry.stop();
   });
 
   it('shows the mode on every page; mock mode has no emergency button', async () => {
@@ -107,11 +116,15 @@ describe('Cloud GPU pages', () => {
 
   it('runs dry-run diagnostics without renting anything', async () => {
     rp.requests = [];
+    registry.repos.get('rahulks6/ai-story-studio-worker')!.visibility = 'private';
     const res = await post(cloudWeb.base, '/cloud/diagnostics', {});
     assert.equal(res.status, 303);
     const page = await (await fetch(cloudWeb.base + '/cloud')).text();
     assert.match(page, /Dry-run diagnostics/);
     assert.match(page, /cheapest: RTX A5000/);
+    assert.match(page, /IMAGE REQUIRES AUTHENTICATION/);
+    registry.repos.get('rahulks6/ai-story-studio-worker')!.visibility = 'public';
+    assert.ok(!page.includes(KEY), 'the key never reaches the page');
     assert.equal(rp.requests.filter((r) => r.method === 'POST').length, 0);
   });
 

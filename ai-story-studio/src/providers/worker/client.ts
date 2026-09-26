@@ -57,6 +57,14 @@ export interface WorkerSystem {
     gpus: Array<{ name: string; vram_total_mb: number; vram_used_mb: number }>;
   };
   ffmpeg: { ffmpeg: string | null; ffprobe: string | null };
+  /** Whether PyTorch itself can use CUDA (worker 1.1.0+). */
+  torch?: {
+    installed: boolean;
+    version: string | null;
+    cuda_available: boolean;
+    device: string | null;
+    error?: string;
+  };
   mock_models: boolean;
   models: WorkerModel[];
   jobs: Record<string, number>;
@@ -144,11 +152,14 @@ export class WorkerClient {
     return data;
   }
 
-  async health(): Promise<{ status: string; version: string }> {
+  /** Unauthenticated liveness + readiness. `ready: false` (starting or shutting down) counts as not healthy. */
+  async health(): Promise<{ status: string; version: string; ready?: boolean }> {
     try {
       const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) throw new Error(`health check returned HTTP ${res.status}`);
-      return (await res.json()) as { status: string; version: string };
+      const body = (await res.json()) as { status: string; version: string; ready?: boolean };
+      if (body.status !== 'ok' || body.ready === false) throw new Error('worker is not ready yet');
+      return body;
     } catch (err) {
       throw new ProviderError(
         'WORKER_UNAVAILABLE',
