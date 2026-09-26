@@ -84,9 +84,9 @@ func run(o options, u *ui) int {
 	u.say("==============================================================")
 	u.say("This installs AI Story Studio for your Windows user (no administrator rights needed).")
 	u.say("- It needs an internet connection for about 5-15 minutes.")
-	u.say("- It installs Node.js, Python or FFmpeg ONLY if they are missing (via WinGet).")
+	u.say("- It installs Node.js and FFmpeg (and the optional Python) ONLY if they are missing (via WinGet).")
 	u.say("- It does NOT install CUDA or NVIDIA drivers; your PC needs no NVIDIA GPU.")
-	u.say("- The app starts in MOCK mode: no cloud GPU, no costs, until you enable it yourself.")
+	u.say("- Nothing is rented or paid until you connect your own RunPod key in the app; no AI models are downloaded to this PC.")
 	u.say("")
 
 	zr, err := openPayload()
