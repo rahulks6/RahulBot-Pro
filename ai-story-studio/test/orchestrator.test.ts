@@ -89,6 +89,34 @@ describe(
       assert.equal(meta.madeForKids, null, 'the audience is left for the person to choose');
       assert.equal(meta.containsSyntheticMedia, true);
       assert.match((JSON.parse(short.metadata_json) as { title: string }).title, /#Shorts$/);
+
+      // A second video reuses the library characters: the same records, their approved looks, no new design.
+      const castOf = (storyId: string) =>
+        [
+          ...new Set(
+            s.stories
+              .tree(storyId)
+              .scenes.flatMap((sc) => sc.shots.flatMap((x) => x.characters.map((c) => c.character_id))),
+          ),
+        ].sort();
+      const v2 = s.orchestrator.create({
+        idea: 'Milo and Nia build a raft to cross the river before the rain comes.',
+        length: 'custom',
+        customMinutes: 0.3,
+        styleId: '3d_kids',
+        makeEpisode: true,
+        makeShorts: false,
+        shortsCount: 0,
+        language: 'en',
+        narrator: 'female',
+        musicMood: 'auto',
+        reviewPlan: true,
+      });
+      await s.orchestrator.start(v2.id);
+      const second = s.videos.get(v2.id);
+      assert.equal(second.status, 'plan_review');
+      assert.deepEqual(castOf(second.story_id!), castOf(done.story_id!), 'same character records');
+      assert.equal((JSON.parse(second.plan_json) as { newLooks: number }).newLooks, 0, 'no new designs');
     });
 
     it('a shot that keeps failing: 3 attempts, then "needs attention" with Skip, then CONTINUE finishes', async () => {

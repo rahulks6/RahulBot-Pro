@@ -2,9 +2,13 @@
 
 AI Story Studio is a private, local-first production tool for our own original story videos. It is not SaaS: there are no accounts, billing or multi-tenancy. The target workflow is:
 
-`IDEA → STORY PACKAGE → REVIEW → CREATE VIDEO → REVIEW SHOTS → BUILD FINAL → QUALITY CHECK → EXPORT`
+`IDEA → GENERATE (real AI on a RunPod GPU) → FULL EPISODE + SHORTS → REVIEW → APPROVE → YOUTUBE`
 
-Phase 1 built the local foundation. Phase 2 added the local Python AI worker (§16). Phase 3, the current phase, adds real open-source model adapters, a licence gate and the benchmark workflow (§17). Generation is still **mock only** and spends ₹0. This document describes the whole architecture and marks what is mocked.
+Version 1.2 makes this one-idea flow the product (§20): Simple Mode, automatic story writing, the
+production orchestrator, Shorts, captions, thumbnails, YouTube publishing behind an approval, the
+first-run wizard and one AI storage location. Real AI on RunPod is the default; the mock providers
+remain only as the labelled **developer test mode** for automated tests. §1–§19 describe the
+foundation built in phases 1–5, which v1.2 reuses unchanged unless §20 says otherwise.
 
 ## 1. System overview
 
@@ -287,3 +291,53 @@ Studio (TypeScript)                                   Worker (Python, worker/ais
   - the `app_meta` and `cloud_tests` tables.
 
 See [CLOUD_GPU_SETUP.md](CLOUD_GPU_SETUP.md).
+
+## 20. Version 1.2: idea → video → YouTube
+
+```
+Simple Mode pages (src/web/pages/simple.ts, create.ts, library.ts, publish.ts, setup.ts)
+   │
+   ├─ EngineService (services/engine.ts) ── READY / NEEDS ATTENTION / DEVELOPER TEST MODE
+   │     └─ SecretStore (services/secrets.ts): AES-256-GCM, key protected by Windows DPAPI
+   │
+   ├─ Orchestrator (services/orchestrator.ts)   one video at a time, stage by stage:
+   │     story ─ plan ─ characters ─ images ─ animation ─ final ─ captions ─ shorts ─ thumbnail ─
+   │     metadata ─ quality ─ READY FOR REVIEW
+   │     • story: StoryWriter (services/story-writer.ts) → TextModel on the worker (/generate/text)
+   │       → validated/repaired script → Story Package → the existing importer
+   │     • images/animation: the existing GenerationService, per shot, with TechnicalCheck
+   │       (services/technical-check.ts); retry rounds: normal → safe settings (offload, tiling,
+   │       smaller) → a fresh GPU session; then "Scene X needs attention" (Retry / Review / Skip)
+   │     • final: the existing BUILD FINAL (FFmpeg, 1920×1080, 30 fps, H.264/AAC)
+   │     • shorts (services/shorts.ts): coherent runs of consecutive shots ≤ 58 s copied into a
+   │       vertical story (stories.format = 'vertical') and drawn again natively at 9:16
+   │     • captions (services/captions.ts), thumbnails (services/thumbnails.ts),
+   │       metadata drafts (services/metadata.ts: audience left unset, AI disclosure on)
+   │
+   ├─ GpuSupervisor + gpu-selection.ts: compatibility → VRAM → past success → quality →
+   │     reliability → speed; up to three GPU types tried; cleanup always runs
+   │
+   ├─ Publisher (services/publisher.ts) + YoutubeClient (services/youtube.ts)
+   │     OAuth 2.0 installed-app flow (the person's own Desktop client, PKCE S256, loopback redirect,
+   │     offline access; tokens in the SecretStore). Nothing uploads without APPROVE on a review
+   │     form with the audience chosen. Resumable upload (8 MB chunks, continues after a drop or a
+   │     restart), captions.insert, thumbnails.set, status mapping incl. BLOCKED BY API RESTRICTION.
+   │
+   ├─ RealModeTest (services/real-mode-test.ts): milestone 1 on a real GPU, PASS/FAIL per step
+   │
+   └─ StorageMover (services/storage-location.ts): AI STORAGE LOCATION overview; changing it copies
+         the database (VACUUM INTO), keys and files, points .env's DATA_DIR there and asks for a
+         restart. The old folder is never deleted by the app.
+```
+
+**Database (migrations 0006–0008).** `generation_jobs.progress/status_detail` (live worker
+progress); `videos`, `video_shorts`, `publications` (Simple Mode videos, their Shorts and YouTube
+state); `stories.format`, `video_shorts.story_id`, `video_shorts.thumbnails_json`. Every migration runs
+after an automatic `VACUUM INTO` backup.
+
+**Worker 1.2.0.** Adds `/generate/text` (Qwen2.5-7B-Instruct with transformers) to the catalog. The
+image is still code only; weights download on the GPU.
+
+**Honesty rules in code.** A placeholder output is always labelled (`is_mock`), a video made from
+placeholders says so on its page, a clip whose picture does not move fails the technical check,
+and a YouTube upload that YouTube keeps private is reported as BLOCKED, not as success.

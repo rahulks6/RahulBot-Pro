@@ -35,6 +35,12 @@ export function registerSimplePages(web: Web): void {
   });
 
   r.get('/', (req) => {
+    // A fresh install opens the setup wizard (an existing library, e.g. after an upgrade, does not).
+    const fresh =
+      !s.settings.get('app').firstRunComplete &&
+      !s.videos.list({ limit: 1 }).length &&
+      !(s.db.scalar<number>('SELECT COUNT(*) FROM projects') ?? 0);
+    if (fresh) return { type: 'redirect', location: '/welcome' };
     const engine = s.engine.status();
     const recent = s.videos.list({ limit: 6 });
     const body = html`<p class="subtitle">Turn your idea into a complete animated video.</p>
@@ -318,7 +324,9 @@ export function registerSimplePages(web: Web): void {
       'AI Engine',
       html`<p>
           ${engine.state === 'READY'
-            ? html`<span class="badge good">READY ✓</span>`
+            ? html`<span class="badge good"
+                >${engine.engine === 'runpod' ? 'RUNPOD READY ✓' : 'READY ✓'}</span
+              >`
             : html`<span class="badge warn">Needs attention</span>`}
           ${engine.headline}
         </p>
@@ -470,7 +478,9 @@ export function engineCard(st: EngineStatus, withLink = true): SafeHtml {
   return card(
     'AI Engine',
     st.state === 'READY'
-      ? html`<p class="engine ready"><strong>READY ✓</strong> ${st.headline}</p>
+      ? html`<p class="engine ready">
+            <strong>${st.engine === 'runpod' ? 'RUNPOD READY ✓' : 'READY ✓'}</strong> ${st.headline}
+          </p>
           ${withLink ? html`<p class="muted"><a href="/settings/ai-engine">AI Engine settings</a></p>` : ''}`
       : html`<p class="engine attention">
             <strong>${st.state === 'DEVELOPER_TEST_MODE' ? 'Developer test mode' : 'Needs attention'}</strong>

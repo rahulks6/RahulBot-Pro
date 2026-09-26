@@ -55,7 +55,8 @@ describe('Create flow (Simple Mode, developer test mode)', { skip: !ff && 'FFmpe
     videoId = /\/videos\/(vid_[a-z0-9]+)/.exec(started.url)![1]!;
     await s.orchestrator.start(videoId).catch(() => undefined);
     const page = await web.get(`/videos/${videoId}`);
-    assert.match(page.text, /Video Ready/, page.text.slice(0, 600));
+    assert.match(page.text, /YOUR VIDEO IS READY/, page.text.slice(0, 600));
+    assert.match(page.text, /REVIEW YOUTUBE PACKAGE/);
     assert.match(page.text, /PLACEHOLDERS \(developer test mode\) — not real AI/);
     assert.match(page.html, /<video\s+class="player"\s+controls/);
     for (const stage of [

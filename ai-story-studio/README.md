@@ -1,18 +1,18 @@
 # AI Story Studio
 
-A private, local-first production studio for **original** story videos. It takes an idea to a Story Package, then through review, generation, shot review, BUILD FINAL and quality checks to a ready-to-upload 1080p video. It is built for our own production, not as SaaS, and human review stays in the loop.
+A private, local-first studio for **original** animated story videos. You type an idea; it writes the story, designs the characters, draws and animates every shot with real open-source AI models on a rented **RunPod** GPU, records the voices, and builds a **1080p full episode** plus **9:16 Shorts**, captions, thumbnails and YouTube metadata. You review, then approve, and it uploads or schedules through the official YouTube API. Your PC needs **no NVIDIA GPU**.
 
-> **v1.1.1 — stabilization release** (full audit, Add Story fix, workflow tests, configurable storage paths): see [docs/BUG_FIX_REPORT.md](docs/BUG_FIX_REPORT.md) and [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md).
+> **v1.2.0 — idea → video → YouTube.** Simple Mode (Home, Create, My Videos, Characters, Publish, Settings), a first-run setup wizard, the AI Engine page (RunPod key stored encrypted), automatic story writing, the production orchestrator with automatic retries, Shorts drawn natively in 9:16, captions, thumbnails, YouTube publishing behind a human approval, one AI storage location, and an uninstaller. **Real AI is the default**; the mock providers remain only as the labelled developer test mode for automated tests.
 >
-> **v1.1.0 — Phase 5: real cloud GPU generation.** The studio can now rent a temporary NVIDIA GPU on **RunPod**, run real open-source models on it, download and validate every result, and terminate the GPU automatically, so your PC needs **no NVIDIA GPU**. BUILD FINAL encodes a real 1080p H.264/AAC MP4 with local FFmpeg. **Mock mode stays the default** (`MOCK_GENERATION=true`, `ENABLE_CLOUD_GPU=false`): nothing is rented until you unlock `.env`, save an API key and switch cloud generation on. Start with [docs/RUNPOD_SETUP.md](docs/RUNPOD_SETUP.md).
->
-> **Status (honest):** the RunPod integration is implemented and mock-tested; **live provider validation is pending** (no RunPod key or GPU was available during development). No real model has yet run on a real GPU. See [docs/PHASE5_COMPLETION_REPORT.md](docs/PHASE5_COMPLETION_REPORT.md).
+> **Status (honest):** everything is implemented and tested against local stand-ins (mock RunPod, mock worker, mock Google). **No real RunPod GPU, real model or real YouTube upload has been run by the developers** (no key or GPU was available). The in-app **Real Mode Test** is the first real check. See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+
+Setup guides: [RunPod](docs/RUNPOD_SETUP.md) · [Models](docs/MODEL_SETUP.md) · [YouTube](docs/YOUTUBE_SETUP.md) · [Real Mode Test](docs/REAL_MODE_TEST.md) · [Architecture](docs/ARCHITECTURE.md)
 
 This app is self-contained in `ai-story-studio/` and does not touch the trading-bot code in the rest of the repository.
 
 ## Quick start
 
-**Windows (easiest):** double-click **`AI-Story-Studio-Setup-1.1.1.exe`**. It copies the app to `%USERPROFILE%\AI-Story-Studio`, checks Node.js, Python and FFmpeg (installing only what is missing), builds the app and creates the **AI Story Studio** desktop shortcut. Running it again upgrades the app and keeps your `.env` and `data` folder. See [docs/WINDOWS_SETUP_EXE.md](docs/WINDOWS_SETUP_EXE.md).
+**Windows (easiest):** double-click **`AI-Story-Studio-Setup-1.2.0.exe`**. It copies the app to `%USERPROFILE%\AI-Story-Studio`, checks Node.js and FFmpeg (and the optional Python), installing only what is missing, builds the app, and creates the desktop and Start Menu shortcuts and the **Settings → Apps** entry (Uninstall keeps your data). The first start opens the setup wizard. Running it again upgrades the app and keeps your `.env` and `data` folder. See [docs/WINDOWS_SETUP_EXE.md](docs/WINDOWS_SETUP_EXE.md).
 
 **Windows (from the zip):** run `installer\windows\Install-AI-Story-Studio.bat`, then start the app from the **AI Story Studio** desktop shortcut. See [docs/TROUBLESHOOTING_WINDOWS.md](docs/TROUBLESHOOTING_WINDOWS.md).
 
@@ -20,26 +20,26 @@ This app is self-contained in `ai-story-studio/` and does not touch the trading-
 
 ```bash
 cd ai-story-studio
-cp .env.example .env        # optional; the defaults are safe (mock mode, localhost only)
+cp .env.example .env        # optional; real AI by default, localhost only (connect RunPod in the app)
 npm install                 # dev tools only: typescript, eslint, prettier, @types/node
-npm run seed                # build the demo project end to end in mock mode
+MOCK_GENERATION=true npm run seed   # optional demo project with labelled placeholders (developer test mode)
 npm run dev                 # http://127.0.0.1:3000
 ```
 
-| Script                 | What it does                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------ |
-| `npm run dev`          | Run from TypeScript sources with auto-restart                                                          |
-| `npm run build`        | Compile to `dist/`                                                                                     |
-| `npm start`            | Run the compiled build                                                                                 |
-| `npm run migrate`      | Apply database migrations (they also run automatically on start)                                       |
-| `npm run seed`         | Create the demo project (mock mode only)                                                               |
-| `npm test`             | 212 tests (Node test runner; mock RunPod + mock registry + fake cloud worker; real worker run; FFmpeg) |
-| `npm run check:image`  | Can RunPod pull the worker image? (anonymous check; see docs/RUNPOD_SETUP.md step 3)                   |
-| `npm run worker`       | Start the local Python AI worker (Phase 2) — see [worker/README.md](worker/README.md)                  |
-| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (85 tests)                                                         |
-| `npm run lint`         | ESLint + Prettier check                                                                                |
-| `npm run typecheck`    | `tsc` strict type checking                                                                             |
-| `npm run check`        | lint, typecheck, test and build, in that order                                                         |
+| Script                 | What it does                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `npm run dev`          | Run from TypeScript sources with auto-restart                                                      |
+| `npm run build`        | Compile to `dist/`                                                                                 |
+| `npm start`            | Run the compiled build                                                                             |
+| `npm run migrate`      | Apply database migrations (they also run automatically on start)                                   |
+| `npm run seed`         | Create the demo project (mock mode only)                                                           |
+| `npm test`             | 335 tests (Node test runner; mock RunPod, mock Google, fake cloud worker; real worker run; FFmpeg) |
+| `npm run check:image`  | Can RunPod pull the worker image? (anonymous check; see docs/RUNPOD_SETUP.md step 3)               |
+| `npm run worker`       | Start the local Python AI worker (Phase 2) — see [worker/README.md](worker/README.md)              |
+| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (123 tests)                                                    |
+| `npm run lint`         | ESLint + Prettier check                                                                            |
+| `npm run typecheck`    | `tsc` strict type checking                                                                         |
+| `npm run check`        | lint, typecheck, test and build, in that order                                                     |
 
 Data (SQLite database, media, logs) goes to `DATA_DIR`, which defaults to `./data` and is git-ignored.
 

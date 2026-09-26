@@ -48,6 +48,8 @@ export interface PageOpts {
   cloudGpu: boolean;
   /** Simple Mode (default) hides production tools and technical detail. */
   simple?: boolean;
+  /** A change that needs a restart (e.g. a new AI storage location). */
+  restart?: string | null;
   /** Phase 5: current generation mode and live cloud GPU status (always shown). */
   mode?: {
     kind: 'MOCK' | 'LOCAL_WORKER' | 'REAL_CLOUD';
@@ -131,7 +133,9 @@ function modeBanner(opts: PageOpts): SafeHtml {
 
 export function page(title: string, active: string, body: SafeHtml, opts: PageOpts): SafeHtml {
   const simple = opts.simple ?? false;
-  const banner = simple ? simpleBanner(opts) : modeBanner(opts);
+  const banner = html`${opts.restart
+    ? html`<div class="banner danger mode"><strong>RESTART NEEDED</strong> — ${opts.restart}</div>`
+    : ''}${simple ? simpleBanner(opts) : modeBanner(opts)}`;
   const nav = (simple ? SIMPLE_NAV : NAV).filter(
     ([href]) => navAvailable.paths.size === 0 || navAvailable.paths.has(href),
   );

@@ -41,7 +41,7 @@ Choose **one** way to build and push the image: **A** or **B**. Then do **Make i
 1. On **github.com**, open your repository → **Releases** → **Draft a new release**.
 2. Click **Choose a tag**, type `ai-story-studio-worker-v1.2.0`, and click **Create new tag … on publish**.
 3. Set **Target** to the branch with AI Story Studio (`claude/story-studio-audio-pipeline-w7vu3o`, or `main` after merging).
-4. Enter a title, e.g. `Worker image 1.1.0`, and click **Publish release**.
+4. Enter a title, e.g. `Worker image 1.2.0`, and click **Publish release**.
 5. **Actions** tab: wait for **AI Story Studio worker image** to show a green tick (20–40 minutes).
 
 It pushes `ghcr.io/rahulks6/ai-story-studio-worker:1.2.0` using GitHub's own short-lived token. You create no token.
@@ -104,7 +104,7 @@ docker rm -f ais-worker-test
 The expected output, line by line:
 
 - the `inspect` line shows `["python","-m","ais_worker"] {"8765/tcp":{}} amd64`;
-- `/health` returns `{"status": "ok", "version": "1.1.0", "ready": true}`;
+- `/health` returns `{"status": "ok", "version": "1.2.0", "ready": true}`;
 - `/models` returns `401`, because the worker refuses requests without the session token.
 
 **B6. Push the image, then sign out again**
@@ -149,90 +149,75 @@ The first two must print **IMAGE EXISTS AND PUBLICLY PULLABLE**. The Docker comm
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **IMAGE EXISTS AND PUBLICLY PULLABLE** | Done. RunPod can download it.                                                                                                           |
 | **IMAGE REQUIRES AUTHENTICATION**      | Still private, **or never pushed**: GitHub answers both the same way to anonymous users. Finish option A or B, then **Make it public**. |
-| **IMAGE DOES NOT EXIST**               | Wrong name or tag (for example `1.1.0` was not pushed), or no `linux/amd64` build.                                                      |
+| **IMAGE DOES NOT EXIST**               | Wrong name or tag (for example `1.2.0` was not pushed), or no `linux/amd64` build.                                                      |
 | **REGISTRY UNREACHABLE**               | This PC could not reach `ghcr.io` (internet, proxy, firewall or antivirus). This says nothing about the image; try again.               |
 
 ### Run the free dry run again
 
 In AI Story Studio, open **Cloud GPU → Run dry-run diagnostics (free)**. **Worker image** should now be **OK**.
 
-## Step 4: Unlock cloud mode in the `.env` file
+## Step 4: Connect RunPod in AI Story Studio
 
-The two master switches live in the `.env` file, so they cannot be flipped by accident.
+Real AI on RunPod is the default in version 1.2: there is nothing to unlock in `.env`.
 
-1. Close AI Story Studio (close its black window).
-2. Open the AI Story Studio folder, right-click **`.env`** → **Open with** → **Notepad**.
-3. Change these two lines:
-   ```
-   MOCK_GENERATION=false
-   ENABLE_CLOUD_GPU=true
-   ```
-4. Optionally add hard limits that the app can never exceed (in rupees and minutes), for example:
-   ```
-   MAX_GPU_HOURLY_RATE=60
-   SESSION_BUDGET=150
-   MAX_GPU_LIFETIME_MINUTES=90
-   ```
-5. Save the file and start AI Story Studio again from the desktop shortcut.
+1. Start AI Story Studio. The first start opens the **setup wizard**; step 3 is **Connect RunPod**.
+   (Later, the same is on **Settings → AI Engine**.)
+2. Paste the API key and press **Save and test** (on the AI Engine page: **TEST CONNECTION**, then
+   **SAVE**). The key is stored **encrypted** on this PC (Windows data protection), never shown again
+   (only its last four characters), never written to a log, a backup or a project export.
+   - "Not saved: RunPod authentication failed" means the key was mistyped or has no write permission.
+     Create a new one.
+3. The page shows **RUNPOD CONNECTED ✓**, and Home shows **AI Engine: RUNPOD READY ✓**. If it says
+   **Needs attention**, each problem is listed with its one fix (for example the worker image of step 3
+   is not public yet).
 
-The banner at the top now says **MODE: MOCK PROVIDERS**: cloud is unlocked but not switched on yet.
+Test and save never rent a GPU.
 
-## Step 5: Save and test the API key
+## Step 5: The Real Mode Test (milestone 1)
 
-1. In the app, open **Cloud GPU** in the left menu.
-2. Under **Provider and API key**, choose **RunPod**, paste your key into **API key**, and click **Save**. The key is stored only on this PC (`data\secrets.json`), and the page only ever shows its last four characters.
-3. Click **Test Connection**. You should see "key accepted" and "API contract verified".
-   - "RunPod authentication failed. Check your API key." means the key was mistyped or has no write permission. Create a new one.
-4. Click **Run dry-run diagnostics (free)**. It checks the key, the GPU list and prices, the worker image and the models **without renting anything**. You should see:
+**Settings → AI Engine → RUN REAL MODE TEST** proves the whole chain once, for a few rupees:
 
-   ```
-   OK   Provider implemented
-   OK   API key saved
-   OK   API credentials and connectivity
-   OK   Compatible GPUs and price      (e.g. "3 GPU type(s) with ≥ 24 GB VRAM in stock for pods in secure cloud (CUDA ≥ 12.6) at or below your ₹60/h limit; cheapest: …")
-   OK   Worker image                   (IMAGE EXISTS AND PUBLICLY PULLABLE)
-   OK   Model: image / video / tts
-   OK   Cost limits
-   ```
+1. The app shows the GPU it would rent, its price and the estimated cost, and waits for **CONFIRM AND RUN**.
+2. It rents the GPU, starts the worker, makes one real picture, animates it, speaks one narration line,
+   builds a short MP4 on this PC with FFmpeg, checks the file (resolution, decoding, not frozen, not
+   black) and **terminates the GPU**.
+3. Each step shows **PASS**, **FAIL** or **BLOCKED** with the reason. The GPU is terminated even when a
+   step fails. See [REAL_MODE_TEST.md](REAL_MODE_TEST.md).
 
-   The four real-generation gate lines show **FAIL/OFF** until you turn them on, and that is expected:
-   - `MOCK_GENERATION=false` and `ENABLE_CLOUD_GPU=true` are set in `.env` (step 4);
-   - **Cloud GPU enabled** is switched on in step 6;
-   - **Real generation enabled** is switched on in step 7.
+Afterwards, check the **RunPod console → Pods** page: no pod named `ais-…` should be running.
 
-   You can run the diagnostics before any of that. Nothing is rented either way.
-   - **Compatible GPUs and price** asks RunPod for pod stock in your cloud type:
+## Step 6: Make a video
 
-     ```
-     GET /v2/catalog/gpus?include=AVAILABILITY&product=POD&count=1&cloud=SECURE&minCudaVersion=12.6
-     ```
+Press **+ CREATE NEW VIDEO**, describe the story, choose the length and style, and press **GENERATE**.
+The studio rents a suitable GPU, writes the story, designs the characters, draws and animates every
+shot, records the voices, builds the full episode and the Shorts on this PC, checks them, and
+terminates the GPU. You review the result, then approve publishing (see
+[YOUTUBE_SETUP.md](YOUTUBE_SETUP.md)).
 
-     A GPU counts only if all of these hold:
-     - it has at least the VRAM your models need (24 GB by default);
-     - RunPod reports it in stock for pods (LOW, MEDIUM or HIGH);
-     - its hosts offer CUDA 12.6 or newer (the worker image's CUDA);
-     - its current price for your cloud type is at or below your limit.
+## Step 7: Advanced Mode (optional)
 
-     If none qualifies, the message says which condition ruled the GPUs out, and shows RunPod's own reason for any refused request. A listed price alone is never treated as "available".
+**Advanced Mode → Cloud GPU** keeps the expert controls: the free dry-run diagnostics, allowed GPU
+types, cloud type (secure/community), network volume, the worker image name, models and licences, and
+the individual switches. The dry run asks RunPod for stock and prices and checks the worker image
+**without renting anything**:
 
-   - The app never rents a GPU while **Worker image** is not OK.
+```
+GET /v2/catalog/gpus?include=AVAILABILITY&product=POD&count=1&cloud=SECURE&minCudaVersion=12.6
+```
 
-## Step 6: Switch on Cloud GPU and run the first test
+A GPU counts only if it has enough VRAM for the models of the job, RunPod reports it in stock for pods,
+its hosts offer CUDA 12.6 or newer, and its price is within your limits. Among those the studio prefers,
+in order: compatibility, enough VRAM, earlier successful starts, quality headroom, reliability, speed.
+If a GPU type cannot be started it tries up to two other suitable types. The app never rents a GPU
+while the worker image is not publicly pullable.
 
-1. Under **Switches**, tick **Cloud GPU enabled** and click **Save switches**. Leave "Real generation" off for now.
-2. Click **Start Test GPU…**, choose **One spoken sentence**, and click **Steps 1–3**. Nothing is rented yet: the app shows the GPU it found and its price.
-3. Click **Rent the GPU and run the test**. The page follows each step: renting, starting the worker, health check, generating one short sentence, downloading, checking the file, and **terminating the GPU**.
-4. The first test takes longer because the GPU downloads the speech model. At the end you see **SUCCESS** or **FAILURE**, the GPU used, the runtime, the estimated cost (usually a few rupees) and where the test file was saved.
+Optional hard limits in `.env` that the app can never exceed (rupees and minutes):
 
-If the test fails, the GPU is still terminated automatically; read the error on the page. Then check the **RunPod console → Pods** page: it should list no running pod named `ais-…`.
-
-## Step 7: Switch on real generation
-
-1. Tick **Real generation enabled** and click **Save switches**. The banner turns red: **MODE: REAL CLOUD**.
-2. Optional: in **Models (cloud)**, read the Stable Audio Open licence. If it fits how you publish, click **I have read and accept the licence**. Without this, music and sound effects are not generated in the cloud.
-3. Start small: generate **one shot's image** first, check it, then continue with the whole story.
-
-From now on, when you press **Generate** the studio rents a GPU, runs the work, downloads and checks each file, and terminates the GPU when nothing is left to do.
+```
+MAX_GPU_HOURLY_RATE=60
+SESSION_BUDGET=150
+MAX_GPU_LIFETIME_MINUTES=90
+```
 
 ## Step 8: Safety controls (how the studio protects your money)
 
@@ -251,10 +236,6 @@ From now on, when you press **Generate** the studio rents a GPU, runs the work, 
 
 **Always check once in a while:** open the RunPod console → **Pods**. Nothing should be running when you are not generating.
 
-## Turning cloud mode off again
-
-Untick the two switches on the **Cloud GPU** page. For a complete lock, set `MOCK_GENERATION=true` and `ENABLE_CLOUD_GPU=false` again in `.env` and restart.
-
 ## Removing the key
 
-Click **Remove saved key** on the **Cloud GPU** page. Also delete the key in the RunPod console (**Settings → API Keys**) if you no longer use it.
+**Settings → AI Engine → DELETE KEY** removes it from this PC. Also delete the key in the RunPod console (**Settings → API Keys**) if you no longer use it. Without a key nothing can be rented.

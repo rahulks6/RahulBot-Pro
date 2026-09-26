@@ -1,13 +1,16 @@
 # Models for cloud generation
 
-The cloud worker image ships a catalog (`worker/models.cloud.json`). You choose on **Cloud GPU → Models (cloud)** which models are enabled, and you acknowledge conditional licences there. Each GPU session receives those choices (`WORKER_ENABLED_MODELS`, `WORKER_LICENSE_ACK`).
+The cloud worker image (`ghcr.io/rahulks6/ai-story-studio-worker:1.2.0`) ships a catalog (`worker/models.cloud.json`). In **Simple Mode nothing needs choosing**: the defaults below are used and the GPU is picked for them automatically. In **Advanced Mode**, **Cloud GPU → Models (cloud)** enables or disables models and records the acknowledgement of conditional licences. Each GPU session receives those choices (`WORKER_ENABLED_MODELS`, `WORKER_LICENSE_ACK`).
 
-> **Status:** these adapters are code-complete and contract-tested against stand-ins for the libraries. **No model has run on a real GPU yet.** The first guided GPU test is the first real run.
+No model weights are inside the Windows installer or the worker image: they download on the rented GPU the first time they are used.
+
+> **Status:** these adapters are code-complete and contract-tested against stand-ins for the libraries. **No model has run on a real GPU yet.** The **Real Mode Test** (Settings → AI Engine, see REAL_MODE_TEST.md) is the first real run.
 
 ## Default models
 
 | Type           | Model                       | Licence (Sept 2026, re-check)                        | Min / rec. VRAM | Download |
 | -------------- | --------------------------- | ---------------------------------------------------- | --------------- | -------- |
+| Story writing  | Qwen2.5-7B-Instruct         | Apache-2.0                                           | 18 / 24 GB      | ~15 GB   |
 | Image          | FLUX.1 [schnell]            | Apache-2.0                                           | 24 / 48 GB      | ~34 GB   |
 | Image (alt.)   | FLUX.2 [klein] 4B, disabled | Apache-2.0                                           | 12 / 24 GB      | ~16 GB   |
 | Image → video  | Wan 2.2 TI2V 5B             | Apache-2.0                                           | 24 / 48 GB      | ~34 GB   |
@@ -22,7 +25,11 @@ Non-commercial models (FLUX.2 [dev], F5-TTS, MusicGen, Wav2Lip) are **not** in t
 
 ## Which GPU
 
-24 GB of VRAM (RTX A5000, RTX 4090, L4, RTX 3090) runs every default model with CPU offloading. 48 GB (A6000, L40S) is faster. Leave **Allowed GPU types** empty to let the studio pick the cheapest suitable GPU under your price limit.
+24 GB of VRAM (RTX A5000, RTX 4090, L4, RTX 3090) runs every default model with CPU offloading. 48 GB (A6000, L40S) is faster. Leave **Allowed GPU types** empty and the studio chooses by, in this order: compatibility (CUDA version the image needs), enough VRAM for the models of that job, earlier successful starts, quality headroom, reliability (stock), then speed — not simply the cheapest. If a GPU type cannot be started, it tries up to two other suitable types. Your per-video, daily and monthly limits still apply.
+
+## Story writing
+
+The script (title, scenes, shots, dialogue, narration) is written by Qwen2.5-7B-Instruct on the same RunPod GPU session, before the pictures. The app checks the script's structure and asks the model to repair it (up to three attempts); long videos are written as an outline first, then one call per scene. If writing fails, the video stops at **Writing the story** with the reason and the GPU is released.
 
 ## Keeping downloads between sessions
 

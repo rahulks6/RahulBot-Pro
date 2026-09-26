@@ -46,6 +46,116 @@ orchestrator, Shorts, captions files, thumbnails, YouTube metadata, YouTube OAut
 scheduling, the Publish page and the first-run wizard. Mock generation was also still the
 user-facing default.
 
-## Status by feature
+## Status by feature (v1.2.0)
 
-The live table is kept up to date at the end of this file.
+"Automated" = executed in the test suite with stand-ins for RunPod, the AI models and Google, and real
+FFmpeg. Everything that needs a real RunPod GPU, a real model or the real YouTube API is **BLOCKED**
+here and becomes PASS/FAIL only when you run it (start with the Real Mode Test).
+
+| #   | Item                         | Status  | What was executed / what is missing                                                                                                                                                                                                      |
+| --- | ---------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Application Startup          | PASS    | Automated start-up tests; Windows CI installs the setup .exe, starts the app and loads it (run 36269019843).                                                                                                                             |
+| 2   | Database                     | PASS    | Migrations 0001–0008 with automatic `VACUUM INTO` backup first (automated).                                                                                                                                                              |
+| 3   | Simple Mode                  | PASS    | Home, Create, My Videos, Characters, Publish, Settings through real HTTP forms (automated) and in Microsoft Edge (Windows CI).                                                                                                           |
+| 4   | Advanced Mode                | PASS    | Every Advanced page opened in Edge (Windows CI); route tests (automated).                                                                                                                                                                |
+| 5   | Runpod Connection            | BLOCKED | Needs your API key. Test/save/replace/delete run against a mock RunPod (automated PASS).                                                                                                                                                 |
+| 6   | Runpod GPU Provisioning      | BLOCKED | Needs a real RunPod account. GPU ranking, fallback over 3 GPU types, budget limits and cleanup: automated against the mock.                                                                                                              |
+| 7   | Runpod Worker                | BLOCKED | Worker 1.2.0 code: 123 worker tests PASS; the image must be published to GHCR and started on a real GPU.                                                                                                                                 |
+| 8   | CUDA                         | BLOCKED | No NVIDIA GPU in the development machine.                                                                                                                                                                                                |
+| 9   | Real Image Generation        | BLOCKED | FLUX.1 [schnell] adapter contract-tested with stand-ins only.                                                                                                                                                                            |
+| 10  | Character Consistency        | BLOCKED | Reference images are passed to the image model (automated); consistency can only be judged on real images.                                                                                                                               |
+| 11  | Real Image-to-Video          | BLOCKED | Wan 2.2 TI2V adapter contract-tested only. A clip that does not move fails the technical check (automated).                                                                                                                              |
+| 12  | Real TTS                     | BLOCKED | Kokoro adapter contract-tested only.                                                                                                                                                                                                     |
+| 13  | Music                        | BLOCKED | Stable Audio Open adapter contract-tested only (licence acknowledgement required).                                                                                                                                                       |
+| 14  | Ambience                     | BLOCKED | As Music.                                                                                                                                                                                                                                |
+| 15  | SFX                          | BLOCKED | As Music.                                                                                                                                                                                                                                |
+| 16  | Upscaling                    | BLOCKED | The FFmpeg Lanczos baseline runs in the worker tests with real FFmpeg; on a RunPod GPU (and Real-ESRGAN) it is not executed.                                                                                                             |
+| 17  | Story Generation             | BLOCKED | Qwen2.5-7B on the worker is not run for real. Prompting, JSON extraction, validation, repair (3 attempts), outline-then-scenes and import: automated with a stand-in model.                                                              |
+| 18  | Production Planning          | PASS    | Plan (shots, length, new looks) and the optional plan review (automated).                                                                                                                                                                |
+| 19  | Character Reuse              | PASS    | Library characters are reused by a second video: same records, approved looks, 0 new designs (automated).                                                                                                                                |
+| 20  | Scene Generation             | BLOCKED | Needs real models; the scene loop runs with placeholders (automated).                                                                                                                                                                    |
+| 21  | Shot Generation              | BLOCKED | As Scene Generation.                                                                                                                                                                                                                     |
+| 22  | Auto Production Orchestrator | PASS    | Idea → READY FOR REVIEW end to end in developer test mode with real FFmpeg, restart recovery, cancel (automated). With real AI: BLOCKED.                                                                                                 |
+| 23  | Automatic Retry              | PASS    | Normal → safe settings → fresh GPU session, then "needs attention" with Retry/Review/Skip (automated).                                                                                                                                   |
+| 24  | Timeline                     | PASS    | Automated.                                                                                                                                                                                                                               |
+| 25  | Audio Mix                    | PASS    | FFmpeg mixing and loudness on placeholder audio (automated).                                                                                                                                                                             |
+| 26  | FFmpeg                       | PASS    | Real FFmpeg in the tests and in Windows CI.                                                                                                                                                                                              |
+| 27  | 1080p Export                 | PASS    | 1920×1080, 30 fps, H.264/AAC verified with ffprobe (placeholder content, automated).                                                                                                                                                     |
+| 28  | Quality Check                | PASS    | Automated (decode, black, freeze, loudness, duration).                                                                                                                                                                                   |
+| 29  | Full Episode                 | BLOCKED | A full episode from real AI needs RunPod. With placeholders: automated PASS.                                                                                                                                                             |
+| 30  | Automatic Shorts             | PASS    | Coherent runs of consecutive shots ≤ 58 s, metadata, captions (automated, placeholders). Real content: BLOCKED.                                                                                                                          |
+| 31  | 9:16 Regeneration            | PASS    | Shorts are re-drawn as vertical stories and come out 1080×1920 (automated with stand-in models). Real models: BLOCKED.                                                                                                                   |
+| 32  | Captions                     | PASS    | SRT + WebVTT from the dialogue timeline (automated).                                                                                                                                                                                     |
+| 33  | Thumbnail                    | PASS    | Several candidates rendered with FFmpeg, choose or upload (automated).                                                                                                                                                                   |
+| 34  | YouTube Metadata             | PASS    | Title/description/tags/chapters within YouTube limits; audience left unset; AI disclosure on (automated).                                                                                                                                |
+| 35  | Google OAuth                 | BLOCKED | Needs your Google Cloud OAuth client. PKCE, state check, missing-scope refusal, encrypted tokens, refresh, revoke: automated against a mock Google server.                                                                               |
+| 36  | YouTube Upload               | BLOCKED | Real YouTube not reachable here. Resumable upload with a dropped connection and resume, approval gate, status mapping incl. BLOCKED BY API RESTRICTION: automated against the mock.                                                      |
+| 37  | Caption Upload               | BLOCKED | As YouTube Upload (captions.insert automated against the mock).                                                                                                                                                                          |
+| 38  | Thumbnail Upload             | BLOCKED | As YouTube Upload (thumbnails.set and the unverified-channel case automated against the mock).                                                                                                                                           |
+| 39  | Scheduling                   | BLOCKED | Private + publishAt, 15-minute minimum, daily/weekly template: automated against the mock.                                                                                                                                               |
+| 40  | Publish Dashboard            | PASS    | Ready for Review / Uploading / Scheduled / Published / Needs Attention (automated).                                                                                                                                                      |
+| 41  | First Real Short Test        | BLOCKED | Run **Settings → AI Engine → RUN REAL MODE TEST** on your PC.                                                                                                                                                                            |
+| 42  | 3–5 Minute Real Episode      | BLOCKED | Needs RunPod.                                                                                                                                                                                                                            |
+| 43  | 8–10 Minute Real Episode     | BLOCKED | Needs RunPod.                                                                                                                                                                                                                            |
+| 44  | Windows Installer            | PASS    | Setup .exe built and installed unattended on Windows CI, app started, upgrade keeps .env and data. The new Start Menu shortcut, Settings > Apps entry and uninstaller are checked by the CI run of the M9 commit — see the report below. |
+
+Also implemented in v1.2 (not in the list): the 7-step first-run wizard (PASS, automated), the AI
+storage location with safe copy-and-switch (PASS, automated), and the safe private YouTube test
+upload (BLOCKED for real; automated against the mock).
+
+## Report
+
+**Database migrations (v1.2):** `0006_job_progress.sql` (job progress), `0007_videos_publishing.sql`
+(videos, Shorts, publications), `0008_story_format.sql` (vertical stories, Short thumbnails). All are
+additive; a backup is taken before each runs.
+
+**Models selected (defaults, cloud):** Qwen2.5-7B-Instruct (story), FLUX.1 [schnell] (images),
+Wan 2.2 TI2V 5B (image → video), Kokoro 82M (speech: English, Hindi, Hinglish), Stable Audio Open 1.0
+(music, ambience, SFX — after licence acknowledgement), FFmpeg Lanczos (upscale). See
+[MODEL_SETUP.md](MODEL_SETUP.md).
+
+**Providers selected:** RunPod (GPU pods, REST API v2) for all AI; local FFmpeg for assembly,
+captions burn-in, thumbnails and checks; YouTube Data API v3 with Google OAuth 2.0 (installed-app
+flow) for publishing.
+
+**Tests (this machine, M9 commit):** app `npm run check` — lint, format, typecheck, build and 335
+tests, 0 failed, 1 skipped (Windows-only DPAPI test, which runs on Windows CI). Worker — ruff, ruff
+format, mypy, 123 tests passed, 0 failed. Real RunPod/GPU/model/YouTube tests: not run (BLOCKED).
+
+**RunPod configuration (defaults):** worker image `ghcr.io/rahulks6/ai-story-studio-worker:1.2.0`,
+secure cloud, GPU chosen automatically (compatibility → VRAM → success → quality → reliability →
+speed), one GPU at a time, ₹150 per video, container disk 40 GB, volume 60 GB, terminate after each
+batch, idle and lifetime limits, EMERGENCY STOP, start-up leftover check.
+
+**Known limitations:**
+
+- No real AI output has been produced or judged by the developers; quality, speed and cost per video
+  are unknown until the Real Mode Test and a first real video.
+- The first GPU session downloads tens of GB of model weights (several minutes) unless a network
+  volume is used.
+- New Google Cloud projects keep API uploads private until Google's API audit; the app reports this
+  as BLOCKED BY API RESTRICTION. Custom thumbnails need a verified channel.
+- In OAuth "Testing" mode Google may expire the YouTube connection after 7 days (reconnect).
+- Changing the AI storage location needs a restart; the old folder is kept and must be deleted by
+  you after checking.
+- Lip-sync is not part of the automatic flow.
+
+**Required external setup (only you can do this):**
+
+1. RunPod account with credit and an API key ([RUNPOD_SETUP.md](RUNPOD_SETUP.md) steps 1–2).
+2. Publish the worker image 1.2.0 to GHCR and make it public (step 3; the app never pushes it).
+3. Paste the key in the setup wizard or Settings → AI Engine.
+4. Google Cloud project, YouTube Data API v3, OAuth consent screen, Desktop-app OAuth client
+   ([YOUTUBE_SETUP.md](YOUTUBE_SETUP.md)).
+
+**Remaining blockers:** every BLOCKED row above needs your RunPod key, the published worker image and
+(for YouTube) your OAuth client. Nothing else blocks.
+
+**Exact next steps:**
+
+1. Install `AI-Story-Studio-Setup-1.2.0.exe` (from the Windows CI artifacts) and finish the wizard.
+2. Publish the worker image (RUNPOD_SETUP.md step 3), then **RUN REAL MODE TEST** and send the step
+   results (PASS/FAIL per step) back.
+3. Create one SHORT video; check the pictures, motion, voices and the Short.
+4. Connect YouTube and run the **SAFE PRIVATE TEST UPLOAD**.
+5. Then a 3–5 minute episode, and an 8–10 minute one.

@@ -16,7 +16,7 @@ export interface TestStudio extends Studio {
 
 /** Isolated studio: in-memory SQLite, temp storage, manual clock, mock providers, no log output (unless sinks are given). */
 export function testStudio(
-  opts: Omit<StudioOptions, 'dbPath' | 'clock'> & { failureRate?: number } = {},
+  opts: Omit<StudioOptions, 'dbPath' | 'clock'> & { failureRate?: number; firstRun?: boolean } = {},
 ): TestStudio {
   const dir = mkdtempSync(join(tmpdir(), 'ais-test-'));
   const clock = new ManualClock('2026-03-15T09:00:00.000Z');
@@ -47,6 +47,8 @@ export function testStudio(
     // Tests never depend on the GPU of the machine running them.
     hardware: opts.hardware ?? fakeHardware(null),
   });
+  // Tests start past the first-run wizard unless they ask for it.
+  if (!opts.firstRun) studio.settings.set('app', { ...studio.settings.get('app'), firstRunComplete: true });
   return Object.assign(studio, {
     clockCtl: clock,
     mockGpu: providers.gpu as MockGPUProvider,

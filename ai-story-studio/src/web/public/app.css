@@ -906,3 +906,35 @@ fieldset.audience small {
   display: block;
   color: var(--muted);
 }
+
+/* First-run wizard */
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  padding: 0;
+  margin: 0.5rem 0 1rem;
+  list-style: none;
+  counter-reset: step;
+}
+.wizard-steps li {
+  counter-increment: step;
+  color: var(--muted);
+}
+.wizard-steps li::before {
+  content: counter(step) '. ';
+}
+.wizard-steps li.current {
+  color: var(--ink);
+  font-weight: 700;
+}
+.wizard-steps li.done a {
+  color: var(--good);
+}
+ul.checks {
+  list-style: none;
+  padding: 0;
+}
+ul.checks li {
+  padding: 0.35rem 0;
+}

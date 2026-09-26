@@ -545,7 +545,7 @@ function videoReady(web: Web, v: Video): SafeHtml {
   const problems = qc.filter((q) => q.severity === 'fail');
   const warnings = qc.filter((q) => q.severity === 'warn');
   return html`${card(
-    'Video Ready',
+    'YOUR VIDEO IS READY',
     html`${master
         ? html`<video
             class="player"
@@ -571,7 +571,7 @@ function videoReady(web: Web, v: Video): SafeHtml {
       ])}
       <div class="actions">
         ${['ready'].includes(v.status) && web.router.match('GET', `/publish/${v.id}`)
-          ? html`<a class="btn primary" href="/publish/${v.id}">REVIEW & PUBLISH</a>`
+          ? html`<a class="btn primary" href="/publish/${v.id}">REVIEW YOUTUBE PACKAGE</a>`
           : ''}
         ${master ? html`<a class="btn" href="${mediaUrl(master.storage_key)}" download>Download MP4</a>` : ''}
         <a class="btn" href="/videos/${v.id}/edit">Edit scenes</a>

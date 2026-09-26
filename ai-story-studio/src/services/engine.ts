@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Studio } from '../app/studio.ts';
+import { setEnvValues } from '../config/env-file.ts';
 import { AppError, toAppError } from '../lib/errors.ts';
 import { parseJson } from '../lib/json.ts';
 import { appRoot } from '../lib/paths.ts';
@@ -256,21 +256,11 @@ export class EngineService {
    */
   async switchToRealAi(): Promise<{ backup: string | null }> {
     this.assertNoGpuRunning('changing the AI engine');
-    let backup: string | null = null;
-    let text = '';
-    if (existsSync(this.envFile)) {
-      text = readFileSync(this.envFile, 'utf8');
-      backup = `${this.envFile}.backup-${this.s.clock.now().toISOString().replace(/[:.]/g, '-')}`;
-      copyFileSync(this.envFile, backup);
-    }
-    const setLine = (src: string, name: string, value: string): string => {
-      const re = new RegExp(`^\\s*${name}\\s*=.*$`, 'm');
-      return re.test(src)
-        ? src.replace(re, `${name}=${value}`)
-        : `${src.replace(/\n?$/, '\n')}${name}=${value}\n`;
-    };
-    text = setLine(setLine(text, 'MOCK_GENERATION', 'false'), 'ENABLE_CLOUD_GPU', 'true');
-    writeFileSync(this.envFile, text);
+    const backup = setEnvValues(
+      this.envFile,
+      { MOCK_GENERATION: 'false', ENABLE_CLOUD_GPU: 'true' },
+      this.s.clock.now(),
+    );
     this.s.env.mockGeneration = false;
     this.s.env.enableCloudGpu = true;
     await this.turnOn();

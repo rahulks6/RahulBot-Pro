@@ -27,6 +27,7 @@ import { GpuSupervisor } from '../services/gpu-supervisor.ts';
 import { EngineService } from '../services/engine.ts';
 import { Orchestrator } from '../services/orchestrator.ts';
 import { Publisher } from '../services/publisher.ts';
+import { StorageMover } from '../services/storage-location.ts';
 import { YoutubeClient, type YoutubeEndpoints } from '../services/youtube.ts';
 import { RealModeTest } from '../services/real-mode-test.ts';
 import { VideoRepository } from '../repositories/videos.ts';
@@ -106,6 +107,10 @@ export interface Studio {
   orchestrator: Orchestrator;
   /** YouTube connection and uploads (always behind an approval). */
   publisher: Publisher;
+  /** AI STORAGE LOCATION: overview and moving everything to another folder. */
+  storageMover: StorageMover;
+  /** Set when a change only takes effect after a restart (new videos wait until then). */
+  restartRequired: string | null;
   close(): void;
 }
 
@@ -284,6 +289,8 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     engine: null as unknown as EngineService,
     orchestrator: null as unknown as Orchestrator,
     publisher: null as unknown as Publisher,
+    storageMover: null as unknown as StorageMover,
+    restartRequired: null,
     videos,
     realTest: new RealModeTest({
       db,
@@ -311,6 +318,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   studio.engine = new EngineService(studio, opts.envFile ? { envFile: opts.envFile } : {});
   studio.orchestrator = new Orchestrator(studio, storagePaths(env).tempRender);
   studio.publisher = new Publisher(studio, new YoutubeClient(secrets, opts.youtube ?? {}));
+  studio.storageMover = new StorageMover(studio, () => studio.engine.envFile);
   // After the runtime install: forget the old PyTorch result and restart an idle local worker.
   studio.runtime.onComplete = () => {
     studio.hardware.torch = null;

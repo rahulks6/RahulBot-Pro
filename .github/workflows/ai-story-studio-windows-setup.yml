@@ -74,7 +74,7 @@ jobs:
           & $exe -yes -no-shortcut -no-start -dir "$env:RUNNER_TEMP\AI Story Studio"
           if ($LASTEXITCODE -ne 0) { throw "setup exited with code $LASTEXITCODE" }
 
-      - name: Start the installed app and load the home page (real AI default, no RunPod key yet)
+      - name: Start the installed app (first run opens the setup wizard; real AI default, no RunPod key yet)
         run: |
           $dir = "$env:RUNNER_TEMP\AI Story Studio"
           $p = Start-Process -FilePath node -ArgumentList '--disable-warning=ExperimentalWarning', 'dist/src/web/server.js' `
@@ -85,12 +85,13 @@ jobs:
             Start-Sleep -Seconds 2
             try {
               $r = Invoke-WebRequest 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 5
-              $ok = $r.StatusCode -eq 200 -and $r.Content -match 'AI Engine' -and $r.Content -match 'RunPod is not connected yet'
+              $e = Invoke-WebRequest 'http://127.0.0.1:3000/welcome?step=4' -UseBasicParsing -TimeoutSec 5
+              $ok = $r.StatusCode -eq 200 -and $r.Content -match 'WELCOME TO AI STORY STUDIO' -and $e.Content -match 'RunPod is not connected yet'
             } catch {}
           }
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           Get-Content "$env:RUNNER_TEMP\app.out", "$env:RUNNER_TEMP\app.err" -ErrorAction SilentlyContinue
-          if (-not $ok) { throw 'The installed app did not serve its home page (expected: AI Engine needs a RunPod key).' }
+          if (-not $ok) { throw 'The installed app did not open the setup wizard (expected: welcome, AI Engine needs a RunPod key).' }
 
       - name: Run the setup again (upgrade keeps .env and data)
         run: |
@@ -188,3 +189,28 @@ jobs:
           name: install-log
           path: ${{ runner.temp }}/AI Story Studio/installer/windows/install.log
           if-no-files-found: ignore
+
+      - name: Start Menu, Settings > Apps entry, then uninstall (data and .env are kept)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          foreach ($f in @("$dir\installer\windows\install.ps1", "$dir\installer\windows\uninstall.ps1")) {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$null, [ref]$errs)
+            if ($errs) { $errs | Format-List | Out-String | Write-Host; throw "syntax errors in $f" }
+          }
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AIStoryStudio'
+          $entry = Get-ItemProperty $key
+          if ($entry.DisplayName -ne 'AI Story Studio' -or $entry.InstallLocation -ne $dir) { throw 'Apps entry missing or wrong' }
+          $ver = (Get-Content "$dir\package.json" -Raw | ConvertFrom-Json).version
+          if ($entry.DisplayVersion -ne $ver) { throw "Apps entry version $($entry.DisplayVersion), expected $ver" }
+          Set-Content "$dir\data\keep-me.txt" 'user data'
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\installer\windows\uninstall.ps1" -Yes
+          if ($LASTEXITCODE -ne 0) { throw "uninstall exited with $LASTEXITCODE" }
+          if (Test-Path $key) { throw 'Apps entry still present' }
+          if (Test-Path "$dir\dist") { throw 'app files still present' }
+          if (Test-Path "$dir\installer") { throw 'installer folder still present' }
+          if (-not (Test-Path "$dir\data\keep-me.txt")) { throw 'the data folder was not kept' }
+          if (-not (Test-Path "$dir\.env")) { throw '.env was not kept' }
+          Write-Host 'Uninstall removed the app and kept data\ and .env.'

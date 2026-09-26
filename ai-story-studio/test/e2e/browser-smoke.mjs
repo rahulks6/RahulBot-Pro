@@ -71,6 +71,23 @@ async function clickAndWait(locator) {
 }
 
 if (!verifyOnly) {
+  await step('a fresh install opens the first-run wizard; walk the 7 steps, then skip', async () => {
+    await page.goto(`${base}/`);
+    expect(page.url().endsWith('/welcome'), `landed on ${page.url()}`);
+    for (let n = 1; n <= 7; n++) {
+      const text = await page.locator('main').innerText();
+      expect(new RegExp(`Step ${n} of 7`).test(text), `step ${n} missing: ${text.slice(0, 200)}`);
+      const next = page.locator('main a.btn.primary', { hasText: /Next|Keep this location|Skip for now/ });
+      if (n < 7) await clickAndWait(next.first());
+    }
+    await page.goto(`${base}/welcome?step=1`);
+    await clickAndWait(page.getByRole('button', { name: 'Skip setup for now' }));
+    expect(
+      /Turn your idea into a complete animated video/.test(await page.locator('main').innerText()),
+      'not Home',
+    );
+  });
+
   await step('open Projects', async () => {
     await page.goto(`${base}/projects`);
     expect((await page.title()).startsWith('Projects'), `title: ${await page.title()}`);

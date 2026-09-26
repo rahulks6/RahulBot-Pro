@@ -21,6 +21,7 @@ import { registerStoryPages } from './pages/stories.ts';
 import { registerCreatePages } from './pages/create.ts';
 import { registerLibraryPages } from './pages/library.ts';
 import { registerPublishPages } from './pages/publish.ts';
+import { registerSetupPages } from './pages/setup.ts';
 import { registerSimplePages } from './pages/simple.ts';
 import { registerSystemPages } from './pages/system.ts';
 import { csrf, html, NAV, navAvailable, page } from './ui.ts';
@@ -78,6 +79,7 @@ export function createWebApp(
           cloudGpu: studio.env.enableCloudGpu,
           mode: modeInfo(studio),
           simple: studio.settings.get('app').uiMode === 'simple',
+          restart: studio.restartRequired,
         }),
       };
     },
@@ -104,6 +106,7 @@ export function createWebApp(
   registerLibraryPages(web);
   registerCreatePages(web);
   registerPublishPages(web);
+  registerSetupPages(web);
   for (const [path] of NAV) if (router.match('GET', path)) navAvailable.paths.add(path);
 
   // Media from local storage (keys are validated by the storage provider: no traversal).

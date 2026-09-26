@@ -100,6 +100,7 @@ export class Orchestrator {
   // --- creating and controlling videos ---------------------------------------------------------
 
   create(input: NewVideoInput): Video {
+    if (this.s.restartRequired) throw new AppError('PRECONDITION_FAILED', this.s.restartRequired);
     const idea = input.idea.trim();
     if (idea.length < 8)
       throw new AppError('VALIDATION_FAILED', 'Describe the story idea in a sentence or two.');

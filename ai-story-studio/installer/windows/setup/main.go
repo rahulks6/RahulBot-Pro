@@ -1,10 +1,11 @@
 // AI Story Studio setup program for Windows.
 //
 // One .exe that carries the whole app. It copies the app into a folder in your user profile,
-// then runs installer\windows\install.ps1, which checks Node.js, Python and FFmpeg (installing
-// only what is missing), builds the app, creates a safe .env (mock mode, cloud GPU off) and the
-// desktop shortcut. Running it again upgrades an existing installation; your .env and data
-// folder (projects, database, API key) are never changed.
+// then runs installer\windows\install.ps1, which checks Node.js and FFmpeg (and the optional
+// Python), installing only what is missing, builds the app, creates .env (real AI on RunPod; the
+// key is entered in the app), the desktop and Start Menu shortcuts and the Settings > Apps entry
+// with Uninstall. Running it again upgrades an existing installation; your .env and data folder
+// (projects, database, keys) are never changed. No AI model files are bundled.
 //
 // Built by installer/windows/build-setup.sh (cross-compiled; no Windows tools needed).
 package main
@@ -27,7 +28,7 @@ import (
 	"time"
 )
 
-var version = "1.1.1" // overridden with -ldflags "-X main.version=..."
+var version = "1.2.0" // overridden with -ldflags "-X main.version=..."
 
 //go:embed payload
 var payloadFS embed.FS
@@ -63,7 +64,7 @@ func main() {
 	flag.BoolVar(&o.yes, "yes", false, "do not ask questions (automated installs)")
 	flag.BoolVar(&o.extractOnly, "extract-only", false, "only copy the app files; do not run the installer script")
 	flag.BoolVar(&o.noStart, "no-start", false, "do not offer to start the app at the end")
-	flag.BoolVar(&o.noShortcut, "no-shortcut", false, "do not create the desktop shortcut")
+	flag.BoolVar(&o.noShortcut, "no-shortcut", false, "do not create the desktop and Start Menu shortcuts")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -152,11 +153,11 @@ func run(o options, u *ui) int {
 	u.say("  AI Story Studio is installed.")
 	u.say("==============================================================")
 	if !o.noShortcut {
-		u.say("Start it any time with the \"AI Story Studio\" shortcut on your desktop.")
+		u.say("Start it any time with the \"AI Story Studio\" shortcut on your desktop or in the Start Menu. Uninstall: Settings > Apps.")
 	}
 	u.say("It opens in your browser at http://127.0.0.1:3000/ . Keep its black window open while")
 	u.say("you use it; closing that window stops the app.")
-	u.say("Cloud GPU stays OFF until you follow docs\\RUNPOD_SETUP.md.")
+	u.say("The first start opens the setup wizard (storage, RunPod, AI Engine test, narrator, YouTube).")
 
 	if !o.noStart && u.interactive {
 		answer := strings.ToLower(u.ask("\nStart AI Story Studio now? [Y/n] "))
