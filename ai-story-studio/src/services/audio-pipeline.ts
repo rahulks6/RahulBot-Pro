@@ -10,7 +10,7 @@ import type {
 } from '../domain/types.ts';
 import { NARRATOR_VOICE_NEEDED } from './audio-messages.ts';
 import { AppError } from '../lib/errors.ts';
-import { hashObject } from '../lib/hash.ts';
+import { hashObject, seedFrom } from '../lib/hash.ts';
 import { parseJson } from '../lib/json.ts';
 import { decodeWav, encodeWav, DEFAULT_SAMPLE_RATE } from '../media/wav.ts';
 import type { ModelResult, ProviderInfo, RunContext, VoiceSettings } from '../providers/types.ts';
@@ -164,7 +164,15 @@ export class AudioPipeline {
       return { audio: cached, reused: true, provider: provider.info, request };
     }
     const result = await provider.synthesize(
-      { text: line.text, language: line.language, emotion: line.emotion, speed: line.speed, voice: vs },
+      {
+        text: line.text,
+        language: line.language,
+        emotion: line.emotion,
+        speed: line.speed,
+        voice: vs,
+        // Same text + voice + delivery → the same seed (repeatable speech with sampling models).
+        seed: seedFrom(JSON.stringify([line.text, line.emotion, line.speed, vs.lockKey])) % 2 ** 31,
+      },
       ctx,
     );
     const audio = await this.store(
@@ -220,7 +228,15 @@ export class AudioPipeline {
       return { audio: cached, reused: true, provider: provider.info, request };
     }
     const result = await provider.synthesize(
-      { text: line.text, language: line.language, emotion: line.emotion, speed: line.speed, voice: vs },
+      {
+        text: line.text,
+        language: line.language,
+        emotion: line.emotion,
+        speed: line.speed,
+        voice: vs,
+        // Same text + voice + delivery → the same seed (repeatable speech with sampling models).
+        seed: seedFrom(JSON.stringify([line.text, line.emotion, line.speed, vs.lockKey])) % 2 ** 31,
+      },
       ctx,
     );
     const audio = await this.store(

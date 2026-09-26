@@ -23,7 +23,8 @@ import { timelineDuration } from './timeline.ts';
 
 export interface BuildStep {
   step: string;
-  status: 'ok' | 'skipped' | 'failed';
+  /** warn = an optional part (music, ambience, optional SFX) failed; the episode was built without it. */
+  status: 'ok' | 'skipped' | 'failed' | 'warn';
   detail: string;
 }
 
@@ -59,15 +60,41 @@ export class ExportService {
     count: number,
     step: string,
     log: (step: string, status: BuildStep['status'], detail: string) => void,
+    opts: { optionalBeds?: boolean } = {},
   ): Promise<void> {
     if (count === 0) {
       log(step, 'skipped', 'all audio already present (reused)');
       return;
     }
     const r = await this.generation.processQueue();
-    log(step, r.failed > 0 ? 'failed' : 'ok', `${count} job(s): ${r.completed} complete, ${r.failed} failed`);
-    if (r.failed > 0)
-      throw new AppError('TTS_FAILED', 'Some audio could not be generated; see the Generation Queue.');
+    if (r.failed === 0) {
+      log(step, 'ok', `${count} job(s): ${r.completed} complete`);
+      return;
+    }
+    const failed = this.s.db.all<{ kind: string; target_id: string; error_message: string | null }>(
+      "SELECT kind, target_id, error_message FROM generation_jobs WHERE batch_id = ? AND status = 'failed'",
+      r.batchId,
+    );
+    // Music, ambience and SFX cues not marked "required" are optional: the episode is built without them.
+    const optional = (j: { kind: string; target_id: string }): boolean =>
+      opts.optionalBeds === true &&
+      (j.kind === 'music' ||
+        j.kind === 'ambience' ||
+        (j.kind === 'sfx' &&
+          (this.s.db.scalar<number>('SELECT required FROM shot_sfx WHERE id = ?', j.target_id) ?? 0) === 0));
+    const blocking = failed.filter((j) => !optional(j));
+    if (blocking.length === 0) {
+      log(
+        step,
+        'warn',
+        `${r.completed} complete; ${failed.length} optional track(s) could not be generated and are left out: ${failed
+          .map((j) => `${j.kind} (${(j.error_message ?? 'failed').slice(0, 120)})`)
+          .join('; ')}`,
+      );
+      return;
+    }
+    log(step, 'failed', `${count} job(s): ${r.completed} complete, ${r.failed} failed`);
+    throw new AppError('TTS_FAILED', 'Some audio could not be generated; see the Generation Queue.');
   }
 
   /** FFmpeg for assembly per ASSEMBLY_MODE; throws when `ffmpeg` is required but missing. */
@@ -204,7 +231,7 @@ export class ExportService {
           }
         }
       }
-      await this.runAudioJobs(bedJobs, 'generate_music_sfx_ambience', log);
+      await this.runAudioJobs(bedJobs, 'generate_music_sfx_ambience', log, { optionalBeds: true });
 
       // 3. Lip sync where a speaking mouth is visible and lip sync is enabled.
       let lip = 0;

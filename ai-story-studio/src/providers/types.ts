@@ -154,10 +154,13 @@ export interface VoiceSettings {
 
 export interface TtsRequest {
   text: string;
+  /** Language code: en, en-GB, hi (Hindi), hi-Latn (Hinglish). */
   language: string;
   emotion: string;
   speed: number;
   voice: VoiceSettings;
+  /** Repeatable delivery for models that sample (e.g. Chatterbox). */
+  seed?: number;
 }
 
 export interface TextToSpeechProvider {

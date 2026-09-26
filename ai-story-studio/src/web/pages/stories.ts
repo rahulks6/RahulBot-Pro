@@ -443,12 +443,11 @@ export function registerStoryPages(web: Web): void {
                 'status',
                 STORY_STATUSES.map((x) => [x, x]),
                 st.status,
-              )}${field('Language', 'language', st.language)}${field(
-                'Target duration (s)',
-                'target_duration_sec',
-                st.target_duration_sec,
-                { type: 'number' },
-              )}
+              )}${field('Language', 'language', st.language, {
+                help: 'en, en-GB, hi (Hindi) or hi-Latn (Hinglish)',
+              })}${field('Target duration (s)', 'target_duration_sec', st.target_duration_sec, {
+                type: 'number',
+              })}
             </div>
             ${field('Synopsis', 'synopsis', st.synopsis, { textarea: true })}
             ${field('Story', 'story_text', st.story_text, { textarea: true, rows: 8 })}

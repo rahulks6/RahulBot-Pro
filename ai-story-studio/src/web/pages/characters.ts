@@ -79,7 +79,9 @@ function voiceForm(v: Partial<VoiceProfile> = {}) {
       ${field('Voice identity / reference id', 'voice_identity', v.voice_identity)}
     </div>
     <div class="row">
-      ${field('Language', 'language', v.language ?? 'en')}
+      ${field('Language', 'language', v.language ?? 'en', {
+        help: 'en = English, en-GB = British English, hi = Hindi, hi-Latn = Hinglish (Hindi + English)',
+      })}
       ${select(
         'Presentation',
         'presentation',

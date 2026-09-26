@@ -248,6 +248,7 @@ export class WorkerTts implements TextToSpeechProvider {
         voice_identity: `${req.voice.voiceModel}:${req.voice.voiceIdentity}`,
         presentation: req.voice.presentation,
         pitch: req.voice.pitch,
+        ...(req.seed !== undefined ? { seed: req.seed } : {}),
         // Only present when the voice has an active consent record (VoiceReferenceService).
         ...(req.voice.referenceAudio
           ? {

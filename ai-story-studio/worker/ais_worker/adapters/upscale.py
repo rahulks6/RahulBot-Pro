@@ -110,7 +110,11 @@ class SpandrelUpscaler(Model[UpscaleRequest]):
         spandrel = require("spandrel")
         require("PIL.Image")
         if self.entry.min_vram_gb > 0 and not cuda_available(torch):
-            raise JobError("CUDA_FAILURE", f"{self.entry.id} needs a CUDA GPU (≥ {self.entry.min_vram_gb} GB VRAM)")
+            raise JobError(
+                "CUDA_UNAVAILABLE",
+                f"{self.entry.id} needs an NVIDIA GPU with CUDA (≥ {self.entry.min_vram_gb} GB VRAM). Use the FFmpeg "
+                "upscaler, install the GPU runtime (System Health), or use CLOUD GPU.",
+            )
         path = self._weights()
         ctx.log(f"loading upscaler weights {path.name}")
         try:

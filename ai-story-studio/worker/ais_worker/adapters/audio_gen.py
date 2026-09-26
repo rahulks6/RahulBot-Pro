@@ -151,7 +151,11 @@ class StableAudioModel(Model[AudioRequest]):
         torch = require("torch")
         diffusers = require("diffusers")
         if self.entry.min_vram_gb > 0 and not cuda_available(torch):
-            raise JobError("CUDA_FAILURE", f"{self.entry.id} needs a CUDA GPU (≥ {self.entry.min_vram_gb} GB VRAM)")
+            raise JobError(
+                "CUDA_UNAVAILABLE",
+                f"{self.entry.id} needs an NVIDIA GPU with CUDA (≥ {self.entry.min_vram_gb} GB VRAM). "
+                "Leave music / ambience out (they are optional), install the GPU runtime (System Health), or use CLOUD GPU.",
+            )
         ctx.log(f"loading {self.entry.repo}@{self.entry.revision}")
         try:
             pipe = diffusers.StableAudioPipeline.from_pretrained(

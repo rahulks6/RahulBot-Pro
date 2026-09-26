@@ -114,6 +114,7 @@ def make_adapter(entry: CatalogEntry, config: WorkerConfig, media: MediaTools) -
     from .adapters.audio_gen import StableAudioModel
     from .adapters.diffusers_models import DiffusersImageModel, DiffusersImageToVideoModel
     from .adapters.lipsync import CommandLipSync
+    from .adapters.still_motion import StillMotionVideo
     from .adapters.tts import ChatterboxTts, KokoroTts
     from .adapters.upscale import FfmpegUpscaler, SpandrelUpscaler
 
@@ -134,6 +135,8 @@ def make_adapter(entry: CatalogEntry, config: WorkerConfig, media: MediaTools) -
         return StableAudioModel(entry, cache)
     if entry.adapter == "command_lipsync":
         return CommandLipSync(entry, media)
+    if entry.adapter == "ffmpeg_still_motion":
+        return StillMotionVideo(entry, media)
     return None
 
 
