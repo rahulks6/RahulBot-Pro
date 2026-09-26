@@ -878,3 +878,31 @@ details.card > summary {
     grid-column: 1;
   }
 }
+
+/* Publish */
+.pub-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pub-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.pub-list li:last-child {
+  border-bottom: none;
+}
+small.bad,
+p.bad {
+  color: var(--bad);
+}
+fieldset.audience {
+  border: 2px solid var(--warn);
+  border-radius: 8px;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+}
+fieldset.audience small {
+  display: block;
+  color: var(--muted);
+}

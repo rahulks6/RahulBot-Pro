@@ -19,6 +19,10 @@ const SECRET_VALUE = [
   /\baisw_[A-Za-z0-9]{12,}\b/g, // per-session cloud worker tokens
   /\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi,
   /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\b/g, // JWT-like
+  /\bya29\.[A-Za-z0-9._-]{10,}/g, // Google OAuth access tokens
+  /(^|[^A-Za-z0-9])1\/\/[A-Za-z0-9._-]{10,}/g, // Google OAuth refresh tokens
+  /\bGOCSPX-[A-Za-z0-9_-]{10,}/g, // Google OAuth client secrets
+  /upload_id=[A-Za-z0-9._-]+/g, // YouTube resumable upload sessions (capability URLs)
 ];
 
 export function redact(value: unknown, depth = 0): unknown {

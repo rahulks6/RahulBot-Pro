@@ -86,6 +86,10 @@ const paused = studio.orchestrator.recoverAfterRestart();
 if (paused)
   console.log(`${paused} video(s) were being made when the app closed: open My Videos and press CONTINUE.`);
 
+const interrupted = studio.publisher.recoverAfterRestart();
+if (interrupted)
+  console.log(`${interrupted} YouTube upload(s) were interrupted: open Publish and press RETRY to continue.`);
+
 const interval = studio.settings.get('gpu').watchdogIntervalSeconds * 1000;
 const watchdog = setInterval(() => {
   studio.gpu

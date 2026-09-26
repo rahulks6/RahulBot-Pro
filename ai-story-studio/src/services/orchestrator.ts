@@ -244,6 +244,8 @@ export class Orchestrator {
         stage_detail: 'READY FOR REVIEW',
         finished_at: this.s.clock.now().toISOString(),
       });
+      // Review rows for the Publish page (nothing is uploaded until the person approves).
+      this.s.publisher.ensurePublications(videoId);
       log.info('video ready for review', {});
     } catch (err) {
       const v = this.s.videos.get(videoId);

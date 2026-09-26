@@ -26,6 +26,8 @@ import { GenerationService } from '../services/generation.ts';
 import { GpuSupervisor } from '../services/gpu-supervisor.ts';
 import { EngineService } from '../services/engine.ts';
 import { Orchestrator } from '../services/orchestrator.ts';
+import { Publisher } from '../services/publisher.ts';
+import { YoutubeClient, type YoutubeEndpoints } from '../services/youtube.ts';
 import { RealModeTest } from '../services/real-mode-test.ts';
 import { VideoRepository } from '../repositories/videos.ts';
 import { ExecutionRouter } from '../services/execution-router.ts';
@@ -102,6 +104,8 @@ export interface Studio {
   realTest: RealModeTest;
   /** Idea → finished video (Simple Mode's CREATE). */
   orchestrator: Orchestrator;
+  /** YouTube connection and uploads (always behind an approval). */
+  publisher: Publisher;
   close(): void;
 }
 
@@ -132,6 +136,8 @@ export interface StudioOptions {
   hardware?: HardwareService;
   /** Tests: the .env file the AI Engine may update (defaults to the app folder's .env). */
   envFile?: string;
+  /** Tests: point the YouTube client at a mock Google. */
+  youtube?: { endpoints?: Partial<YoutubeEndpoints>; fetch?: typeof fetch; now?: () => number };
   /** Tests: local worker process control (spawn, Python discovery, catalog). */
   localWorker?: Partial<
     Pick<
@@ -277,6 +283,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     router: null as unknown as ExecutionRouter,
     engine: null as unknown as EngineService,
     orchestrator: null as unknown as Orchestrator,
+    publisher: null as unknown as Publisher,
     videos,
     realTest: new RealModeTest({
       db,
@@ -303,6 +310,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   routerRef = studio.router;
   studio.engine = new EngineService(studio, opts.envFile ? { envFile: opts.envFile } : {});
   studio.orchestrator = new Orchestrator(studio, storagePaths(env).tempRender);
+  studio.publisher = new Publisher(studio, new YoutubeClient(secrets, opts.youtube ?? {}));
   // After the runtime install: forget the old PyTorch result and restart an idle local worker.
   studio.runtime.onComplete = () => {
     studio.hardware.torch = null;

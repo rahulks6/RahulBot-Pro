@@ -6,7 +6,10 @@
   document.addEventListener('submit', function (event) {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
-    const message = form.getAttribute('data-confirm');
+    // A button can carry its own question (e.g. APPROVE & UPLOAD next to a plain Save).
+    const submitter = event.submitter;
+    const message =
+      (submitter && submitter.getAttribute('data-confirm')) || form.getAttribute('data-confirm');
     if (message && !confirm(message)) {
       event.preventDefault();
       return;

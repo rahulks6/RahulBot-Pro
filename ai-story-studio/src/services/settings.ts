@@ -101,6 +101,24 @@ export const appSchema = object({
 export type AppSettings = Infer<typeof appSchema>;
 
 /**
+ * Publishing preferences. Nothing is ever published without an explicit approval per video;
+ * these only pre-fill the review form. `audience` 'ask' (default) means the person chooses it
+ * every time; 'kids' / 'not_kids' is their own standing choice, still shown before each upload.
+ */
+export const publishingSchema = object({
+  defaultPrivacy: enumOf(['private', 'unlisted', 'public'] as const),
+  schedule: enumOf(['none', 'daily', 'weekly'] as const),
+  /** Local time "HH:MM" for scheduled publishing. */
+  time: string({ min: 5, max: 5, pattern: /^([01]\d|2[0-3]):[0-5]\d$/, patternMessage: 'must be HH:MM' }),
+  /** 0 = Sunday … 6 = Saturday (weekly schedule). */
+  weekday: number({ min: 0, max: 6, int: true }),
+  /** Hours between the episode and each Short when scheduling. */
+  shortsGapHours: number({ min: 0, max: 168, int: true }),
+  audience: enumOf(['ask', 'kids', 'not_kids'] as const),
+});
+export type PublishingSettings = Infer<typeof publishingSchema>;
+
+/**
  * Where generation runs (MOCK / LOCAL GPU / CLOUD GPU) and how local GPU memory is used.
  * MOCK_GENERATION=true in .env forces MOCK regardless of `mode` (the outer safety lock);
  * CLOUD GPU additionally needs every cloud gate (ENABLE_CLOUD_GPU, key, switches).
@@ -187,6 +205,7 @@ export type EncodingSettings = Infer<typeof encodingSchema>;
 
 export interface AllSettings {
   app: AppSettings;
+  publishing: PublishingSettings;
   execution: ExecutionSettings;
   budget: BudgetSettings;
   gpu: GpuSettings;
@@ -211,6 +230,14 @@ export const DEFAULT_SETTINGS: AllSettings = {
     language: 'en',
     backgroundMusic: 'auto',
     burnShortsCaptions: true,
+  },
+  publishing: {
+    defaultPrivacy: 'private',
+    schedule: 'none',
+    time: '17:00',
+    weekday: 6,
+    shortsGapHours: 24,
+    audience: 'ask',
   },
   execution: {
     mode: 'cloud_gpu',
@@ -305,6 +332,7 @@ export const DEFAULT_SETTINGS: AllSettings = {
 
 const SCHEMAS = {
   app: appSchema,
+  publishing: publishingSchema,
   execution: executionSchema,
   budget: budgetSchema,
   gpu: gpuSchema,
@@ -342,6 +370,7 @@ export class SettingsService {
   all(): AllSettings {
     return {
       app: this.get('app'),
+      publishing: this.get('publishing'),
       execution: this.get('execution'),
       budget: this.get('budget'),
       gpu: this.get('gpu'),

@@ -14,9 +14,9 @@ export interface TestStudio extends Studio {
   cleanup(): void;
 }
 
-/** Isolated studio: in-memory SQLite, temp storage, manual clock, mock providers, no log output. */
+/** Isolated studio: in-memory SQLite, temp storage, manual clock, mock providers, no log output (unless sinks are given). */
 export function testStudio(
-  opts: Omit<StudioOptions, 'dbPath' | 'clock' | 'logSinks'> & { failureRate?: number } = {},
+  opts: Omit<StudioOptions, 'dbPath' | 'clock'> & { failureRate?: number } = {},
 ): TestStudio {
   const dir = mkdtempSync(join(tmpdir(), 'ais-test-'));
   const clock = new ManualClock('2026-03-15T09:00:00.000Z');
@@ -35,10 +35,11 @@ export function testStudio(
     dbPath: ':memory:',
     clock,
     providers,
-    logSinks: [],
+    logSinks: opts.logSinks ?? [],
     ...(opts.ffmpeg !== undefined ? { ffmpeg: opts.ffmpeg } : {}),
     ...(opts.cloud ? { cloud: opts.cloud } : {}),
     ...(opts.localWorker ? { localWorker: opts.localWorker } : {}),
+    ...(opts.youtube ? { youtube: opts.youtube } : {}),
     // Never touch the app's real .env from a test.
     envFile: opts.envFile ?? join(dir, '.env'),
     // Never let a real RUNPOD_API_KEY from the developer's environment reach tests.

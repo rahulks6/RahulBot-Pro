@@ -20,6 +20,7 @@ import { registerModelPages } from './pages/models.ts';
 import { registerStoryPages } from './pages/stories.ts';
 import { registerCreatePages } from './pages/create.ts';
 import { registerLibraryPages } from './pages/library.ts';
+import { registerPublishPages } from './pages/publish.ts';
 import { registerSimplePages } from './pages/simple.ts';
 import { registerSystemPages } from './pages/system.ts';
 import { csrf, html, NAV, navAvailable, page } from './ui.ts';
@@ -102,6 +103,7 @@ export function createWebApp(
   registerSimplePages(web);
   registerLibraryPages(web);
   registerCreatePages(web);
+  registerPublishPages(web);
   for (const [path] of NAV) if (router.match('GET', path)) navAvailable.paths.add(path);
 
   // Media from local storage (keys are validated by the storage provider: no traversal).

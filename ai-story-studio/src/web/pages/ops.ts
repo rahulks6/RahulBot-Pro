@@ -592,6 +592,11 @@ export function registerOpsPages(web: Web): void {
     return web.render(req, 'RunPod setup', '/settings', html`<pre class="doc">${text}</pre>`);
   });
 
+  r.get('/docs/youtube-setup', (req) => {
+    const text = readFileSync(join(appRoot(), 'docs', 'YOUTUBE_SETUP.md'), 'utf8');
+    return web.render(req, 'YouTube setup', '/publish', html`<pre class="doc">${text}</pre>`);
+  });
+
   r.get('/docs/story-package', (req) => {
     const text = readFileSync(join(appRoot(), 'docs', 'STORY_PACKAGE.md'), 'utf8');
     return web.render(req, 'Story Package format', '/stories', html`<pre class="doc">${text}</pre>`);
