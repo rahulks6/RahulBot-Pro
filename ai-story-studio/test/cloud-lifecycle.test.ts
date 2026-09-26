@@ -40,6 +40,8 @@ function cloudStudio(
     },
   });
   s.settings.set('gpu', { ...s.settings.get('gpu'), maxHourlyRateInr: 100 });
+  // The user chose CLOUD GPU as the execution mode (Settings, or the Cloud GPU switch).
+  s.settings.set('execution', { ...s.settings.get('execution'), mode: 'cloud_gpu' });
   s.settings.set('cloud', {
     ...s.settings.get('cloud'),
     cloudEnabled: true,
@@ -120,7 +122,10 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     s.cloud.refresh();
     assert.equal(s.cloud.mode(), 'MOCK', 'cloud GPU usable, but real generation not armed');
     queueNarration(s);
-    await assert.rejects(s.generation.processQueue(), /no real models are connected/);
+    await assert.rejects(
+      s.generation.processQueue(),
+      /Real cloud generation is not armed yet: Real generation switched on/,
+    );
     assert.equal(rp.livePods().length, 0, 'nothing rented without the real-generation switch');
     s.cleanup();
     s = cloudStudio({ env: { enableCloudGpu: false } });

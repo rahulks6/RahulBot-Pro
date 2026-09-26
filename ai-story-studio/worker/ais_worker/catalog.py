@@ -36,6 +36,7 @@ ADAPTERS = (
     "ffmpeg_upscale",
     "spandrel_upscale",
     "command_lipsync",
+    "ffmpeg_still_motion",
     "none",
 )
 
@@ -61,6 +62,11 @@ class CatalogEntry:
     precision: str = ""
     storage_gb: float = 0
     capabilities: tuple[str, ...] = ()
+    # Local GPU planning / Model Manager (models.local.json).
+    offload_min_vram_gb: float = 0
+    presets: dict[str, dict[str, Any]] = field(default_factory=dict)
+    download: dict[str, Any] = field(default_factory=dict)
+    extra_downloads: tuple[dict[str, Any], ...] = ()
 
 
 class LicenseError(Exception):
@@ -113,6 +119,7 @@ def _entry(raw: Any, i: int, errors: list[dict[str, str]]) -> CatalogEntry | Non
         "id", "kind", "adapter", "display_name", "repo", "revision", "license", "commercial_use", "license_url",
         "license_notes", "license_acknowledged", "min_vram_gb", "enabled", "default", "params", "sources",
         "recommended_vram_gb", "precision", "storage_gb", "capabilities",
+        "offload_min_vram_gb", "presets", "download", "extra_downloads",
     }  # fmt: skip
     for key in raw:
         if key not in known:
@@ -148,7 +155,59 @@ def _entry(raw: Any, i: int, errors: list[dict[str, str]]) -> CatalogEntry | Non
         precision=str(raw.get("precision", "")),
         storage_gb=_number(raw.get("storage_gb"), 0),
         capabilities=_strings(raw.get("capabilities")),
+        offload_min_vram_gb=_number(raw.get("offload_min_vram_gb"), vram),
+        presets=_presets(raw.get("presets"), path, errors),
+        download=_download(raw.get("download"), f"{path}.download", errors),
+        extra_downloads=_extra(raw.get("extra_downloads"), path, errors),
     )
+
+
+PRESETS = ("fast_preview", "optimized", "high_quality")
+
+
+def _presets(value: Any, path: str, errors: list[dict[str, str]]) -> dict[str, dict[str, Any]]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or not all(k in PRESETS and isinstance(v, dict) for k, v in value.items()):
+        errors.append({"path": f"{path}.presets", "message": f"must map {', '.join(PRESETS)} to parameter objects"})
+        return {}
+    return {k: dict(v) for k, v in value.items()}
+
+
+def _patterns(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(p, str) and p and len(p) <= 300 for p in value)
+
+
+def _download(value: Any, path: str, errors: list[dict[str, str]]) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or any(k not in ("allow_patterns", "ignore_patterns", "repo") for k in value):
+        errors.append({"path": path, "message": "may only contain repo, allow_patterns and ignore_patterns"})
+        return {}
+    for key in ("allow_patterns", "ignore_patterns"):
+        if key in value and not _patterns(value[key]):
+            errors.append({"path": f"{path}.{key}", "message": "must be a list of file patterns"})
+            return {}
+    if "repo" in value and not (isinstance(value["repo"], str) and "/" in value["repo"]):
+        errors.append({"path": f"{path}.repo", "message": "must be an owner/name repository id"})
+        return {}
+    return dict(value)
+
+
+def _extra(value: Any, path: str, errors: list[dict[str, str]]) -> tuple[dict[str, Any], ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        errors.append({"path": f"{path}.extra_downloads", "message": "must be a list"})
+        return ()
+    out = []
+    for i, item in enumerate(value):
+        d = _download(item, f"{path}.extra_downloads[{i}]", errors)
+        if d and "repo" not in d:
+            errors.append({"path": f"{path}.extra_downloads[{i}].repo", "message": "is required"})
+        elif d:
+            out.append(d)
+    return tuple(out)
 
 
 def _number(value: Any, default: float) -> Any:

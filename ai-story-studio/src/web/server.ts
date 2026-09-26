@@ -1,6 +1,5 @@
 import { createServer } from 'node:http';
 import { createStudio } from '../app/studio.ts';
-import { connectWorker } from '../providers/worker/connect.ts';
 import { createWebApp } from './app.ts';
 
 /**
@@ -60,15 +59,16 @@ try {
   process.exit(1);
 }
 
-if (studio.env.workerUrl) {
-  try {
-    await connectWorker(studio);
-  } catch (err) {
-    // Keep running on the in-process mock providers; the Settings page shows the error and can reconnect.
-    studio.logger.error('worker connection failed; using in-process mock providers', {
-      error: (err as Error).message,
-    });
-  }
+// Execution mode (MOCK / LOCAL GPU / CLOUD GPU): LOCAL GPU starts the Python worker. A worker that
+// fails to start is reported on System Health and GPU & Costs; the app keeps running.
+try {
+  const route = await studio.router.apply();
+  if (route.requested !== 'mock')
+    console.log(
+      `Execution mode: ${route.label}${route.problems.length ? ` — ${route.problems.join(' ')}` : ''}`,
+    );
+} catch (err) {
+  studio.logger.error('execution mode not applied', { error: (err as Error).message });
 }
 
 // Crash recovery: requeue interrupted jobs and find cloud GPUs left running by a previous session.
@@ -122,6 +122,11 @@ async function shutdown(signal: string): Promise<void> {
     );
     return 0;
   });
+  await studio.router
+    .shutdown()
+    .catch((err: unknown) =>
+      studio.logger.error('shutdown: local worker stop failed', { error: String(err) }),
+    );
   studio.logger.info('shutdown', { signal, gpuTerminated: cleaned });
   server.close(() => {
     studio.close();

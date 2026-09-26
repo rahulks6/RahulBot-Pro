@@ -62,6 +62,7 @@ export interface WorkerSystem {
     installed: boolean;
     version: string | null;
     cuda_available: boolean;
+    cuda_runtime?: string | null;
     device: string | null;
     error?: string;
   };

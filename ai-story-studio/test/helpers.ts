@@ -38,6 +38,7 @@ export function testStudio(
     logSinks: [],
     ...(opts.ffmpeg !== undefined ? { ffmpeg: opts.ffmpeg } : {}),
     ...(opts.cloud ? { cloud: opts.cloud } : {}),
+    ...(opts.localWorker ? { localWorker: opts.localWorker } : {}),
     // Never let a real RUNPOD_API_KEY from the developer's environment reach tests.
     secretEnv: opts.secretEnv ?? {},
     // Tests never depend on the GPU of the machine running them.

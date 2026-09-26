@@ -55,6 +55,8 @@ export class GenerationService {
   private readonly s: StudioCore;
   private readonly audio: AudioPipeline;
   private running = false;
+  /** Set by the composition root: the ExecutionRouter's readiness check (restarts a crashed local worker). */
+  router: { ensureReady(): Promise<void> } | null = null;
 
   constructor(core: StudioCore & { audio: AudioPipeline }) {
     this.s = core;
@@ -283,6 +285,7 @@ export class GenerationService {
       messages: [],
     };
     try {
+      if (this.s.jobs.waiting().length > 0) await this.router?.ensureReady();
       assertGenerationAllowed(this.s.env, this.s.providers);
       const waiting = this.s.jobs.waiting();
       if (waiting.length === 0) return result;

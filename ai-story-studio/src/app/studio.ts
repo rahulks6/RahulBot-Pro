@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import type { AppEnv } from '../config/env.ts';
 import { checkStoragePaths, loadDotEnv, readEnv, storagePaths } from '../config/env.ts';
 import { Database } from '../db/database.ts';
+import { appRoot } from '../lib/paths.ts';
 import { migrate } from '../db/migrate.ts';
 import type { Clock } from '../lib/clock.ts';
 import { systemClock } from '../lib/clock.ts';
@@ -23,7 +24,9 @@ import { BudgetService } from '../services/budget.ts';
 import { ExportService } from '../services/export.ts';
 import { GenerationService } from '../services/generation.ts';
 import { GpuSupervisor } from '../services/gpu-supervisor.ts';
+import { ExecutionRouter } from '../services/execution-router.ts';
 import { HardwareService } from '../services/hardware.ts';
+import { LocalWorkerManager } from '../services/local-worker.ts';
 import { QualityService } from '../services/quality/quality-service.ts';
 import { SettingsService } from '../services/settings.ts';
 import { TimelineService } from '../services/timeline.ts';
@@ -79,6 +82,8 @@ export interface Studio {
   worker: WorkerConnection | null;
   /** NVIDIA GPU / CUDA detection for this computer (LOCAL GPU). */
   hardware: HardwareService;
+  /** Decides where generation runs: MOCK / LOCAL GPU / CLOUD GPU. */
+  router: ExecutionRouter;
   close(): void;
 }
 
@@ -107,6 +112,13 @@ export interface StudioOptions {
   secretEnv?: NodeJS.ProcessEnv;
   /** Tests: replay nvidia-smi results instead of querying this machine. */
   hardware?: HardwareService;
+  /** Tests: local worker process control (spawn, Python discovery, catalog). */
+  localWorker?: Partial<
+    Pick<
+      import('../services/local-worker.ts').LocalWorkerDeps,
+      'spawnFn' | 'findPythonFn' | 'workerDir' | 'catalogPath' | 'startTimeoutMs'
+    >
+  >;
 }
 
 export function createStudio(opts: StudioOptions = {}): Studio {
@@ -126,6 +138,8 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     });
   const storage = new LocalStorageProvider(storagePaths(env).generatedAssets);
   const providers = opts.providers ?? createMockProviders(storage, env.mockFailureRate);
+  // The in-app providers, kept before anything (cloud, local worker) can replace them.
+  const baseProviders: ProviderSet = { ...providers };
 
   const settings = new SettingsService(db);
   const projects = new ProjectRepository(db);
@@ -198,7 +212,20 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     logger.error('cloud mode not applied', { error: (err as Error).message });
   }
   const cloudTest = new CloudGpuTest({ db, env, gpu, gpuRepo, cloud, models, storage, clock, logger });
-  return {
+  const localModels = new ModelManager(
+    db,
+    opts.localWorker?.catalogPath ?? join(appRoot(), 'worker', 'models.local.json'),
+    'model_overrides_local',
+  );
+  const localWorker = new LocalWorkerManager({
+    env,
+    logger,
+    ffmpeg,
+    modelEnv: () => localModels.workerEnv(),
+    port: () => settings.get('execution').localWorkerPort,
+    ...(opts.localWorker ?? {}),
+  });
+  const studio: Studio = {
     ...partial,
     audio,
     voiceRefs,
@@ -212,8 +239,12 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     cloudTest,
     worker: null,
     hardware: opts.hardware ?? new HardwareService(),
+    router: null as unknown as ExecutionRouter,
     close: () => db.close(),
   };
+  studio.router = new ExecutionRouter(studio, { localWorker, localModels, baseProviders });
+  generation.router = studio.router;
+  return studio;
 }
 
 /** Dependencies available to services (everything created before the services themselves). */

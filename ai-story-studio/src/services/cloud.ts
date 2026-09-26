@@ -218,6 +218,14 @@ export class CloudService {
         detail: key === 'env' ? 'from .env' : key === 'store' ? 'saved in the app' : 'missing',
       },
       {
+        name: 'Execution mode CLOUD GPU (Settings)',
+        ok: this.d.settings.get('execution').mode === 'cloud_gpu',
+        detail:
+          this.d.settings.get('execution').mode === 'cloud_gpu'
+            ? 'selected'
+            : `${this.d.settings.get('execution').mode.replace('_', ' ').toUpperCase()} is selected`,
+      },
+      {
         name: 'Cloud GPU switched on (Settings)',
         ok: cloud.cloudEnabled,
         detail: cloud.cloudEnabled ? 'on' : 'off',
@@ -230,16 +238,16 @@ export class CloudService {
     ];
   }
 
-  /** Paid GPUs may be started (test GPU, emergency tooling); first five gates. */
+  /** Paid GPUs may be started (test GPU, emergency tooling): every gate except "real generation". */
   canProvision(): boolean {
     return this.gates()
-      .slice(0, 5)
+      .slice(0, -1)
       .every((g) => g.ok);
   }
 
   assertCanProvision(): void {
     const failed = this.gates()
-      .slice(0, 5)
+      .slice(0, -1)
       .filter((g) => !g.ok);
     if (failed.length)
       throw new AppError(
@@ -262,7 +270,10 @@ export class CloudService {
   modeLabel(): string {
     const m = this.mode();
     if (m === 'REAL_CLOUD') return 'REAL CLOUD — paid GPU generation';
-    if (m === 'LOCAL_WORKER') return 'LOCAL WORKER';
+    if (m === 'LOCAL_WORKER')
+      return this.d.providers.image.info.isMock
+        ? 'LOCAL WORKER (mock models)'
+        : 'LOCAL GPU — this computer, ₹0';
     return this.d.env.mockGeneration
       ? 'MOCK — placeholders, ₹0'
       : 'MOCK PROVIDERS (real generation not armed)';

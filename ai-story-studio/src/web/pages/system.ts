@@ -64,9 +64,64 @@ export function hardwareCard(hw: HardwareStatus, refreshHref: string): SafeHtml 
   );
 }
 
+/** Local worker (LOCAL GPU): state, start / stop, and its recent output when something went wrong. */
+export function localWorkerCard(web: Web): SafeHtml {
+  const s = web.studio;
+  const st = s.router.status();
+  const w = st.local;
+  const external = st.localSource === 'external';
+  const stateBadge =
+    s.worker && st.active === 'local_gpu'
+      ? badge('running', 'good')
+      : w.state === 'failed'
+        ? badge('failed', 'bad')
+        : badge(w.state, 'neutral');
+  return card(
+    'Local AI worker (LOCAL GPU)',
+    html`${kv([
+        ['State', stateBadge],
+        ['Started by', external ? `you (WORKER_URL=${s.env.workerUrl})` : 'AI Story Studio (automatic)'],
+        ['Address', s.worker?.url ?? w.url ?? '—'],
+        ['Python', w.python ? `${w.python.version} (${w.python.path})` : '—'],
+        [
+          'Models',
+          s.worker
+            ? s.worker.models.map((m) => `${m.kind}: ${m.id}${m.loaded ? ' (loaded)' : ''}`).join(' · ') ||
+              'none enabled'
+            : '—',
+        ],
+        ['Log file', w.logPath],
+      ])}
+      ${st.problems.length && st.requested === 'local_gpu'
+        ? html`<p class="flash error">${st.problems.join(' ')}</p>`
+        : ''}
+      ${w.state === 'failed' && w.tail.length ? html`<pre class="doc">${w.tail.join('\n')}</pre>` : ''}
+      <div class="row">
+        ${st.requested === 'local_gpu'
+          ? html`${button('/local-worker/start', s.worker ? 'Restart local worker' : 'Start local worker')}
+            ${s.worker || w.state === 'running' ? button('/local-worker/stop', 'Stop local worker') : ''}`
+          : html`<p class="muted">Used only in LOCAL GPU mode (Settings → Execution & GPU).</p>`}
+      </div>`,
+  );
+}
+
 export function registerSystemPages(web: Web): void {
   const s = web.studio;
   const r = web.router;
+
+  r.post('/local-worker/start', async (req) => {
+    const st = await s.router.startLocal();
+    const back = new URL(req.raw.headers.referer ?? '/gpu', 'http://x').pathname;
+    return st.active === 'local_gpu'
+      ? web.redirect(back, `Local worker running (${s.worker?.models.length ?? 0} model(s)).`)
+      : web.redirect(back, undefined, `Local worker did not start: ${st.problems.join(' ')}`);
+  });
+
+  r.post('/local-worker/stop', async (req) => {
+    await s.router.stopLocal();
+    const back = new URL(req.raw.headers.referer ?? '/gpu', 'http://x').pathname;
+    return web.redirect(back, 'Local worker stopped.');
+  });
 
   r.get('/health', async (req) => {
     const report = await runHealthCheck(s, { refreshGpu: req.query.get('refresh') === '1' });

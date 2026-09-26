@@ -57,14 +57,21 @@ const META_KEY = 'model_overrides';
 
 export class ModelManager {
   private readonly db: Database;
-  private readonly catalogPath: string;
+  readonly catalogPath: string;
+  private readonly metaKey: string;
   private catalog: CatalogModel[] | undefined;
   /** Filled while a cloud worker is bound: id → cached flag. */
   cachedState = new Map<string, boolean>();
 
-  constructor(db: Database, catalogPath = join(appRoot(), 'worker', 'models.cloud.json')) {
+  constructor(
+    db: Database,
+    catalogPath = join(appRoot(), 'worker', 'models.cloud.json'),
+    /** Where enabled/licence choices are stored (the local catalog keeps its own). */
+    metaKey = META_KEY,
+  ) {
     this.db = db;
     this.catalogPath = catalogPath;
+    this.metaKey = metaKey;
   }
 
   models(): CatalogModel[] {
@@ -105,7 +112,7 @@ export class ModelManager {
   }
 
   private overrides(): Overrides {
-    const row = this.db.get<{ value: string }>('SELECT value FROM app_meta WHERE key = ?', META_KEY);
+    const row = this.db.get<{ value: string }>('SELECT value FROM app_meta WHERE key = ?', this.metaKey);
     const o = parseJson<Partial<Overrides>>(row?.value, {});
     return { enabled: o.enabled ?? {}, licenseAck: o.licenseAck ?? [] };
   }
@@ -113,7 +120,7 @@ export class ModelManager {
   private save(o: Overrides): void {
     this.db.run(
       'INSERT INTO app_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-      META_KEY,
+      this.metaKey,
       JSON.stringify(o),
     );
   }

@@ -8,7 +8,7 @@ import { AnalyticsService } from '../../services/analytics.ts';
 import { KILL_ALL_CONFIRMATION, KILL_ONE_CONFIRMATION } from '../../services/gpu-supervisor.ts';
 import type { SettingsKey } from '../../services/settings.ts';
 import type { Web } from '../app.ts';
-import { hardwareCard, hardwareStatus } from './system.ts';
+import { hardwareCard, hardwareStatus, localWorkerCard } from './system.ts';
 import {
   badge,
   button,
@@ -82,6 +82,7 @@ export function registerOpsPages(web: Web): void {
         ),
         hardwareCard(hw, '/gpu?refresh=1'),
       ])}
+      ${s.router.requested() === 'local_gpu' ? localWorkerCard(web) : ''}
       ${grid([
         card(
           `Budget${simulated ? ' (simulated spend)' : ''}`,
@@ -344,46 +345,7 @@ export function registerOpsPages(web: Web): void {
           ],
         ]),
       )}
-      ${card(
-        'Local AI worker (Phase 2)',
-        s.env.workerUrl
-          ? html`${kv([
-              ['URL', s.env.workerUrl],
-              ['Auth token', s.env.workerToken ? 'configured (never shown)' : 'MISSING'],
-              ['Status', s.worker ? badge('connected', 'good') : badge('not connected', 'bad')],
-              ...(s.worker
-                ? ([
-                    ['Worker version', s.worker.version],
-                    [
-                      'GPU',
-                      s.worker.system.gpu.available
-                        ? s.worker.system.gpu.gpus
-                            .map((g) => `${g.name} (${Math.round(g.vram_total_mb / 1024)} GB)`)
-                            .join(', ')
-                        : `none — ${s.worker.system.gpu.reason ?? ''}`,
-                    ],
-                    ['CUDA', s.worker.system.gpu.cuda_version ?? '—'],
-                    [
-                      'FFmpeg',
-                      s.worker.system.ffmpeg.ffmpeg ?? 'not installed (mock clips fall back to manifests)',
-                    ],
-                    ['Disk free', `${s.worker.system.disk.free_gb} GB`],
-                    [
-                      'Models',
-                      s.worker.models.map((m) => `${m.kind}: ${m.id}${m.mock ? ' (mock)' : ''}`).join(', ') ||
-                        'none',
-                    ],
-                  ] as Array<[string, string]>)
-                : []),
-            ])}${button(
-              '/settings/worker/connect',
-              s.worker ? 'Refresh worker status' : 'Connect to worker',
-            )}`
-          : html`<p class="muted">
-              Not configured: generation uses the in-process mock providers. Set WORKER_URL and
-              WORKER_AUTH_TOKEN in .env and start the worker (<code>npm run worker</code>).
-            </p>`,
-      )}
+      ${localWorkerCard(web)}
       ${card(
         'AI components (replaceable)',
         table(
@@ -599,7 +561,7 @@ export function registerOpsPages(web: Web): void {
       `Connected to worker ${c.version} (${c.models.length} models${c.models.every((m) => m.mock) ? ', all mock' : ''})`,
     );
   });
-  r.post('/settings/:section', (req) => {
+  r.post('/settings/:section', async (req) => {
     const section = req.params['section'] as SettingsKey;
     if (!['execution', 'budget', 'gpu', 'generation', 'audioMix', 'quality', 'encoding'].includes(section))
       throw new AppError('NOT_FOUND', 'Unknown settings section');
@@ -607,6 +569,17 @@ export function registerOpsPages(web: Web): void {
     for (const [k, v] of Object.entries(req.form)) if (!k.startsWith('_')) values[k] = v;
     s.settings.set(section, values);
     s.logger.info('settings changed', { section });
+    if (section === 'execution') {
+      const st = await s.router.apply();
+      if (st.lockedByEnv)
+        return web.redirect(
+          '/settings',
+          'Settings saved. MOCK_GENERATION=true in .env keeps the studio in MOCK mode.',
+        );
+      return st.ready
+        ? web.redirect('/settings', `Settings saved. Execution mode: ${st.label}.`)
+        : web.redirect('/settings', undefined, `Settings saved, but ${st.label}: ${st.problems.join(' ')}`);
+    }
     return web.redirect('/settings', 'Settings saved');
   });
 

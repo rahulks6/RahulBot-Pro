@@ -28,8 +28,18 @@ export interface WorkerConnection {
  * applies: with MOCK_GENERATION=true, generation refuses to run if the
  * worker reports any non-mock model.
  */
-export async function connectWorker(studio: Studio): Promise<WorkerConnection> {
-  const { workerUrl, workerToken, workerTimeoutSec } = studio.env;
+export interface WorkerTarget {
+  url: string;
+  token: string;
+  timeoutSec?: number;
+  /** Preferred model id per kind (Settings → Execution), checked before benchmark selections. */
+  preferred?: Partial<Record<WorkerModel['kind'], string>>;
+}
+
+export async function connectWorker(studio: Studio, target?: WorkerTarget): Promise<WorkerConnection> {
+  const workerUrl = target?.url ?? studio.env.workerUrl;
+  const workerToken = target?.token ?? studio.env.workerToken;
+  const workerTimeoutSec = target?.timeoutSec ?? studio.env.workerTimeoutSec;
   if (!workerUrl) throw new AppError('PRECONDITION_FAILED', 'WORKER_URL is not configured');
   if (!/^https?:\/\/[^\s]+$/.test(workerUrl))
     throw new AppError('VALIDATION_FAILED', 'WORKER_URL must be an http(s) URL');
@@ -41,6 +51,7 @@ export async function connectWorker(studio: Studio): Promise<WorkerConnection> {
   // A human model selection (Benchmarks page) wins over the worker's default model for that kind.
   const selected = activeSelections(studio.db);
   const pick = (kind: WorkerModel['kind']) =>
+    models.find((m) => m.kind === kind && m.id === target?.preferred?.[kind]) ??
     models.find((m) => m.kind === kind && m.id === selected.get(kind)) ??
     models.find((m) => m.kind === kind && m.default) ??
     models.find((m) => m.kind === kind);

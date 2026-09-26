@@ -375,17 +375,25 @@ export function registerCloudPages(web: Web): void {
     const t = await s.cloud.testConnection();
     return t.ok ? web.redirect('/cloud', t.detail) : web.redirect('/cloud', undefined, t.detail);
   });
-  r.post('/cloud/switches', (req) => {
-    s.settings.set('cloud', {
-      ...s.settings.get('cloud'),
-      cloudEnabled: yes(req.form['cloudEnabled']),
-      realGeneration: yes(req.form['realGeneration']),
-    });
+  r.post('/cloud/switches', async (req) => {
+    const cloudEnabled = yes(req.form['cloudEnabled']);
+    const realGeneration = yes(req.form['realGeneration']);
+    s.settings.set('cloud', { ...s.settings.get('cloud'), cloudEnabled, realGeneration });
+    // Switching the Cloud GPU on chooses CLOUD GPU as the execution mode; switching it off returns to MOCK.
+    const ex = s.settings.get('execution');
+    if (cloudEnabled && ex.mode !== 'cloud_gpu') s.settings.set('execution', { ...ex, mode: 'cloud_gpu' });
+    if (!cloudEnabled && ex.mode === 'cloud_gpu') s.settings.set('execution', { ...ex, mode: 'mock' });
     s.logger.warn('cloud switches changed', {
-      cloudEnabled: yes(req.form['cloudEnabled']),
-      realGeneration: yes(req.form['realGeneration']),
+      cloudEnabled,
+      realGeneration,
+      executionMode: s.settings.get('execution').mode,
     });
-    return refreshAfter('Switches saved.');
+    try {
+      await s.router.apply();
+      return web.redirect('/cloud', `Switches saved. Mode: ${s.cloud.modeLabel()}.`);
+    } catch (err) {
+      return web.redirect('/cloud', undefined, `Switches saved. ${toAppError(err).message}`);
+    }
   });
   r.post('/cloud/limits', (req) => {
     const f = req.form;

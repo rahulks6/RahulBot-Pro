@@ -11,6 +11,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
@@ -18,6 +19,7 @@ from urllib.parse import urlsplit
 from .api import Response, WorkerAPI
 from .config import ConfigError, WorkerConfig
 from .diagnostics import gpu_info
+from .parent_watch import watch_parent
 from .pod_guard import PodGuard
 
 log = logging.getLogger("ais_worker.server")
@@ -86,6 +88,11 @@ def serve(config: WorkerConfig) -> None:
         )
     else:
         log.info("GPU: none (%s)", gpu.get("reason", "no NVIDIA GPU"))
+
+    parent = os.environ.get("AIS_PARENT_PID", "")
+    if parent.isdigit():
+        # Started by the app (LOCAL GPU): exit if the app dies without stopping us.
+        watch_parent(int(parent), lambda: threading.Thread(target=httpd.shutdown, daemon=True).start())
 
     def stop(*_: Any) -> None:
         raise KeyboardInterrupt
