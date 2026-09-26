@@ -9,6 +9,9 @@ on:
   push:
     paths:
       - "ai-story-studio/installer/**"
+      - "ai-story-studio/src/**"
+      - "ai-story-studio/scripts/**"
+      - "ai-story-studio/test/e2e/**"
       - "ai-story-studio/package.json"
       - "ai-story-studio/package-lock.json"
       - ".github/workflows/ai-story-studio-windows-setup.yml"
@@ -121,8 +124,18 @@ jobs:
           $app = Start-App
           node ai-story-studio/test/e2e/browser-smoke.mjs --base http://127.0.0.1:3000 --channel msedge --out $out --verify-only
           $second = $LASTEXITCODE
+          # A second copy (Start double-clicked twice) must refuse and leave the running one alone.
+          Push-Location $dir
+          $dup = cmd /c "node --disable-warning=ExperimentalWarning dist/src/web/server.js 2>&1"
+          $dupCode = $LASTEXITCODE
+          Pop-Location
+          Write-Host ($dup | Out-String)
+          $stillUp = (Invoke-WebRequest 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200
           Stop-Process -Id $app.Id -Force
           if ($first -ne 0 -or $second -ne 0) { throw "browser smoke failed (first run $first, after restart $second)" }
+          if ($dupCode -ne 1 -or ($dup | Out-String) -notmatch 'already running at' -or -not $stillUp) { throw "duplicate start not handled (exit $dupCode, first copy up: $stillUp)" }
+          Write-Host 'Duplicate start refused; the running copy kept serving.'
+          $global:LASTEXITCODE = 0
 
       - name: Upload browser test results
         if: always()
