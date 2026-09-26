@@ -136,7 +136,9 @@ export function registerSetupPages(web: Web): void {
   const nav = (n: number, nextLabel = 'Next →'): SafeHtml =>
     html`<div class="actions wizard-nav">
       ${n > 1 ? html`<a class="btn" href="/welcome?step=${n - 1}">← Back</a>` : ''}
-      ${n < STEPS.length ? html`<a class="btn primary" href="/welcome?step=${n + 1}">${nextLabel}</a>` : ''}
+      ${n < STEPS.length
+        ? html`<a class="btn ${n === 5 ? '' : 'primary'}" href="/welcome?step=${n + 1}">${nextLabel}</a>`
+        : ''}
     </div>`;
 
   const channel = (): string | null => {
@@ -275,6 +277,7 @@ export function registerSetupPages(web: Web): void {
             <button class="primary">Save and continue →</button>`,
         ),
       );
+      step = html`${step} ${nav(5, 'Keep these and continue →')}`;
     } else if (n === 6) {
       const yt = s.publisher.yt;
       step = card(

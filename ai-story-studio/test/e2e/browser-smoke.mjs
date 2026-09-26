@@ -77,7 +77,7 @@ if (!verifyOnly) {
     for (let n = 1; n <= 7; n++) {
       const text = await page.locator('main').innerText();
       expect(new RegExp(`Step ${n} of 7`).test(text), `step ${n} missing: ${text.slice(0, 200)}`);
-      const next = page.locator('main a.btn.primary', { hasText: /Next|Keep this location|Skip for now/ });
+      const next = page.locator('main .wizard-nav a.btn', { hasText: /Next|Keep th|Skip for now/ });
       if (n < 7) await clickAndWait(next.first());
     }
     await page.goto(`${base}/welcome?step=1`);

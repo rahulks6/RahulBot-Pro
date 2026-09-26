@@ -95,7 +95,9 @@ describe('First-run setup wizard', () => {
   });
 
   it('step 5 saves the narrator; step 6 offers YouTube without requiring it', async () => {
-    await web.get('/welcome?step=5');
+    const five = await web.get('/welcome?step=5');
+    assert.ok(web.links(/Keep these and continue/).includes('/welcome?step=6'), 'every step can be passed');
+    assert.ok(web.links(/Back/).includes('/welcome?step=4'), five.url);
     const p = await web.submit('/welcome/narrator', {
       narrator: 'male',
       language: 'hi',
