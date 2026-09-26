@@ -79,7 +79,7 @@ describe('First-run setup wizard', () => {
 
   it('step 3 connects RunPod (a wrong key is refused and not saved), step 4 tests it', async () => {
     let p = await web.get('/welcome?step=3');
-    p = await web.submit('/welcome/runpod', { api_key: 'rpa_WRONGKEY00000000000000' });
+    p = await web.submit('/welcome/runpod', { api_key: `rpa_${'W'.repeat(24)}` });
     assert.equal(p.url.split('?')[0], '/welcome');
     assert.match(p.error ?? '', /Not saved/);
     assert.equal(s.secrets.source('runpodApiKey'), 'none');
