@@ -1,0 +1,64 @@
+# Read-only snapshot of RunPod's PUBLISHED API description, used to keep the GPU catalog adapter
+# (ai-story-studio/src/providers/cloud/runpod.ts) in line with the live contract.
+# No API key, no secret, nothing is created or rented: it downloads public documents and prints
+# the GPU-catalog part (query parameters and response schema) to the job log.
+name: RunPod API schema snapshot (read-only)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/runpod-api-snapshot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download the public documents (no credentials)
+        run: |
+          mkdir -p out
+          for u in https://api.runpod.io/v2/openapi.json https://docs.runpod.io/api-reference-v2/openapi.json; do
+            code=$(curl -sSL -o out/tmp.json -w '%{http_code}' "$u" || echo 000)
+            echo "$u -> HTTP $code"
+            if [ "$code" = 200 ] && python3 -c "import json;json.load(open('out/tmp.json'))" 2>/dev/null; then mv out/tmp.json out/openapi.json; break; fi
+          done
+          for p in list-gpu-types get-a-gpu-type; do
+            code=$(curl -sSL -o "out/$p.md" -w '%{http_code}' "https://docs.runpod.io/api-reference-v2/catalog/$p.md" || echo 000)
+            echo "docs $p.md -> HTTP $code ($(wc -c < out/$p.md) bytes)"
+          done
+
+      - name: Print the GPU catalog contract
+        run: |
+          python3 - <<'PY'
+          import json, os
+          if not os.path.exists('out/openapi.json'):
+              print('openapi.json could not be downloaded anonymously')
+          else:
+              spec = json.load(open('out/openapi.json'))
+              comps = spec.get('components', {})
+              def res(o, seen=()):
+                  if isinstance(o, dict) and '$ref' in o:
+                      ref = o['$ref']
+                      if ref in seen: return {'$ref': ref, 'note': 'recursive'}
+                      _, _, sect, name = ref.split('/')
+                      return res(comps.get(sect, {}).get(name, {}), seen + (ref,))
+                  if isinstance(o, dict): return {k: res(v, seen) for k, v in o.items() if k not in ('example', 'examples')}
+                  if isinstance(o, list): return [res(v, seen) for v in o]
+                  return o
+              print('servers:', spec.get('servers'))
+              print('info:', spec.get('info', {}).get('version'))
+              for path, item in spec.get('paths', {}).items():
+                  if 'catalog/gpus' in path:
+                      print('=' * 30, path)
+                      print(json.dumps(res(item), indent=1)[:60000])
+          PY
+          for p in list-gpu-types get-a-gpu-type; do echo "================ docs $p"; head -c 20000 "out/$p.md"; echo; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runpod-api-snapshot
+          path: out/
