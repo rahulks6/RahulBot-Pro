@@ -8,6 +8,7 @@ import type {
   ShotSfx,
   VoiceProfile,
 } from '../domain/types.ts';
+import { NARRATOR_VOICE_NEEDED } from './audio-messages.ts';
 import { AppError } from '../lib/errors.ts';
 import { hashObject } from '../lib/hash.ts';
 import { parseJson } from '../lib/json.ts';
@@ -196,8 +197,7 @@ export class AudioPipeline {
     const scene = this.s.stories.getScene(line.scene_id);
     const projectId = this.projectForScene(scene);
     const project = this.s.projects.get(projectId);
-    if (!project.narrator_voice_id)
-      throw new AppError('PRECONDITION_FAILED', 'Project has no narrator voice');
+    if (!project.narrator_voice_id) throw new AppError('PRECONDITION_FAILED', NARRATOR_VOICE_NEEDED);
     const voice = this.s.characters.getVoice(project.narrator_voice_id);
     const vs = await this.resolveVoice(voice);
     const provider = this.s.providers.tts;

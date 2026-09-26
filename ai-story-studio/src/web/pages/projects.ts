@@ -1,6 +1,7 @@
 import { ASPECT_RATIOS, QUALITY_MODES } from '../../domain/enums.ts';
 import type { Project, StylePreset } from '../../domain/types.ts';
 import { exportProject, importProject, MAX_BACKUP_BYTES } from '../../services/backup.ts';
+import { toAppError } from '../../lib/errors.ts';
 import type { Web } from '../app.ts';
 import { formPatch } from '../forms.ts';
 import { badge, button, card, field, grid, html, options, postForm, select, table, when } from '../ui.ts';
@@ -212,8 +213,32 @@ export function registerProjectPages(web: Web): void {
   });
 
   r.post('/projects/:id/stories', (req) => {
-    const st = s.stories.create(req.params['id']!, { title: req.form['title'] });
-    return web.redirect(`/stories/${st.id}`, 'Story created');
+    const projectId = req.params['id']!;
+    const title = (req.form['title'] ?? '').trim();
+    if (!s.projects.find(projectId))
+      return web.redirect('/projects', undefined, 'Project could not be found.');
+    if (!title) return web.redirect(`/projects/${projectId}`, undefined, 'Story title is required.');
+    let id: string;
+    try {
+      id = s.stories.create(projectId, { title }).id;
+    } catch (err) {
+      const e = toAppError(err);
+      s.logger.error('story create failed', { project: projectId, error: e.message });
+      return web.redirect(`/projects/${projectId}`, undefined, `Story could not be saved: ${e.message}`);
+    }
+    // Read it back: only report success for a story that is really stored under this project.
+    const saved = s.db.get<{ project_id: string; title: string }>(
+      'SELECT project_id, title FROM stories WHERE id = ?',
+      id,
+    );
+    if (saved?.project_id !== projectId)
+      return web.redirect(
+        `/projects/${projectId}`,
+        undefined,
+        'Story could not be saved: it was not found after saving.',
+      );
+    s.logger.info('story created', { project: projectId, story: id });
+    return web.redirect(`/stories/${id}`, `Story '${saved.title}' created.`);
   });
 
   r.get('/projects/:id/backup', async (req) => {

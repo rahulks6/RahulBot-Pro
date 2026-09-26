@@ -100,6 +100,38 @@ jobs:
           $global:LASTEXITCODE = 0 # the refusal above is the expected result
           Write-Host 'Upgrade and folder-safety checks passed.'
 
+      - name: Browser smoke test in Microsoft Edge (Milo workflow, restart, persistence)
+        run: |
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          npm install --silent --no-audit --no-fund --prefix "$env:RUNNER_TEMP\pw" playwright-core@1
+          $env:PLAYWRIGHT_MODULE = "$env:RUNNER_TEMP\pw\node_modules\playwright-core"
+          $out = "$env:RUNNER_TEMP\e2e-results"
+          function Start-App {
+            $p = Start-Process -FilePath node -ArgumentList '--disable-warning=ExperimentalWarning', 'dist/src/web/server.js' `
+              -WorkingDirectory $dir -PassThru -RedirectStandardOutput "$out-server-$(Get-Random).log" -RedirectStandardError "$out-server-err-$(Get-Random).log"
+            for ($i = 0; $i -lt 30; $i++) { Start-Sleep 1; try { Invoke-WebRequest 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 3 | Out-Null; return $p } catch {} }
+            throw 'app did not start'
+          }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $app = Start-App
+          node ai-story-studio/test/e2e/browser-smoke.mjs --base http://127.0.0.1:3000 --channel msedge --out $out
+          $first = $LASTEXITCODE
+          Stop-Process -Id $app.Id -Force
+          Start-Sleep 2
+          $app = Start-App
+          node ai-story-studio/test/e2e/browser-smoke.mjs --base http://127.0.0.1:3000 --channel msedge --out $out --verify-only
+          $second = $LASTEXITCODE
+          Stop-Process -Id $app.Id -Force
+          if ($first -ne 0 -or $second -ne 0) { throw "browser smoke failed (first run $first, after restart $second)" }
+
+      - name: Upload browser test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: ${{ runner.temp }}/e2e-results*
+          if-no-files-found: ignore
+
       - name: Worker-image scripts (Windows PowerShell 5.1)
         shell: powershell
         run: |

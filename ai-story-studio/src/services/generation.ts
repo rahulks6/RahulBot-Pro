@@ -1,3 +1,4 @@
+import { NARRATOR_VOICE_NEEDED } from './audio-messages.ts';
 import type { StudioCore } from '../app/studio.ts';
 import type { JobKind, JobStatus, QualityMode } from '../domain/enums.ts';
 import type { GeneratedAsset, GenerationAttempt, GenerationJob, Shot } from '../domain/types.ts';
@@ -48,6 +49,8 @@ const GPU_KINDS: ReadonlySet<JobKind> = new Set(['image', 'video', 'upscale', 'l
  * - Retries are bounded, only for retryable failures, and re-check budget.
  * - Approved assets are never regenerated unless the user explicitly asks.
  */
+export { NARRATOR_VOICE_NEEDED };
+
 export class GenerationService {
   private readonly s: StudioCore;
   private readonly audio: AudioPipeline;
@@ -185,12 +188,26 @@ export class GenerationService {
   queueDialogueAudio(lineId: string, opts: QueueOptions = {}): GenerationJob {
     const line = this.s.stories.getDialogue(lineId);
     const shot = this.s.stories.getShot(line.shot_id);
+    // Refuse up front (instead of queueing a job that can only fail later in the batch).
+    if (!line.character_id)
+      throw new AppError(
+        'PRECONDITION_FAILED',
+        'This dialogue line has no speaking character. Choose one first.',
+      );
+    const character = this.s.characters.get(line.character_id);
+    if (!character.voice_profile_id)
+      throw new AppError(
+        'PRECONDITION_FAILED',
+        `Character "${character.name}" has no voice yet. Create one under Characters → Voices and assign it to ${character.name}.`,
+      );
     return this.enqueue('tts', { type: 'dialogue', id: lineId }, this.shotContext(shot), opts);
   }
 
   queueNarrationAudio(lineId: string, opts: QueueOptions = {}): GenerationJob {
     const line = this.s.stories.getNarration(lineId);
     const scene = this.s.stories.getScene(line.scene_id);
+    const project = this.s.projects.get(this.s.stories.projectIdForStory(scene.story_id));
+    if (!project.narrator_voice_id) throw new AppError('PRECONDITION_FAILED', NARRATOR_VOICE_NEEDED);
     return this.enqueue(
       'tts',
       { type: 'narration', id: lineId },

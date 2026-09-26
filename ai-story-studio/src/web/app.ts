@@ -105,6 +105,34 @@ export function createWebApp(
     return { type: 'file', path: join(appRoot(), 'src', 'web', 'public', name), mime };
   });
 
+  /**
+   * A form whose security token no longer matches: almost always a page opened before the app
+   * was restarted. Nothing was saved; say so and link back to the page (a reload gets a new token).
+   */
+  function staleFormPage(req: IncomingMessage): Result {
+    let back = '/';
+    try {
+      const ref = req.headers.referer;
+      if (ref && new URL(ref).host === req.headers.host) back = new URL(ref).pathname;
+    } catch {
+      back = '/';
+    }
+    return {
+      type: 'html',
+      status: 403,
+      body: page(
+        'Please reload the page',
+        '',
+        html`<p>
+            <strong>Nothing was saved.</strong> AI Story Studio was restarted after this page was opened (or
+            the page is from another tab or site), so its form is no longer valid.
+          </p>
+          <p><a class="btn primary" href="${back}">Reload the page</a> and enter the change again.</p>`,
+        { mock: studio.env.mockGeneration, cloudGpu: studio.env.enableCloudGpu, mode: modeInfo(studio) },
+      ),
+    };
+  }
+
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     securityHeaders(res);
     const url = new URL(req.url ?? '/', 'http://local');
@@ -127,8 +155,11 @@ export function createWebApp(
         const parsed = parseForm(body);
         request.form = parsed.form;
         request.formAll = parsed.formAll;
-        if (!checkCsrf(req, request.form, csrf.token))
-          throw new AppError('FORBIDDEN', 'Invalid or missing CSRF token; reload the page and try again.');
+        if (!checkCsrf(req, request.form, csrf.token)) {
+          studio.logger.warn('form rejected: stale or missing CSRF token', { path: url.pathname });
+          send(res, staleFormPage(req));
+          return;
+        }
       }
       const result = await matched.route.handler(request);
       send(res, result, req.headers.range);
