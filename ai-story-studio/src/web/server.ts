@@ -10,15 +10,48 @@ import { createWebApp } from './app.ts';
  */
 const studio = createStudio();
 const { handle } = createWebApp(studio);
+const url = `http://${studio.env.host}:${studio.env.port}/`;
+
+// Requests wait until start-up recovery is done, so nothing runs against half-recovered state.
+let markReady!: () => void;
+const ready = new Promise<void>((r) => (markReady = r));
 const server = createServer((req, res) => {
-  handle(req, res).catch((err: unknown) => {
-    studio.logger.error('unhandled request error', {
-      error: err instanceof Error ? err.message : String(err),
+  ready
+    .then(() => handle(req, res))
+    .catch((err: unknown) => {
+      studio.logger.error('unhandled request error', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      if (!res.headersSent) res.writeHead(500);
+      res.end('Internal error');
     });
-    if (!res.headersSent) res.writeHead(500);
-    res.end('Internal error');
-  });
 });
+
+// Claim the port FIRST. A second copy (Start double-clicked twice) must stop here, before its
+// start-up recovery could requeue the running copy's jobs or stop its cloud GPU.
+try {
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(studio.env.port, studio.env.host, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+} catch (e) {
+  const err = e as NodeJS.ErrnoException;
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `AI Story Studio seems to be already running at ${url}\n` +
+        'Open that address in your browser, or close the other AI Story Studio window first.\n' +
+        '(If a different program uses this port, set PORT=3001 in .env.) Nothing was changed.',
+    );
+  } else {
+    console.error(`AI Story Studio could not start its web server at ${url}: ${err.message}`);
+  }
+  studio.logger.error('web server could not start', { code: err.code ?? '', error: err.message });
+  studio.close();
+  process.exit(1);
+}
 
 if (studio.env.workerUrl) {
   try {
@@ -50,18 +83,24 @@ const watchdog = setInterval(() => {
 }, interval);
 watchdog.unref();
 
-server.listen(studio.env.port, studio.env.host, () => {
-  console.log(
-    `AI Story Studio running at http://${studio.env.host}:${studio.env.port}/  (mode: ${studio.cloud.modeLabel()})`,
-  );
-});
+markReady();
+console.log(`AI Story Studio running at ${url}  (mode: ${studio.cloud.modeLabel()})`);
 
 let stopping = false;
 async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   clearInterval(watchdog);
-  const cleaned = await studio.gpu.shutdownCleanup().catch(() => 0);
+  const cleaned = await studio.gpu.shutdownCleanup().catch((err: unknown) => {
+    // Never silent: a GPU that could not be stopped may still cost money.
+    studio.logger.error('shutdown: GPU cleanup FAILED; check your cloud provider console', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    console.error(
+      'WARNING: could not confirm that every cloud GPU was stopped. Check the RunPod console → Pods.',
+    );
+    return 0;
+  });
   studio.logger.info('shutdown', { signal, gpuTerminated: cleaned });
   server.close(() => {
     studio.close();

@@ -88,3 +88,15 @@ def test_errors_never_leak_internals(api: WorkerAPI) -> None:
     res = api.handle("GET", "/nope", AUTH, b"")
     assert res.status == 404
     assert TOKEN not in str(api.system())
+
+
+def test_model_cache_location_is_configurable(tmp_path: Path) -> None:
+    base = {"WORKER_AUTH_TOKEN": TOKEN, "WORKER_DATA_DIR": str(tmp_path)}
+    assert WorkerConfig.from_env(base).model_cache_dir is None  # default: the models' own cache
+    ssd = tmp_path / "ssd" / "models"
+    assert WorkerConfig.from_env({**base, "MODEL_CACHE_PATH": str(ssd)}).model_cache_dir == ssd.resolve()
+    # The worker-specific name wins over the shared .env name.
+    own = tmp_path / "own"
+    cfg = WorkerConfig.from_env({**base, "MODEL_CACHE_PATH": str(ssd), "WORKER_MODEL_CACHE_DIR": str(own)})
+    assert cfg.model_cache_dir == own.resolve()
+    assert WorkerConfig.from_env({**base, "MODEL_CACHE_PATH": "  "}).model_cache_dir is None

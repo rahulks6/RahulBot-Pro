@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { join } from 'node:path';
-import type { AppEnv } from '../config/env.ts';
+import { storagePaths, type AppEnv } from '../config/env.ts';
 import type { Database } from '../db/database.ts';
 import type { GpuInstance } from '../domain/types.ts';
 import type { Clock } from '../lib/clock.ts';
@@ -343,7 +342,7 @@ export class CloudService {
       timeoutSec: this.d.env.workerTimeoutSec,
       pollMs: this.d.workerPollMs ?? 2000,
       maxPollMs: (this.d.workerPollMs ?? 2000) * 3,
-      validation: { tmpDir: join(this.d.env.dataDir, 'tmp', 'downloads'), ...(probe ? { probe } : {}) },
+      validation: { tmpDir: storagePaths(this.d.env).downloadCache, ...(probe ? { probe } : {}) },
       ...(this.d.sleep ? { sleep: this.d.sleep } : {}),
     });
   }

@@ -1,3 +1,4 @@
+import { storagePaths } from '../config/env.ts';
 import type { StudioCore } from '../app/studio.ts';
 import type { ExportFormat } from '../domain/enums.ts';
 import { EXPORT_PROFILES } from '../domain/enums.ts';
@@ -264,7 +265,7 @@ export class ExportService {
       let masterDuration: number;
       let probe: ProbeResult;
       if (tools) {
-        workDir = join(this.s.env.dataDir, 'tmp', `build-${rec.id}`);
+        workDir = join(storagePaths(this.s.env).tempRender, `build-${rec.id}`);
         await rm(workDir, { recursive: true, force: true });
         await mkdir(workDir, { recursive: true });
         const mixPath = join(workDir, 'mix.wav');

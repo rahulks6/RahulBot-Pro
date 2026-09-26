@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { AppEnv } from '../config/env.ts';
-import { loadDotEnv, readEnv } from '../config/env.ts';
+import { loadDotEnv, readEnv, storagePaths } from '../config/env.ts';
 import { Database } from '../db/database.ts';
 import { migrate } from '../db/migrate.ts';
 import type { Clock } from '../lib/clock.ts';
@@ -112,7 +112,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   const logger = new Logger(env.logLevel, sinks, { app: 'ai-story-studio', mock: env.mockGeneration });
   const db = new Database(opts.dbPath ?? join(env.dataDir, 'studio.sqlite'));
   migrate(db);
-  const storage = new LocalStorageProvider(join(env.dataDir, 'storage'));
+  const storage = new LocalStorageProvider(storagePaths(env).generatedAssets);
   const providers = opts.providers ?? createMockProviders(storage, env.mockFailureRate);
 
   const settings = new SettingsService(db);

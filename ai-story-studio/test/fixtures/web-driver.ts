@@ -24,6 +24,8 @@ export interface FormField {
   value: string;
   options: string[];
   multiple: boolean;
+  /** Every selected option of a select (a multiple select can have none, or several). */
+  selected: string[];
 }
 
 export interface Form {
@@ -76,15 +78,21 @@ export function parseForms(html: string): Form[] {
       const type = (attr(tag, 'type') ?? (kind === 'input' ? 'text' : kind)).toLowerCase();
       let value = attr(tag, 'value') ?? '';
       const options: string[] = [];
+      let selected: string[] = [];
+      const multiple = /\smultiple\b/i.test(tag);
       if (kind === 'textarea') value = decode(inner.replace(/^\s*\n/, '')).trim();
       if (kind === 'select') {
         const opts = [...inner.matchAll(/<option\b([^>]*)>/gi)];
         for (const o of opts) options.push(attr(` ${o[1]}`, 'value') ?? '');
-        const chosen = opts.find((o) => /\sselected\b/i.test(` ${o[1]}`));
-        value = chosen ? (attr(` ${chosen[1]}`, 'value') ?? '') : (options[0] ?? '');
+        selected = opts
+          .filter((o) => /\sselected\b/i.test(` ${o[1]}`))
+          .map((o) => attr(` ${o[1]}`, 'value') ?? '');
+        // Like a browser: a single select defaults to its first option, a multiple one to nothing.
+        if (!selected.length && !multiple && options.length) selected = [options[0]!];
+        value = selected[0] ?? '';
       }
       if ((type === 'checkbox' || type === 'radio') && !/\schecked\b/i.test(tag)) value = '';
-      fields.push({ name, kind, type, value, options, multiple: /\smultiple\b/i.test(tag) });
+      fields.push({ name, kind, type, value, options, multiple, selected });
     }
     forms.push({
       action: attr(` ${open}`, 'action') ?? '',
@@ -186,6 +194,10 @@ export class WebDriver {
       }
       if ((fld.type === 'checkbox' || fld.type === 'radio') && fld.value === '') continue;
       if (fld.type === 'file' || fld.type === 'submit') continue;
+      if (fld.kind === 'select') {
+        for (const v of fld.selected) body.append(fld.name, v);
+        continue;
+      }
       body.append(fld.name, fld.value);
     }
     const from = this.page!.url;

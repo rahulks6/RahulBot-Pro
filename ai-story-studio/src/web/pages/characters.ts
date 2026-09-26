@@ -742,6 +742,7 @@ export function registerCharacterPages(web: Web): void {
   });
   r.get('/props/:id', (req) => {
     const p = s.characters.getProp(req.params['id']!);
+    const chars = s.characters.list(p.project_id);
     return web.render(
       req,
       p.name,
@@ -750,7 +751,16 @@ export function registerCharacterPages(web: Web): void {
         ${card('Prop Lock', lockPanel('props', p.id, p.locked, p.locked_at))}
         ${card(
           p.locked ? 'Details (locked)' : 'Details',
-          postForm(`/props/${p.id}/update`, html`${propForm(p)}<button class="primary">Save</button>`),
+          postForm(
+            `/props/${p.id}/update`,
+            html`${propForm(p)}<input type="hidden" name="_characters" value="1" />${select(
+                'Associated characters',
+                'characters',
+                chars.map((c) => [c.id, c.name]),
+                s.characters.propCharacters(p.id),
+                { multiple: true },
+              )}<button class="primary">Save</button>`,
+          ),
         )}
         ${button(
           `/props/${p.id}/delete`,
@@ -761,7 +771,12 @@ export function registerCharacterPages(web: Web): void {
     );
   });
   r.post('/props/:id/update', (req) => {
-    s.characters.updateProp(req.params['id']!, formPatch(req.form));
+    s.db.transaction(() => {
+      s.characters.updateProp(req.params['id']!, formPatch(req.form));
+      // The marker field tells "no character selected" apart from an older form without the list.
+      if (req.form['_characters'])
+        s.characters.setPropCharacters(req.params['id']!, req.formAll['characters'] ?? []);
+    });
     return web.redirect(`/props/${req.params['id']}`, 'Saved');
   });
   r.post('/props/:id/lock', (req) => {

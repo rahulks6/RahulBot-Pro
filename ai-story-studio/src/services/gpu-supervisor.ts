@@ -328,7 +328,9 @@ export class GpuSupervisor {
       });
       this.logger.error('gpu provision failed', { error: e.message, gpu: plan.offer.gpuModel });
       // A provision that errored may still have created something: sweep tagged resources.
-      await this.watchdog().catch(() => undefined);
+      await this.watchdog().catch((werr: unknown) =>
+        this.logger.error('watchdog after a failed GPU start failed', { error: toAppError(werr).message }),
+      );
       throw new AppError(e.code === 'CLOUD_AUTH_FAILED' ? e.code : 'PROVISION_FAILED', e.message);
     }
     this.repo.update(instance.id, { provider_instance_id: provisioned.providerInstanceId });

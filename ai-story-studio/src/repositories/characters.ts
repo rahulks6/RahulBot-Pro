@@ -462,9 +462,30 @@ export class CharacterRepository {
     const now = nowIso();
     this.db.transaction(() => {
       this.db.insert('props', { id, project_id: projectId, ...v, created_at: now, updated_at: now });
-      for (const cid of characterIds) this.db.insert('prop_characters', { prop_id: id, character_id: cid });
+      this.writePropCharacters(id, projectId, characterIds);
     });
     return this.getProp(id);
+  }
+
+  /** Replace the characters a prop is associated with (only characters of the same project). */
+  setPropCharacters(propId: string, characterIds: string[]): void {
+    const p = this.getProp(propId);
+    this.db.transaction(() => {
+      this.db.run('DELETE FROM prop_characters WHERE prop_id = ?', propId);
+      this.writePropCharacters(propId, p.project_id, characterIds);
+    });
+  }
+
+  private writePropCharacters(propId: string, projectId: string, characterIds: string[]): void {
+    for (const cid of new Set(characterIds.filter(Boolean))) {
+      const owner = this.db.get<{ project_id: string }>(
+        'SELECT project_id FROM characters WHERE id = ?',
+        cid,
+      );
+      if (owner?.project_id !== projectId)
+        throw new AppError('VALIDATION_FAILED', 'A chosen character does not belong to this project');
+      this.db.insert('prop_characters', { prop_id: propId, character_id: cid });
+    }
   }
 
   updateProp(id: string, patch: Record<string, unknown>): Prop {

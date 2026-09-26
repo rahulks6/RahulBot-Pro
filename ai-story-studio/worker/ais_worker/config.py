@@ -38,6 +38,10 @@ def _int(value: str | None, default: int, low: int, high: int) -> int:
     return n
 
 
+def _path(value: str | None) -> Path | None:
+    return Path(value).resolve() if value and value.strip() else None
+
+
 def _ids(value: str | None) -> frozenset[str]:
     return frozenset(x.strip() for x in (value or "").split(",") if x.strip())
 
@@ -87,7 +91,8 @@ class WorkerConfig:
             ffprobe_path=e.get("FFPROBE_PATH") or shutil.which("ffprobe"),
             models_file=Path(e["WORKER_MODELS_FILE"]).resolve() if e.get("WORKER_MODELS_FILE") else None,
             allow_noncommercial=_bool(e.get("WORKER_ALLOW_NONCOMMERCIAL"), False),
-            model_cache_dir=Path(e["WORKER_MODEL_CACHE_DIR"]).resolve() if e.get("WORKER_MODEL_CACHE_DIR") else None,
+            # MODEL_CACHE_PATH (the app's .env name) is accepted as an alias, e.g. D:\\AI-Story-Studio-Data\\models.
+            model_cache_dir=_path(e.get("WORKER_MODEL_CACHE_DIR") or e.get("MODEL_CACHE_PATH")),
             enabled_models=_ids(e.get("WORKER_ENABLED_MODELS")) if "WORKER_ENABLED_MODELS" in e else None,
             license_ack=_ids(e.get("WORKER_LICENSE_ACK")),
         )

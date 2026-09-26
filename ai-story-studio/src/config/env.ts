@@ -25,6 +25,16 @@ export interface AppEnv {
    * requires FFmpeg; `mock` always writes the mock manifest.
    */
   assemblyMode: AssemblyMode;
+  /**
+   * Optional heavy-storage locations (e.g. a second SSD). Unset = inside DATA_DIR. Resolve with
+   * `storagePaths(env)`, never read directly. Nothing is moved automatically.
+   */
+  paths?: {
+    generatedAssets?: string;
+    tempRender?: string;
+    downloadCache?: string;
+    modelCache?: string;
+  };
   /** Phase 5 cloud GPU provider. Only 'runpod' is implemented. */
   cloudProvider: 'runpod' | 'vast' | 'tensordock';
   /** Optional worker image override (otherwise Settings → Cloud GPU). */
@@ -90,6 +100,34 @@ export function loadDotEnv(root = appRoot()): void {
   if (existsSync(file)) process.loadEnvFile(file);
 }
 
+function optPath(key: string, value: string | undefined): Record<string, string> {
+  const v = value?.trim();
+  if (!v) return {};
+  return { [key]: isAbsolute(v) ? v : join(appRoot(), v) };
+}
+
+export interface StoragePaths {
+  /** Generated and imported media (images, clips, audio, finished videos). */
+  generatedAssets: string;
+  /** FFmpeg work folders for BUILD FINAL (deleted after each build). */
+  tempRender: string;
+  /** Cloud downloads being validated before they are stored. */
+  downloadCache: string;
+  /** Model weights for the optional LOCAL worker (cloud GPUs keep their own cache). */
+  modelCache: string;
+}
+
+/** Where heavy files go: the .env overrides, or folders inside DATA_DIR. */
+export function storagePaths(env: Pick<AppEnv, 'dataDir' | 'paths'>): StoragePaths {
+  const p = env.paths ?? {};
+  return {
+    generatedAssets: p.generatedAssets ?? join(env.dataDir, 'storage'),
+    tempRender: p.tempRender ?? join(env.dataDir, 'tmp'),
+    downloadCache: p.downloadCache ?? join(env.dataDir, 'tmp', 'downloads'),
+    modelCache: p.modelCache ?? join(env.dataDir, 'models'),
+  };
+}
+
 export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const level = (source.LOG_LEVEL ?? 'info').toLowerCase();
   const dataDir = source.DATA_DIR?.trim() || './data';
@@ -113,6 +151,12 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
         (m) => m === source.CLOUD_GPU_PROVIDER?.trim().toLowerCase(),
       ) ?? 'runpod',
     cloudWorkerImage: source.CLOUD_WORKER_IMAGE?.trim() ?? '',
+    paths: {
+      ...optPath('generatedAssets', source.GENERATED_ASSETS_PATH),
+      ...optPath('tempRender', source.TEMP_RENDER_PATH),
+      ...optPath('downloadCache', source.DOWNLOAD_CACHE_PATH),
+      ...optPath('modelCache', source.MODEL_CACHE_PATH),
+    },
     caps: readCaps(source),
   };
 }
