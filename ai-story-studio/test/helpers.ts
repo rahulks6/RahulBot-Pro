@@ -5,6 +5,7 @@ import { createStudio, type Studio, type StudioOptions } from '../src/app/studio
 import { ManualClock } from '../src/lib/clock.ts';
 import type { MockGPUProvider } from '../src/providers/mock/gpu.ts';
 import { createMockProviders } from '../src/providers/registry.ts';
+import { HardwareService, type NvidiaReport } from '../src/services/hardware.ts';
 import { LocalStorageProvider } from '../src/storage/storage.ts';
 
 export interface TestStudio extends Studio {
@@ -39,6 +40,8 @@ export function testStudio(
     ...(opts.cloud ? { cloud: opts.cloud } : {}),
     // Never let a real RUNPOD_API_KEY from the developer's environment reach tests.
     secretEnv: opts.secretEnv ?? {},
+    // Tests never depend on the GPU of the machine running them.
+    hardware: opts.hardware ?? fakeHardware(null),
   });
   return Object.assign(studio, {
     clockCtl: clock,
@@ -138,4 +141,43 @@ export async function produceShots(s: Studio, storyId: string): Promise<void> {
     const a = s.jobs.attemptsForShot(sh.id, 'video').find((x) => x.status === 'succeeded')!;
     s.generation.approveAttempt(a.id);
   }
+}
+
+/** Hardware detection replaying a fixed nvidia-smi result (null = no NVIDIA GPU). */
+export function fakeHardware(
+  gpu: { name: string; totalMb: number; usedMb?: number; util?: number; cuda?: string } | null,
+): HardwareService {
+  const report: NvidiaReport = gpu
+    ? {
+        found: true,
+        smiPath: 'nvidia-smi',
+        driverVersion: '566.14',
+        cudaDriverVersion: gpu.cuda ?? '12.7',
+        gpus: [
+          {
+            index: 0,
+            name: gpu.name,
+            uuid: 'GPU-test',
+            driverVersion: '566.14',
+            vramTotalMb: gpu.totalMb,
+            vramUsedMb: gpu.usedMb ?? 500,
+            vramFreeMb: gpu.totalMb - (gpu.usedMb ?? 500),
+            utilizationPct: gpu.util ?? 3,
+            temperatureC: 40,
+            computeCapability: '8.9',
+          },
+        ],
+        error: null,
+        checkedAt: '2026-03-15T09:00:00.000Z',
+      }
+    : {
+        found: false,
+        smiPath: null,
+        driverVersion: null,
+        cudaDriverVersion: null,
+        gpus: [],
+        error: 'nvidia-smi was not found (no NVIDIA driver installed, or no NVIDIA GPU).',
+        checkedAt: '2026-03-15T09:00:00.000Z',
+      };
+  return new HardwareService({ detect: async () => report });
 }

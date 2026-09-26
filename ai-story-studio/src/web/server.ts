@@ -92,6 +92,20 @@ watchdog.unref();
 
 markReady();
 console.log(`AI Story Studio running at ${url}  (mode: ${studio.cloud.modeLabel()})`);
+// Hardware summary in the background: a missing or slow driver never delays the start.
+void studio.hardware.nvidia().then((r) => {
+  const g = r.gpus[0];
+  const line = g
+    ? `GPU: ${g.name}, ${(g.vramTotalMb / 1024).toFixed(1)} GB VRAM, driver ${r.driverVersion ?? '?'}, CUDA up to ${r.cudaDriverVersion ?? '?'}`
+    : `GPU: no NVIDIA GPU detected (${r.error ?? 'none'})`;
+  console.log(`${line}. Details: ${url}health`);
+  studio.logger.info('hardware detected', {
+    gpu: g?.name ?? null,
+    vramMb: g?.vramTotalMb ?? 0,
+    driver: r.driverVersion,
+    cuda: r.cudaDriverVersion,
+  });
+});
 
 let stopping = false;
 async function shutdown(signal: string): Promise<void> {

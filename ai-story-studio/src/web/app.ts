@@ -17,6 +17,7 @@ import { registerProductionPages } from './pages/production.ts';
 import { registerProjectPages } from './pages/projects.ts';
 import { registerQualityPages } from './pages/quality.ts';
 import { registerStoryPages } from './pages/stories.ts';
+import { registerSystemPages } from './pages/system.ts';
 import { csrf, html, page } from './ui.ts';
 
 export interface Web {
@@ -90,6 +91,7 @@ export function createWebApp(
   registerOpsPages(web);
   registerBenchmarkPages(web);
   registerCloudPages(web);
+  registerSystemPages(web);
 
   // Media from local storage (keys are validated by the storage provider: no traversal).
   router.get('/media/:key*', (req) => {

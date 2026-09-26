@@ -21,6 +21,7 @@ export const NAV: Array<[string, string]> = [
   ['/benchmarks', 'Model Benchmarks'],
   ['/cloud', 'Cloud GPU'],
   ['/settings', 'Settings'],
+  ['/health', 'System Health'],
   ['/logs', 'Logs'],
 ];
 

@@ -1,4 +1,5 @@
 import type { Database } from '../db/database.ts';
+import { QUALITY_MODES } from '../domain/enums.ts';
 import { parseJson } from '../lib/json.ts';
 import { boolean, enumOf, number, object, parseOrThrow, string, type Infer } from '../lib/schema.ts';
 
@@ -78,6 +79,52 @@ export const cloudSchema = object({
 });
 export type CloudSettings = Infer<typeof cloudSchema>;
 
+/**
+ * Where generation runs (MOCK / LOCAL GPU / CLOUD GPU) and how local GPU memory is used.
+ * MOCK_GENERATION=true in .env forces MOCK regardless of `mode` (the outer safety lock);
+ * CLOUD GPU additionally needs every cloud gate (ENABLE_CLOUD_GPU, key, switches).
+ */
+export const EXECUTION_MODES = ['mock', 'local_gpu', 'cloud_gpu'] as const;
+export type ExecutionMode = (typeof EXECUTION_MODES)[number];
+
+export const executionSchema = object({
+  mode: enumOf(EXECUTION_MODES),
+  /** Model ids per task for LOCAL GPU ('' = the catalog default). */
+  imageModel: string({ max: 120 }),
+  videoModel: string({ max: 120 }),
+  ttsModel: string({ max: 120 }),
+  upscaler: string({ max: 120 }),
+  musicModel: string({ max: 120 }),
+  sfxModel: string({ max: 120 }),
+  /** Quality preset for new projects and reference images. */
+  defaultQuality: enumOf(QUALITY_MODES),
+  /** Share of the GPU's VRAM the studio may plan to use. */
+  maxVramPercent: number({ min: 50, max: 100, int: true }),
+  /** auto = decided per job from free VRAM; model = components moved to the GPU as needed; sequential = lowest VRAM, slowest. */
+  cpuOffload: enumOf(['auto', 'none', 'model', 'sequential'] as const),
+  vaeTiling: enumOf(['auto', 'on', 'off'] as const),
+  attentionOptimization: enumOf(['auto', 'sdpa', 'slicing', 'off'] as const),
+  /** Unload other models before loading a large one, and after jobs on low-VRAM GPUs. */
+  autoUnloadModels: boolean(),
+  /**
+   * May a job lower resolution / frame count to fit VRAM? Off = fail with an explanation instead.
+   * Any reduction is always recorded on the attempt.
+   */
+  allowQualityReduction: boolean(),
+  /** LOCAL GPU jobs that cannot fit may run on CLOUD GPU (only when every cloud gate passes). */
+  allowCloudFallback: boolean(),
+  /** Final master size. 2160p (4K) is prepared for later and upscales the 1080p master. */
+  outputResolution: enumOf(['1080p', '2160p'] as const),
+  /** Frame rate for new projects. */
+  fps: enumOf(['24', '30'] as const),
+  /** Delete BUILD FINAL work folders and downloaded cloud files after use. */
+  cleanTempFiles: boolean(),
+  /** Start the local Python worker automatically in LOCAL GPU mode. */
+  localWorkerAutoStart: boolean(),
+  localWorkerPort: number({ min: 1024, max: 65535, int: true }),
+});
+export type ExecutionSettings = Infer<typeof executionSchema>;
+
 export const audioMixSchema = object({
   duckingEnabled: boolean(),
   duckDb: number({ min: -40, max: 0 }),
@@ -118,6 +165,7 @@ export const encodingSchema = object({
 export type EncodingSettings = Infer<typeof encodingSchema>;
 
 export interface AllSettings {
+  execution: ExecutionSettings;
   budget: BudgetSettings;
   gpu: GpuSettings;
   generation: GenerationSettings;
@@ -128,6 +176,28 @@ export interface AllSettings {
 }
 
 export const DEFAULT_SETTINGS: AllSettings = {
+  execution: {
+    mode: 'mock',
+    imageModel: '',
+    videoModel: '',
+    ttsModel: '',
+    upscaler: '',
+    musicModel: '',
+    sfxModel: '',
+    defaultQuality: 'optimized',
+    maxVramPercent: 90,
+    cpuOffload: 'auto',
+    vaeTiling: 'auto',
+    attentionOptimization: 'auto',
+    autoUnloadModels: true,
+    allowQualityReduction: false,
+    allowCloudFallback: false,
+    outputResolution: '1080p',
+    fps: '30',
+    cleanTempFiles: true,
+    localWorkerAutoStart: true,
+    localWorkerPort: 8765,
+  },
   budget: { dailyInr: 200, monthlyInr: 1500, warnPercent: 80, blockPercent: 100 },
   gpu: {
     preferredProvider: 'mock',
@@ -197,6 +267,7 @@ export const DEFAULT_SETTINGS: AllSettings = {
 };
 
 const SCHEMAS = {
+  execution: executionSchema,
   budget: budgetSchema,
   gpu: gpuSchema,
   generation: generationSchema,
@@ -223,6 +294,7 @@ export class SettingsService {
 
   all(): AllSettings {
     return {
+      execution: this.get('execution'),
       budget: this.get('budget'),
       gpu: this.get('gpu'),
       generation: this.get('generation'),

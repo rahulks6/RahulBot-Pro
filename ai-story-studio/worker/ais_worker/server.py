@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 from .api import Response, WorkerAPI
 from .config import ConfigError, WorkerConfig
+from .diagnostics import gpu_info
 from .pod_guard import PodGuard
 
 log = logging.getLogger("ais_worker.server")
@@ -77,6 +78,14 @@ def serve(config: WorkerConfig) -> None:
         log.info("pod guard active (idle %s s, lifetime %s s)", guard.idle_s, guard.max_lifetime_s)
     httpd = ThreadingHTTPServer((config.host, config.port), make_handler(api))
     log.info("AI Story Studio worker on http://%s:%s (mock models: %s)", config.host, httpd.server_port, config.mock_models)
+    gpu = gpu_info()
+    if gpu["gpus"]:
+        g = gpu["gpus"][0]
+        log.info(
+            "GPU: %s, %s MB VRAM (%s MB free), CUDA driver %s", g["name"], g["vram_total_mb"], g["vram_free_mb"], gpu.get("cuda_version")
+        )
+    else:
+        log.info("GPU: none (%s)", gpu.get("reason", "no NVIDIA GPU"))
 
     def stop(*_: Any) -> None:
         raise KeyboardInterrupt

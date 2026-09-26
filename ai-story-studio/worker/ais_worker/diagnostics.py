@@ -14,6 +14,52 @@ from typing import Any
 
 from . import __version__
 
+_FIELDS = (
+    "index",
+    "name",
+    "memory.total",
+    "memory.used",
+    "memory.free",
+    "driver_version",
+    "utilization.gpu",
+    "temperature.gpu",
+)
+
+
+def _num(value: str) -> int | None:
+    """nvidia-smi prints "[N/A]" / "[Not Supported]" for values a GPU (often a laptop GPU) does not report."""
+    try:
+        return int(float(value))
+    except ValueError:
+        return None
+
+
+def parse_smi_csv(out: str) -> list[dict[str, Any]]:
+    gpus: list[dict[str, Any]] = []
+    for line in out.strip().splitlines():
+        cols = [p.strip() for p in line.split(",")]
+        if len(cols) < len(_FIELDS):
+            continue
+        index, name, total, used, free, driver, util, temp = cols[: len(_FIELDS)]
+        total_mb = _num(total)
+        if total_mb is None:
+            continue
+        used_mb = _num(used) or 0
+        free_mb = _num(free)
+        gpus.append(
+            {
+                "index": _num(index) if _num(index) is not None else len(gpus),
+                "name": name,
+                "vram_total_mb": total_mb,
+                "vram_used_mb": used_mb,
+                "vram_free_mb": free_mb if free_mb is not None else max(0, total_mb - used_mb),
+                "driver": driver,
+                "utilization_pct": _num(util),
+                "temperature_c": _num(temp),
+            }
+        )
+    return gpus
+
 
 def gpu_info() -> dict[str, Any]:
     """Query NVIDIA GPUs via nvidia-smi (no shell). Returns available=False when none are present."""
@@ -22,7 +68,7 @@ def gpu_info() -> dict[str, Any]:
         return {"available": False, "reason": "nvidia-smi not found (no NVIDIA GPU/driver on this machine)", "gpus": []}
     try:
         out = subprocess.run(
-            [smi, "--query-gpu=name,memory.total,memory.used,driver_version,utilization.gpu", "--format=csv,noheader,nounits"],
+            [smi, f"--query-gpu={','.join(_FIELDS)}", "--format=csv,noheader,nounits"],
             capture_output=True,
             timeout=10,
             check=True,
@@ -30,10 +76,7 @@ def gpu_info() -> dict[str, Any]:
         cuda = subprocess.run([smi], capture_output=True, timeout=10, check=False).stdout.decode()
     except (OSError, subprocess.SubprocessError) as exc:
         return {"available": False, "reason": f"nvidia-smi failed: {exc}", "gpus": []}
-    gpus = []
-    for line in out.strip().splitlines():
-        name, total, used, driver, util = [p.strip() for p in line.split(",")]
-        gpus.append({"name": name, "vram_total_mb": int(total), "vram_used_mb": int(used), "driver": driver, "utilization_pct": int(util)})
+    gpus = parse_smi_csv(out)
     cuda_version = next((ln.split("CUDA Version:")[1].split()[0] for ln in cuda.splitlines() if "CUDA Version:" in ln), None)
     return {"available": bool(gpus), "cuda_version": cuda_version, "gpus": gpus}
 

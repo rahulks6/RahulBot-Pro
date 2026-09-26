@@ -8,6 +8,7 @@ import { AnalyticsService } from '../../services/analytics.ts';
 import { KILL_ALL_CONFIRMATION, KILL_ONE_CONFIRMATION } from '../../services/gpu-supervisor.ts';
 import type { SettingsKey } from '../../services/settings.ts';
 import type { Web } from '../app.ts';
+import { hardwareCard, hardwareStatus } from './system.ts';
 import {
   badge,
   button,
@@ -56,11 +57,32 @@ export function registerOpsPages(web: Web): void {
       }
     }
     const active = s.gpuRepo.active();
+    const hw = await hardwareStatus(web, req.query.get('refresh') === '1');
+    const exec = s.settings.get('execution');
     return web.render(
       req,
       'GPU & Costs',
       '/gpu',
       html`${grid([
+        card(
+          'Execution',
+          kv([
+            ['Mode (setting)', exec.mode.replace('_', ' ').toUpperCase()],
+            ['Active', s.cloud.modeLabel()],
+            [
+              'Where jobs run',
+              s.cloud.mode() === 'REAL_CLOUD'
+                ? 'rented cloud GPU (paid)'
+                : s.cloud.mode() === 'LOCAL_WORKER'
+                  ? 'this computer (₹0)'
+                  : 'in-app placeholders (₹0)',
+            ],
+          ]),
+          html`<a class="button" href="/gpu?refresh=1">Refresh</a>`,
+        ),
+        hardwareCard(hw, '/gpu?refresh=1'),
+      ])}
+      ${grid([
         card(
           `Budget${simulated ? ' (simulated spend)' : ''}`,
           html`${badge(budget.level)}${kv([
@@ -207,11 +229,104 @@ export function registerOpsPages(web: Web): void {
     const a = all.audioMix;
     const q = all.quality;
     const enc = all.encoding;
+    const ex = all.execution;
+    const opt = (v: string[]) => v.map((x) => [x, x] as [string, string]);
     return web.render(
       req,
       'Settings',
       '/settings',
       html`${card(
+        'Execution & GPU',
+        postForm(
+          '/settings/execution',
+          html`${s.env.mockGeneration
+              ? html`<p class="flash">
+                  <strong>MOCK_GENERATION=true</strong> in .env locks the studio to MOCK mode, whatever is
+                  chosen here. Set MOCK_GENERATION=false in .env and restart to use LOCAL GPU or CLOUD GPU
+                  (docs/GPU_SETUP.md).
+                </p>`
+              : ''}
+            ${select(
+              'Execution mode',
+              'mode',
+              [
+                ['mock', 'MOCK — placeholders, safe testing, ₹0'],
+                ['local_gpu', 'LOCAL GPU — this computer, never rents anything'],
+                ['cloud_gpu', 'CLOUD GPU — rented GPU, needs every cloud permission'],
+              ],
+              ex.mode,
+            )}
+            ${select(
+              'Default quality preset',
+              'defaultQuality',
+              [
+                ['fast_preview', 'FAST — quick previews, less compute'],
+                ['optimized', 'OPTIMIZED — best cost/time/quality balance'],
+                ['high_quality', 'QUALITY — maximum practical quality'],
+              ],
+              ex.defaultQuality,
+            )}
+            ${field('Image model (LOCAL GPU; empty = default)', 'imageModel', ex.imageModel)}
+            ${field('Video model', 'videoModel', ex.videoModel)}
+            ${field('TTS model', 'ttsModel', ex.ttsModel)} ${field('Upscaler', 'upscaler', ex.upscaler)}
+            ${field('Music model', 'musicModel', ex.musicModel)}
+            ${field('SFX / ambience model', 'sfxModel', ex.sfxModel)}
+            <p class="muted">
+              Pick models from the <a href="/models">Model Manager</a> (it shows what fits this GPU).
+            </p>
+            ${field('Max VRAM usage (%)', 'maxVramPercent', ex.maxVramPercent, { type: 'number' })}
+            ${select(
+              'CPU offload',
+              'cpuOffload',
+              opt(['auto', 'none', 'model', 'sequential']),
+              ex.cpuOffload,
+            )}
+            ${select('VAE tiling', 'vaeTiling', opt(['auto', 'on', 'off']), ex.vaeTiling)}
+            ${select(
+              'Attention optimization',
+              'attentionOptimization',
+              opt(['auto', 'sdpa', 'slicing', 'off']),
+              ex.attentionOptimization,
+            )}
+            ${checkbox(
+              'Unload models automatically',
+              'autoUnloadModels',
+              ex.autoUnloadModels,
+              'frees VRAM before a large model loads',
+            )}
+            ${checkbox(
+              'Allow lower resolution / fewer frames to fit VRAM',
+              'allowQualityReduction',
+              ex.allowQualityReduction,
+              'off = the job fails with an explanation instead; any reduction is recorded',
+            )}
+            ${checkbox(
+              'Allow Cloud GPU fallback',
+              'allowCloudFallback',
+              ex.allowCloudFallback,
+              'jobs this GPU cannot run may use the Cloud GPU — only when every cloud permission is already given',
+            )}
+            ${select(
+              'Output resolution',
+              'outputResolution',
+              [
+                ['1080p', '1920×1080 (default)'],
+                ['2160p', '3840×2160 (4K, experimental: upscaled master)'],
+              ],
+              ex.outputResolution,
+            )}
+            ${select('Default FPS (new projects)', 'fps', opt(['24', '30']), ex.fps)}
+            ${checkbox('Clean up temporary files after use', 'cleanTempFiles', ex.cleanTempFiles)}
+            ${checkbox(
+              'Start the local worker automatically (LOCAL GPU)',
+              'localWorkerAutoStart',
+              ex.localWorkerAutoStart,
+            )}
+            ${field('Local worker port', 'localWorkerPort', ex.localWorkerPort, { type: 'number' })}
+            <button class="primary">Save</button>`,
+        ),
+      )}
+      ${card(
         'Environment (read-only, from .env)',
         kv([
           ['MOCK_GENERATION', s.env.mockGeneration ? 'true (no paid generation possible)' : 'false'],
@@ -486,7 +601,7 @@ export function registerOpsPages(web: Web): void {
   });
   r.post('/settings/:section', (req) => {
     const section = req.params['section'] as SettingsKey;
-    if (!['budget', 'gpu', 'generation', 'audioMix', 'quality', 'encoding'].includes(section))
+    if (!['execution', 'budget', 'gpu', 'generation', 'audioMix', 'quality', 'encoding'].includes(section))
       throw new AppError('NOT_FOUND', 'Unknown settings section');
     const values: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(req.form)) if (!k.startsWith('_')) values[k] = v;

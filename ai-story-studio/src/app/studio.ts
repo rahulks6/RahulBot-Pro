@@ -23,6 +23,7 @@ import { BudgetService } from '../services/budget.ts';
 import { ExportService } from '../services/export.ts';
 import { GenerationService } from '../services/generation.ts';
 import { GpuSupervisor } from '../services/gpu-supervisor.ts';
+import { HardwareService } from '../services/hardware.ts';
 import { QualityService } from '../services/quality/quality-service.ts';
 import { SettingsService } from '../services/settings.ts';
 import { TimelineService } from '../services/timeline.ts';
@@ -76,6 +77,8 @@ export interface Studio {
   cloudTest: CloudGpuTest;
   /** Set when connected to the local Python worker (Phase 2); null = in-process mock providers. */
   worker: WorkerConnection | null;
+  /** NVIDIA GPU / CUDA detection for this computer (LOCAL GPU). */
+  hardware: HardwareService;
   close(): void;
 }
 
@@ -102,6 +105,8 @@ export interface StudioOptions {
   >;
   /** Tests: secret-store environment (defaults to process.env). */
   secretEnv?: NodeJS.ProcessEnv;
+  /** Tests: replay nvidia-smi results instead of querying this machine. */
+  hardware?: HardwareService;
 }
 
 export function createStudio(opts: StudioOptions = {}): Studio {
@@ -206,6 +211,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     cloud,
     cloudTest,
     worker: null,
+    hardware: opts.hardware ?? new HardwareService(),
     close: () => db.close(),
   };
 }

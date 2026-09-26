@@ -208,6 +208,7 @@ const NAV = [
   'Model Benchmarks',
   'Cloud GPU',
   'Settings',
+  'System Health',
   'Logs',
 ];
 for (const label of NAV) {
