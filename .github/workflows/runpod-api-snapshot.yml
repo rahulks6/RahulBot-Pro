@@ -65,7 +65,9 @@ jobs:
                           op = dict(item[method])
                           op.pop('responses', None) if method == 'delete' else None
                           print('=' * 30, method.upper(), path)
-                          print(json.dumps(res(op), separators=(',', ':'))[:40000])
+                          if method == 'post' and norm == '/v2/pods':
+                              op = {'requestBody': op.get('requestBody')}
+                          print(json.dumps(res(op), separators=(',', ':'))[:120000])
           PY
 
       - uses: actions/upload-artifact@v4
