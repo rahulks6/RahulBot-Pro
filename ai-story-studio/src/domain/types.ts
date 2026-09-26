@@ -392,6 +392,10 @@ export interface GenerationJob {
   log_json: string;
   error_code: string | null;
   error_message: string | null;
+  /** 0–1 as reported by the worker (diffusion steps); 0 when the step reports no progress. */
+  progress: number;
+  /** What the current step is doing, e.g. "loading wan2.2-ti2v-5b" or "step 12/30". */
+  status_detail: string;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;

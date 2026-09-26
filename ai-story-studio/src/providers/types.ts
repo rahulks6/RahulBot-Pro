@@ -33,6 +33,8 @@ export interface RunContext {
   attemptKey: string;
   /** 1-based attempt number of the job being executed. */
   attemptNumber?: number;
+  /** Worker job status while waiting (status as the worker reports it, 0–1 progress, message). */
+  onProgress?: (p: { status: string; progress: number; message: string }) => void;
   /** Remote worker job tracking (cloud recovery): resume instead of resubmitting. */
   remote?: {
     resumeJobId?: string;

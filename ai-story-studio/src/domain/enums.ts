@@ -96,6 +96,33 @@ export const JOB_STATUSES = [
 export type JobStatus = (typeof JOB_STATUSES)[number];
 export const TERMINAL_JOB_STATUSES: ReadonlySet<JobStatus> = new Set(['complete', 'failed', 'cancelled']);
 
+/** What the queue shows for a status (one plain stage name per step; details go next to it). */
+export function jobStageLabel(status: JobStatus): string {
+  switch (status) {
+    case 'waiting':
+      return 'QUEUED';
+    case 'provisioning_gpu':
+    case 'starting_worker':
+      return 'STARTING';
+    case 'loading_model':
+      return 'LOADING MODEL';
+    case 'upscaling':
+      return 'UPSCALING';
+    case 'encoding':
+      return 'ENCODING';
+    case 'downloading':
+      return 'DOWNLOADING';
+    case 'complete':
+      return 'SUCCEEDED';
+    case 'failed':
+      return 'FAILED';
+    case 'cancelled':
+      return 'CANCELLED';
+    default:
+      return 'GENERATING';
+  }
+}
+
 export const ASSET_KINDS = [
   'image',
   'video',

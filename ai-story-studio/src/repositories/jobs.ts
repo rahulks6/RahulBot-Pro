@@ -105,8 +105,20 @@ export class JobRepository {
       log_json: JSON.stringify(log.slice(-200)),
       started_at: job.started_at ?? (status !== 'waiting' ? at : null),
       finished_at: TERMINAL_JOB_STATUSES.has(status) ? at : null,
+      // A new step starts without progress; a finished job is complete.
+      ...(status !== job.status ? { progress: status === 'complete' ? 1 : 0, status_detail: '' } : {}),
       ...extra,
     });
+  }
+
+  /** Live progress of the running step (not logged: it changes every poll). */
+  setProgress(id: string, progress: number, detail: string): void {
+    this.db.run(
+      'UPDATE generation_jobs SET progress = ?, status_detail = ? WHERE id = ?',
+      Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0)),
+      detail.slice(0, 200),
+      id,
+    );
   }
 
   /** Remember the remote (worker) job so a restart re-polls it instead of generating again. */

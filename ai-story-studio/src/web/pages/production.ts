@@ -4,9 +4,10 @@ import {
   CONTINUITY_TAGS,
   JOB_STATUSES,
   TRACKS,
+  jobStageLabel,
   type AudioLayer,
 } from '../../domain/enums.ts';
-import type { TimelineItem } from '../../domain/types.ts';
+import type { GenerationJob, TimelineItem } from '../../domain/types.ts';
 import { AppError } from '../../lib/errors.ts';
 import type { Web } from '../app.ts';
 import { num } from '../forms.ts';
@@ -186,7 +187,7 @@ export function registerProductionPages(web: Web): void {
               html`<a href="/jobs/${j.id}">${j.kind}</a>`,
               j.shot_id ? html`<a href="/shots/${j.shot_id}">${j.target_type}</a>` : j.target_type,
               j.mode,
-              badge(j.status),
+              jobStage(j),
               `${j.attempt_count}/${j.max_attempts}`,
               j.error_message ?? '',
               ['complete', 'failed', 'cancelled'].includes(j.status)
@@ -216,7 +217,7 @@ export function registerProductionPages(web: Web): void {
       html`${card(
         'Job',
         kv([
-          ['Status', badge(j.status)],
+          ['Status', jobStage(j)],
           ['Target', `${j.target_type} ${j.target_id}`],
           ['Batch', j.batch_id ?? '—'],
           ['Attempts', `${j.attempt_count}/${j.max_attempts}`],
@@ -495,4 +496,17 @@ export function registerProductionPages(web: Web): void {
     s.timelines.deleteItem(req.params['id']!);
     return web.redirect(`/editor/${storyId}`, 'Item removed');
   });
+}
+
+/** Stage name, the worker's measured progress (only when it reports one) and what it is doing. */
+export function jobStage(j: GenerationJob): SafeHtml {
+  const label = jobStageLabel(j.status);
+  const kind =
+    label === 'SUCCEEDED' ? 'good' : label === 'FAILED' || label === 'CANCELLED' ? 'bad' : undefined;
+  const running = !['SUCCEEDED', 'FAILED', 'CANCELLED', 'QUEUED'].includes(label);
+  const pct = running && j.progress > 0 && j.progress < 1 ? ` ${Math.round(j.progress * 100)}%` : '';
+  const step = j.status.replace(/_/g, ' ');
+  return html`${badge(label + pct, kind)}${running && label === 'GENERATING'
+    ? html` <small>${step}</small>`
+    : ''}${running && j.status_detail ? html` <small class="muted">${j.status_detail}</small>` : ''}`;
 }

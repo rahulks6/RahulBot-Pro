@@ -1,6 +1,6 @@
 import { NARRATOR_VOICE_NEEDED } from './audio-messages.ts';
 import type { StudioCore } from '../app/studio.ts';
-import type { JobKind, JobStatus, QualityMode } from '../domain/enums.ts';
+import { TERMINAL_JOB_STATUSES, type JobKind, type JobStatus, type QualityMode } from '../domain/enums.ts';
 import type { GeneratedAsset, GenerationAttempt, GenerationJob, Shot } from '../domain/types.ts';
 import { AppError, RETRYABLE_CODES, toAppError, type ErrorCode } from '../lib/errors.ts';
 import { seedFrom } from '../lib/hash.ts';
@@ -503,7 +503,13 @@ export class GenerationService {
         if (signal?.aborted) throw new AppError('CANCELLED', 'Batch cancelled');
         if (session && !session.isAlive())
           throw new AppError('WORKER_UNAVAILABLE', 'GPU session is no longer running');
-        const outcome = await this.execute(this.s.jobs.get(job.id), attemptNumber, session, started, signal);
+        const outcome = await this.execute(
+          this.s.jobs.get(job.id),
+          attemptNumber,
+          session,
+          started,
+          signal,
+        ).finally(() => this.workStep.delete(job.id));
         this.s.jobs.setStatus(job.id, 'complete', outcome);
         if (job.remote_job_id || this.s.jobs.get(job.id).remote_job_id) this.s.jobs.clearRemote(job.id);
         result.completed++;
@@ -675,8 +681,31 @@ export class GenerationService {
     return seedFrom(`${job.id}:${attemptNumber}`) % 2 ** 31;
   }
 
+  /** The step each running job is in (generating / upscaling …), to return to after the worker loads a model. */
+  private readonly workStep = new Map<string, JobStatus>();
+
   private setStatus(job: GenerationJob, status: JobStatus, msg = ''): void {
+    this.workStep.set(job.id, status);
     this.s.jobs.setStatus(job.id, status, msg);
+  }
+
+  /**
+   * The worker's own step for the running job: loading the model and encoding become queue
+   * states; progress is only what the worker measured (diffusion steps), never estimated here.
+   */
+  private workerProgress(jobId: string, p: { status: string; progress: number; message: string }): void {
+    const current = this.s.jobs.get(jobId);
+    if (TERMINAL_JOB_STATUSES.has(current.status)) return;
+    const mapped: JobStatus | null =
+      p.status === 'loading_model'
+        ? 'loading_model'
+        : p.status === 'encoding'
+          ? 'encoding'
+          : p.status === 'running'
+            ? (this.workStep.get(jobId) ?? null)
+            : null;
+    if (mapped && mapped !== current.status) this.s.jobs.setStatus(jobId, mapped, p.message);
+    this.s.jobs.setProgress(jobId, p.status === 'queued' ? 0 : p.progress, p.message);
   }
 
   /** Execute one attempt of a job. Returns a short outcome message. */
@@ -691,6 +720,7 @@ export class GenerationService {
     const ctx: RunContext = {
       attemptKey: `${job.id}:${attemptNumber}`,
       attemptNumber,
+      onProgress: (p) => this.workerProgress(job.id, p),
       ...(signal ? { signal } : {}),
       ...(session
         ? {

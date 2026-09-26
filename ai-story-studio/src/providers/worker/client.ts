@@ -19,7 +19,7 @@ export interface WorkerOutput {
 export interface WorkerJob {
   id: string;
   kind: string;
-  status: 'queued' | 'loading_model' | 'running' | 'complete' | 'failed' | 'cancelled';
+  status: 'queued' | 'loading_model' | 'running' | 'encoding' | 'complete' | 'failed' | 'cancelled';
   progress: number;
   message: string;
   model: { id?: string; version?: string; mock?: boolean };
@@ -267,7 +267,13 @@ export class WorkerClient {
     }
     const deadline = Date.now() + this.timeoutMs;
     let pollDelay = this.pollMs;
+    let last = '';
     while (!TERMINAL.has(job.status)) {
+      const now = `${job.status}|${job.progress}|${job.message}`;
+      if (now !== last) {
+        last = now;
+        ctx.onProgress?.({ status: job.status, progress: job.progress, message: job.message });
+      }
       if (ctx.remote?.isCancelled?.()) {
         await this.cancel(job.id).catch(() => undefined);
         throw new ProviderError('CANCELLED', `Worker job ${job.id} cancelled by the user`);
