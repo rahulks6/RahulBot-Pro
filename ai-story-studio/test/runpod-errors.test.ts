@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { AppError } from '../src/lib/errors.ts';
 import { RunPodApi } from '../src/providers/cloud/runpod.ts';
+import { MockRunPod } from './fixtures/mock-runpod.ts';
 
 /**
  * Every HTTP outcome RunPod can give, through a stubbed fetch (no network, nothing billed):
@@ -71,29 +72,41 @@ describe('RunPod error handling matrix (stubbed, ₹0)', () => {
     assert.equal(e.code, 'NOT_FOUND');
   });
 
-  it('409 on create (no capacity) → clear message, never retried (no duplicate pods)', async () => {
-    const calls: string[] = [];
-    const a = api((url, init) => {
-      if (url.endsWith('/openapi.json')) return new Response(JSON.stringify({ paths: {} }), { status: 200 });
-      if (init.method === 'POST') return problem(409, 'no instances available for this GPU type');
-      return new Response('{}', { status: 200 });
-    }, calls);
-    const e = await failure(
-      a.createPod({
-        name: 'ais-x-1',
-        image: 'ghcr.io/x/y:1',
-        gpuTypeId: 'NVIDIA RTX A5000',
-        gpuCount: 1,
-        cloud: 'SECURE',
-        env: { WORKER_AUTH_TOKEN: 'aisw_secret_token_value_123456' },
-        ports: ['8765/http'],
-        containerDiskGb: 40,
-      }),
-    );
-    // The contract check against an empty document blocks creation before any POST.
-    assert.match(e.message, /no longer matches|HTTP 409/);
-    assert.ok(!e.message.includes('aisw_secret'), 'worker token never in errors');
-    assert.ok(calls.filter((c) => c.startsWith('POST')).length <= 1);
+  it('409 on create (no capacity) → clear message, sent once, never retried (no duplicate pods)', async () => {
+    // The local mock RunPod publishes the real contract (so the pre-create check passes), enforces
+    // the published create schema, and answers 409 for a GPU with no stock (L4, secure cloud).
+    const rp = await new MockRunPod().start();
+    try {
+      const a = new RunPodApi({
+        apiKey: rp.apiKey,
+        baseUrl: rp.baseUrl,
+        sleep: async () => undefined,
+        retry: { attempts: 3, baseDelayMs: 1, maxDelayMs: 1 },
+      });
+      const e = await failure(
+        a.createPod({
+          name: 'ais-x-1',
+          image: 'ghcr.io/x/y:1',
+          gpuTypeId: 'NVIDIA L4',
+          gpuCount: 1,
+          cloud: 'SECURE',
+          env: { WORKER_AUTH_TOKEN: 'aisw_secret_token_value_123456' },
+          ports: ['8765/http'],
+          containerDiskGb: 40,
+        }),
+      );
+      assert.equal(
+        rp.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/pods')).length,
+        1,
+        'the create request was sent exactly once',
+      );
+      assert.match(e.message, /HTTP 409/);
+      assert.match(e.message, /no instances available/);
+      assert.ok(!e.message.includes('aisw_secret'), 'worker token never in errors');
+      assert.equal(rp.pods.size, 0, 'no pod exists');
+    } finally {
+      await rp.stop();
+    }
   });
 
   it('429 → retried with backoff, then CLOUD_RATE_LIMITED', async () => {
