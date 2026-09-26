@@ -112,7 +112,13 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   const sinks = opts.logSinks ?? [stdoutSink, fileSink(join(env.dataDir, 'logs', 'studio.log'))];
   const logger = new Logger(env.logLevel, sinks, { app: 'ai-story-studio', mock: env.mockGeneration });
   const db = new Database(opts.dbPath ?? join(env.dataDir, 'studio.sqlite'));
-  migrate(db);
+  const migration = migrate(db, undefined, { backupDir: join(env.dataDir, 'backups') });
+  if (migration.applied.length)
+    logger.info('database upgraded', {
+      applied: migration.applied,
+      version: migration.current,
+      backup: migration.backupPath,
+    });
   const storage = new LocalStorageProvider(storagePaths(env).generatedAssets);
   const providers = opts.providers ?? createMockProviders(storage, env.mockFailureRate);
 

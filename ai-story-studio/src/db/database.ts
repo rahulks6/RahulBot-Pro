@@ -19,9 +19,12 @@ function normalize(params: SqlParam[]): SQLInputValue[] {
  */
 export class Database {
   readonly raw: DatabaseSync;
+  /** File path, or ':memory:'. */
+  readonly path: string;
   private depth = 0;
 
   constructor(path: string) {
+    this.path = path;
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.raw = new DatabaseSync(path);
     this.raw.exec('PRAGMA foreign_keys = ON;');
