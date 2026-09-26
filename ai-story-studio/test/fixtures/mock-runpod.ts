@@ -1,5 +1,76 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { readFileSync } from 'node:fs';
+import { validate } from './schema-lite.ts';
 import type { AddressInfo } from 'node:net';
+
+/** Runpod's published GET /v2/catalog/gpus contract (fetched by .github/workflows/runpod-api-snapshot.yml). */
+const CATALOG = JSON.parse(
+  readFileSync(new URL('./runpod-catalog-openapi.json', import.meta.url), 'utf8'),
+) as {
+  paths: { '/v2/catalog/gpus': { get: { parameters: unknown[] } & Record<string, unknown> } };
+  components: { parameters: Record<string, unknown>; schemas: Record<string, unknown> };
+};
+
+/** Runpod's published POST /v2/pods request schema (same source). */
+const PODS = JSON.parse(readFileSync(new URL('./runpod-pods-openapi.json', import.meta.url), 'utf8')) as {
+  createPodRequest: Record<string, unknown>;
+};
+
+/** Deep copy of a schema with the named properties removed everywhere (simulated API drift). */
+function withoutFields(schema: unknown, fields: string[]): unknown {
+  if (Array.isArray(schema)) return schema.map((x) => withoutFields(x, fields));
+  if (!schema || typeof schema !== 'object') return schema;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === 'properties' && v && typeof v === 'object')
+      out[k] = Object.fromEntries(
+        Object.entries(v)
+          .filter(([name]) => !fields.includes(name))
+          .map(([n, x]) => [n, withoutFields(x, fields)]),
+      );
+    else if (k === 'required' && Array.isArray(v)) out[k] = v.filter((r) => !fields.includes(r as string));
+    else out[k] = withoutFields(v, fields);
+  }
+  return out;
+}
+
+export interface MockGpu {
+  id: string;
+  name: string;
+  memory: number;
+  secure: boolean;
+  community: boolean;
+  price: { secure: number; community: number };
+  /** Availability level per cloud for pods (missing = NONE). */
+  stock: Partial<Record<'SECURE' | 'COMMUNITY', 'NONE' | 'LOW' | 'MEDIUM' | 'HIGH'>>;
+  /** Highest CUDA version its hosts offer. */
+  maxCuda: string;
+}
+
+function gpu(
+  id: string,
+  name: string,
+  memory: number,
+  price: { secure: number; community: number },
+  stock: MockGpu['stock'],
+  maxCuda = '12.8',
+): MockGpu {
+  return {
+    id,
+    name,
+    memory,
+    secure: price.secure > 0,
+    community: price.community > 0,
+    price,
+    stock,
+    maxCuda,
+  };
+}
+
+const cudaNum = (v: string): number => {
+  const [maj, min] = v.split('.').map(Number);
+  return (maj ?? 0) * 1000 + (min ?? 0);
+};
 
 /**
  * In-process fake of the RunPod REST API v2 for tests. Nothing here talks to
@@ -53,50 +124,58 @@ export class MockRunPod {
    *  - rejectAvailability: any include=AVAILABILITY query is refused (stock unavailable).
    */
   catalog = {
-    requireCloudTypeWithInclude: false,
+    /** Refuse every include=AVAILABILITY query (stock temporarily unavailable). */
     rejectAvailability: false,
     /** Replace the whole catalog response (malformed-response tests). */
     rawResponse: undefined as unknown,
     /** Publish the catalog parameters in openapi.json (false = old document without them). */
     declareParams: true,
-    /** Entries per page (0 = no pagination). */
+    /** Entries per page (0 = no pagination, like the published API). */
     pageSize: 0,
     /** Declare an extra REQUIRED query parameter the studio does not know (API drift). */
     extraRequiredParam: '',
     secretInError: false,
   };
-  gpus = [
-    {
-      id: 'NVIDIA GeForce RTX 4090',
-      displayName: 'RTX 4090',
-      memoryInGb: 24,
-      securePrice: 0.69,
-      communityPrice: 0.44,
-      stockStatus: 'High',
-    },
-    {
-      id: 'NVIDIA RTX A5000',
-      displayName: 'RTX A5000',
-      memoryInGb: 24,
-      securePrice: 0.27,
-      communityPrice: 0.16,
-      stockStatus: 'Medium',
-    },
-    { id: 'NVIDIA L4', displayName: 'L4', memoryInGb: 24, securePrice: 0.43, stockStatus: 'None' },
-    {
-      id: 'NVIDIA RTX A2000',
-      displayName: 'RTX A2000',
-      memoryInGb: 6,
-      securePrice: 0.12,
-      stockStatus: 'High',
-    },
-    {
-      id: 'NVIDIA H100 80GB HBM3',
-      displayName: 'H100 SXM',
-      memoryInGb: 80,
-      securePrice: 2.89,
-      stockStatus: 'Low',
-    },
+  /** GPU types in the published `GpuType` shape, plus per-cloud stock and the highest host CUDA. */
+  gpus: MockGpu[] = [
+    gpu(
+      'NVIDIA GeForce RTX 4090',
+      'RTX 4090',
+      24,
+      { secure: 0.69, community: 0.44 },
+      { SECURE: 'HIGH', COMMUNITY: 'MEDIUM' },
+    ),
+    gpu(
+      'NVIDIA RTX A5000',
+      'RTX A5000',
+      24,
+      { secure: 0.27, community: 0.16 },
+      { SECURE: 'MEDIUM', COMMUNITY: 'HIGH' },
+    ),
+    gpu('NVIDIA L4', 'L4', 24, { secure: 0.43, community: 0 }, { SECURE: 'NONE' }),
+    gpu(
+      'NVIDIA RTX A2000',
+      'RTX A2000',
+      6,
+      { secure: 0.12, community: 0.08 },
+      { SECURE: 'HIGH', COMMUNITY: 'HIGH' },
+    ),
+    gpu(
+      'NVIDIA H100 80GB HBM3',
+      'H100 SXM',
+      80,
+      { secure: 2.89, community: 2.39 },
+      { SECURE: 'LOW', COMMUNITY: 'LOW' },
+    ),
+    // Cheapest 24 GB card, but its hosts only offer CUDA 12.4: excluded by minCudaVersion=12.6.
+    gpu(
+      'NVIDIA GeForce RTX 3090',
+      'RTX 3090',
+      24,
+      { secure: 0.22, community: 0.14 },
+      { SECURE: 'HIGH', COMMUNITY: 'HIGH' },
+      '12.4',
+    ),
   ];
   private seq = 0;
 
@@ -150,18 +229,12 @@ export class MockRunPod {
     return id;
   }
 
+  /** The create schema this mock publishes (and enforces): Runpod's, minus any "drifted" fields. */
+  createSchema(): Record<string, unknown> {
+    return withoutFields(PODS.createPodRequest, this.dropCreateFields) as Record<string, unknown>;
+  }
+
   private openapi(): unknown {
-    const createProps: Record<string, unknown> = {
-      name: { type: 'string' },
-      image: { type: 'string' },
-      gpu: { $ref: '#/components/schemas/GpuRequest' },
-      cloud: { type: 'string', enum: ['SECURE', 'COMMUNITY'] },
-      env: { type: 'object' },
-      ports: { type: 'array', items: { type: 'string' } },
-      mounts: { type: 'object' },
-      containerDiskInGb: { type: 'integer' },
-    };
-    for (const f of this.dropCreateFields) delete createProps[f];
     return {
       openapi: '3.1.0',
       paths: {
@@ -169,7 +242,7 @@ export class MockRunPod {
           get: {},
           post: {
             requestBody: {
-              content: { 'application/json': { schema: { $ref: '#/components/schemas/CreatePodRequest' } } },
+              content: { 'application/json': { schema: this.createSchema() } },
             },
           },
         },
@@ -178,16 +251,15 @@ export class MockRunPod {
         '/v2/catalog/gpus': {
           get: this.catalog.declareParams
             ? {
+                ...CATALOG.paths['/v2/catalog/gpus'].get,
                 parameters: [
-                  { $ref: '#/components/parameters/CatalogInclude' },
-                  {
-                    name: 'cloudType',
-                    in: 'query',
-                    required: false,
-                    schema: { type: 'string', enum: ['SECURE', 'COMMUNITY'], default: 'SECURE' },
-                  },
-                  { name: 'gpuCount', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
-                  { name: 'minCudaVersion', in: 'query', schema: { type: 'string' } },
+                  ...CATALOG.paths['/v2/catalog/gpus'].get.parameters,
+                  ...(this.catalog.pageSize
+                    ? [
+                        { name: 'limit', in: 'query', schema: { type: 'integer', maximum: 50 } },
+                        { name: 'cursor', in: 'query', schema: { type: 'string' } },
+                      ]
+                    : []),
                   ...(this.catalog.extraRequiredParam
                     ? [
                         {
@@ -198,79 +270,91 @@ export class MockRunPod {
                         },
                       ]
                     : []),
-                  ...(this.catalog.pageSize
-                    ? [
-                        { name: 'limit', in: 'query', schema: { type: 'integer', maximum: 50 } },
-                        { name: 'cursor', in: 'query', schema: { type: 'string' } },
-                      ]
-                    : []),
                 ],
               }
             : {},
         },
       },
       components: {
-        parameters: {
-          CatalogInclude: {
-            name: 'include',
-            in: 'query',
-            schema: { type: 'array', items: { type: 'string', enum: ['AVAILABILITY'] } },
-            style: 'form',
-            explode: false,
-          },
-        },
+        parameters: CATALOG.components.parameters,
         schemas: {
-          CreatePodRequest: { type: 'object', required: ['name', 'image'], properties: createProps },
-          GpuRequest: { type: 'object', properties: { id: { type: 'string' }, count: { type: 'integer' } } },
+          ...CATALOG.components.schemas,
         },
       },
     };
   }
 
+  /**
+   * GET /v2/catalog/gpus, following Runpod's published contract (test/fixtures/runpod-catalog-openapi.json):
+   * include=AVAILABILITY requires `product`; product, count, cloud, countryCodes, cudaVersions and
+   * minCudaVersion are valid only with include (400 otherwise); cudaVersions and minCudaVersion are
+   * mutually exclusive; unknown parameters are rejected. Errors are application/problem+json.
+   */
   private catalogResponse(url: URL, send: (status: number, payload: unknown) => void): void {
     const q = url.searchParams;
-    const bad = (field: string, message: string) =>
+    const bad = (detail: string, errors?: string[]) =>
       send(400, {
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid query parameters',
-          details: [
-            {
-              field,
-              message: this.catalog.secretInError
-                ? `${message} (request key rpa_LEAKEDKEY1234567890)`
-                : message,
-            },
-          ],
-        },
+        title: 'Bad Request',
+        status: 400,
+        detail: this.catalog.secretInError ? `${detail} (request key rpa_LEAKEDKEY1234567890)` : detail,
+        ...(errors ? { errors } : {}),
       });
-    const known = new Set(['include', 'cloudType', 'gpuCount', 'minCudaVersion']);
+    const known = new Set([
+      'include',
+      'product',
+      'count',
+      'cloud',
+      'countryCodes',
+      'cudaVersions',
+      'minCudaVersion',
+    ]);
     if (this.catalog.pageSize) ['limit', 'cursor'].forEach((k) => known.add(k));
-    for (const k of q.keys()) if (!known.has(k)) return bad(k, 'unknown query parameter');
+    for (const k of q.keys()) if (!known.has(k)) return bad(`unknown query parameter "${k}"`);
     const include = q.get('include');
-    if (include !== null && include !== 'AVAILABILITY') return bad('include', 'must be one of: AVAILABILITY');
-    if (!include && (q.has('cloudType') || q.has('gpuCount')))
-      return bad(q.has('cloudType') ? 'cloudType' : 'gpuCount', 'valid only with include=AVAILABILITY');
-    if (include && this.catalog.rejectAvailability)
-      return bad('include', 'availability is temporarily unavailable');
-    if (include && this.catalog.requireCloudTypeWithInclude && !q.has('cloudType'))
-      return bad('cloudType', 'is required with include=AVAILABILITY');
-    const cloud = q.get('cloudType') ?? 'SECURE';
-    if (cloud !== 'SECURE' && cloud !== 'COMMUNITY') return bad('cloudType', 'must be SECURE or COMMUNITY');
+    if (include !== null && include !== 'AVAILABILITY') return bad('include must be AVAILABILITY');
+    const onlyWithInclude = ['product', 'count', 'cloud', 'countryCodes', 'cudaVersions', 'minCudaVersion'];
+    if (!include) {
+      const stray = onlyWithInclude.find((k) => q.has(k));
+      if (stray) return bad(`${stray} is valid only with include=AVAILABILITY`);
+    }
+    const products = (q.get('product') ?? '').split(',').filter(Boolean);
+    if (include && !products.length)
+      return bad('product is required with include=AVAILABILITY; availability differs by product context');
+    if (products.some((p) => !['POD', 'CLUSTER', 'SERVERLESS'].includes(p)))
+      return bad('product must be POD, CLUSTER or SERVERLESS');
+    if (q.has('cudaVersions') && q.has('minCudaVersion'))
+      return bad('cudaVersions and minCudaVersion are mutually exclusive');
+    if (include && this.catalog.rejectAvailability) return bad('availability is temporarily unavailable');
+    const cloud = q.get('cloud') ?? 'SECURE';
+    if (cloud !== 'SECURE' && cloud !== 'COMMUNITY') return bad('cloud must be SECURE or COMMUNITY');
+    const count = Number(q.get('count') ?? 1);
+    if (!Number.isInteger(count) || count < 1) return bad('count must be an integer >= 1');
+    const minCuda = q.get('minCudaVersion');
     if (this.catalog.rawResponse !== undefined) return send(200, this.catalog.rawResponse);
+    const cudaOk = (max: string) => !minCuda || cudaNum(max) >= cudaNum(minCuda);
     const rows = this.gpus.map((g) => {
-      const { stockStatus, ...base } = g;
-      return include
-        ? {
-            ...base,
-            availability: {
-              cloudType: cloud,
-              gpuCount: Number(q.get('gpuCount') ?? 1),
-              stockStatus,
-              available: stockStatus !== 'None',
-            },
-          }
-        : base;
+      const base = {
+        id: g.id,
+        name: g.name,
+        pool: null,
+        manufacturer: 'NVIDIA',
+        memory: g.memory,
+        secure: g.secure,
+        community: g.community,
+        price: g.price,
+        maxCount: { secure: 8, community: 4 },
+      };
+      if (!include) return base;
+      const offered = cloud === 'SECURE' ? g.secure : g.community;
+      const level = offered && cudaOk(g.maxCuda) ? (g.stock[cloud] ?? 'NONE') : 'NONE';
+      return {
+        ...base,
+        availability: level,
+        ...(level !== 'NONE'
+          ? { dataCenters: [{ id: 'US-KS-2', name: 'US Kansas 2', availability: level }] }
+          : {}),
+        cudaVersions: [{ version: g.maxCuda, available: level !== 'NONE' }],
+      };
     });
     if (!this.catalog.pageSize) return send(200, { gpus: rows });
     const start = Number(q.get('cursor') ?? 0);
@@ -323,19 +407,25 @@ export class MockRunPod {
     }
     if (method === 'POST' && path === '/pods') {
       const b = body ?? {};
-      if (typeof b['name'] !== 'string' || typeof b['image'] !== 'string' || !b['gpu'])
-        return send(400, { error: 'name, image and gpu are required' });
+      // Enforce the published schema, like the real API (unknown fields are rejected too).
+      const errors = validate(b, PODS.createPodRequest);
+      if (errors.length)
+        return send(400, { title: 'Bad Request', status: 400, detail: 'request validation failed', errors });
+      if (typeof b['image'] !== 'string' || !b['gpu'])
+        return send(400, { title: 'Bad Request', status: 400, detail: 'image and gpu are required' });
       const gpu = b['gpu'] as { id: string; count: number };
       const offer = this.gpus.find((g) => g.id === gpu.id);
       if (!offer) return send(400, { error: `unknown gpu ${gpu.id}` });
-      if (offer.stockStatus === 'None') return send(409, { error: 'no instances available' });
+      const cloud = (b['cloud'] as string | undefined) ?? 'SECURE';
+      if ((offer.stock[cloud as 'SECURE' | 'COMMUNITY'] ?? 'NONE') === 'NONE')
+        return send(409, { title: 'Conflict', status: 409, detail: 'no instances available' });
       const id = `pod${++this.seq}x`;
       const pod: FakePod = {
         id,
-        name: b['name'],
-        status: 'CREATED',
-        costPerHr: String(offer.securePrice),
-        gpu: { id: offer.id, displayName: offer.displayName, count: gpu.count },
+        name: String(b['name']),
+        status: 'PROVISIONING', // published statuses: PROVISIONING, STARTING, RUNNING, EXITED, ERROR, TERMINATED
+        costPerHr: String(offer.price.secure),
+        gpu: { id: offer.id, displayName: offer.name, count: gpu.count },
         env: (b['env'] as Record<string, string>) ?? {},
         image: b['image'],
         createdAt: new Date().toISOString(),
@@ -350,7 +440,7 @@ export class MockRunPod {
       const pod = this.pods.get(decodeURIComponent(m[1]!));
       if (!pod || pod.status === 'TERMINATED') return send(404, { error: 'pod not found' });
       if (method === 'GET' && !m[2]) {
-        if (pod.status === 'CREATED' && pod.pollsUntilRunning-- <= 0) pod.status = 'RUNNING';
+        if (pod.status === 'PROVISIONING' && pod.pollsUntilRunning-- <= 0) pod.status = 'RUNNING';
         return send(200, pod);
       }
       if (method === 'DELETE' && !m[2]) {

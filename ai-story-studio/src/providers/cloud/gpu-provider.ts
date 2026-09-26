@@ -12,6 +12,11 @@ import type { CloudGpuApi, CloudPodSpec, CloudProviderId } from './types.ts';
 /** Every pod this installation creates is named `ais-<installId>-<random>`; only those are ever touched. */
 export const POD_NAME_PREFIX = 'ais-';
 export const WORKER_PORT = 8765;
+/**
+ * The worker image is built on PyTorch 2.7.1 + CUDA 12.6 (worker/Dockerfile.cuda), so it needs a
+ * host whose driver supports CUDA 12.6 or newer. Used for the availability query and pod create.
+ */
+export const WORKER_MIN_CUDA = '12.6';
 /** Must match STUDIO_TAG in services/gpu-supervisor.ts (kept literal to avoid an import cycle). */
 const STUDIO_TAG = 'ai-story-studio';
 
@@ -82,7 +87,7 @@ export class CloudGpuProvider implements GPUProvider {
   async listOffers(minVramGb: number): Promise<GpuOffer[]> {
     const cloud = this.d.cloud();
     const allowed = this.allowed();
-    const types = await this.d.api().listGpuTypes(cloud.cloudType);
+    const types = await this.d.api().listGpuTypes(cloud.cloudType, { minCudaVersion: WORKER_MIN_CUDA });
     return types
       .filter((t) => t.vramGb >= minVramGb && (allowed.size === 0 || allowed.has(t.id)))
       .map((t) => ({
@@ -93,8 +98,8 @@ export class CloudGpuProvider implements GPUProvider {
           t.hourlyUsd === null
             ? Number.POSITIVE_INFINITY
             : Math.round(t.hourlyUsd * cloud.usdToInr * 100) / 100,
-        // A GPU without a reported price is never chosen automatically.
-        available: t.available !== false && t.hourlyUsd !== null,
+        // Rentable only with a reported price AND reported stock: a price alone never means "available".
+        available: t.available === true && t.hourlyUsd !== null,
         region: `${this.d.api().displayName} ${cloud.cloudType.toLowerCase()}${t.stock ? ` · stock ${t.stock}` : ''}`,
       }));
   }
@@ -140,6 +145,7 @@ export class CloudGpuProvider implements GPUProvider {
       env,
       ports: [`${WORKER_PORT}/http`],
       containerDiskGb: cloud.containerDiskGb,
+      minCudaVersion: WORKER_MIN_CUDA,
       ...(cloud.networkVolumeId
         ? { volume: { kind: 'network' as const, volumeId: cloud.networkVolumeId, path: '/workspace' } }
         : cloud.volumeGb > 0

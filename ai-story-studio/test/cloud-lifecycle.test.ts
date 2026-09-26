@@ -88,7 +88,6 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     worker.torchNoCuda = false;
     worker.corruptDownloads = 0;
     worker.jobPolls = 0;
-    rp.catalog.requireCloudTypeWithInclude = false;
     rp.catalog.rejectAvailability = false;
     registry.repos.clear();
     registry.repos.set(WORKER_REPO, {
@@ -455,8 +454,7 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     assert.equal(rp.requests.filter((r) => r.method === 'POST').length, 0);
   });
 
-  it('dry-run acceptance target: every non-gate check is OK, even where the old catalog query got HTTP 400', async () => {
-    rp.catalog.requireCloudTypeWithInclude = true;
+  it('dry-run acceptance target: every non-gate check is OK against the published catalog contract', async () => {
     s = cloudStudio();
     const steps = await s.cloud.diagnostics();
     const byName = new Map(steps.map((x) => [x.step, x]));
@@ -471,7 +469,10 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     ])
       assert.equal(byName.get(name)?.ok, true, `${name}: ${byName.get(name)?.detail}`);
     assert.match(byName.get('Worker image')!.detail, /^IMAGE EXISTS AND PUBLICLY PULLABLE/);
-    assert.match(byName.get('Compatible GPUs and price')!.detail, /stock included/);
+    assert.match(
+      byName.get('Compatible GPUs and price')!.detail,
+      /in stock for pods in secure cloud \(CUDA ≥ 12\.6\).*include=AVAILABILITY&product=POD&count=1&cloud=SECURE&minCudaVersion=12\.6/,
+    );
     assert.equal(rp.livePods().length, 0, 'nothing rented');
   });
 
@@ -482,12 +483,12 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     assert.equal(step.ok, false);
     assert.match(
       step.detail,
-      /below your configured hourly price \(₹20\/h\)\. Cheapest compatible: RTX A5000 \(24 GB\) at ₹23\.76\/h/,
+      /below your configured hourly price \(₹20\/h\)\. Cheapest compatible in stock: RTX A5000 \(24 GB\) at ₹23\.76\/h/,
     );
     s.settings.set('gpu', { ...s.settings.get('gpu'), maxHourlyRateInr: 100, minVramGb: 48 });
     step = (await s.cloud.diagnostics()).find((x) => x.step === 'Compatible GPUs and price')!;
     assert.equal(step.ok, false, 'only the 80 GB H100 is big enough, and it costs more than ₹100/h');
-    assert.match(step.detail, /Cheapest compatible: H100 SXM \(80 GB\)/);
+    assert.match(step.detail, /Cheapest compatible in stock: H100 SXM \(80 GB\)/);
     s.settings.set('gpu', { ...s.settings.get('gpu'), minVramGb: 96 });
     step = (await s.cloud.diagnostics()).find((x) => x.step === 'Compatible GPUs and price')!;
     assert.match(step.detail, /no GPU type with at least 96 GB VRAM/);
@@ -535,6 +536,29 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     await s.generation.processQueue().catch(() => undefined);
     assert.equal(rp.pods.size, 0, 'no pod was ever created');
     assert.equal(rp.requests.filter((r) => r.method === 'POST' && r.path === '/pods').length, 0);
+  });
+
+  it('dry-run never counts a priced GPU as available when stock is not reported, and never rents it', async () => {
+    rp.catalog.rejectAvailability = true;
+    s = cloudStudio();
+    const step = (await s.cloud.diagnostics()).find((x) => x.step === 'Compatible GPUs and price')!;
+    assert.equal(step.ok, false);
+    assert.match(
+      step.detail,
+      /did not report stock, so none is treated as available \(a price is not availability\)/,
+    );
+    const t = await s.cloudTest.prepare('tts');
+    assert.equal(t.prepared, null, 'no GPU plan without reported stock');
+    assert.equal(rp.pods.size, 0);
+    rp.catalog.rejectAvailability = false;
+  });
+
+  it('dry-run skips GPUs whose hosts lack the CUDA version the worker image needs', async () => {
+    s = cloudStudio();
+    const step = (await s.cloud.diagnostics()).find((x) => x.step === 'Compatible GPUs and price')!;
+    // The RTX 3090 (₹19.36/h) is cheaper, but its hosts only offer CUDA 12.4.
+    assert.match(step.detail, /cheapest: RTX A5000 \(24 GB\) at ₹23\.76\/h/);
+    assert.ok(!/cheapest: RTX 3090/.test(step.detail));
   });
 
   it('dry-run reports a private, missing or unreachable worker image distinctly', async () => {

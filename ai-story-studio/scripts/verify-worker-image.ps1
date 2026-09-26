@@ -2,29 +2,21 @@
 # app's dry-run diagnostics). Docker is not needed.
 #
 #   scripts\Verify-Worker-Image.bat
-#   powershell -ExecutionPolicy Bypass -File scripts\verify-worker-image.ps1 [-Owner <github-user>] [-Tag 1.1.0] [-Image <full name>]
+#   powershell -ExecutionPolicy Bypass -File scripts\verify-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.1.0]
 param(
-  [string]$Owner,
-  [string]$Tag,
   [string]$Image,
-  [switch]$NoPause
+  [string]$Owner,
+  [string]$Tag
 )
 . (Join-Path $PSScriptRoot 'worker-image-common.ps1')
 
-if (-not $Image) {
-  $Owner = Resolve-Owner $Owner
-  $Image = Get-ImageName $Owner $Tag
-}
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Stop-WithError 'Node.js is needed for this check. Run the AI Story Studio installer first.'
-}
-Write-Step "Checking $Image anonymously"
-& node --disable-warning=ExperimentalWarning (Join-Path $AppDir 'src\cli\check-worker-image.ts') $Image
-$code = $LASTEXITCODE
+$img = Resolve-Image $Image $Owner $Tag
+Write-Step "Checking $($img.Name) anonymously (no password)"
+$code = Invoke-ImageCheck $img.Name
 Write-Host ''
 switch ($code) {
   0 { Write-Ok 'OK: RunPod can pull this image. Run the dry-run diagnostics in AI Story Studio again.' }
   2 { Write-Warn 'The registry could not be reached from this PC. Check your internet connection and try again.' }
-  default { Write-Warn 'Not pullable yet. Follow the advice above (build and push, then make the package public).' }
+  default { Write-Warn 'Not pullable yet. Follow the advice above (push the image, then make the package public).' }
 }
 exit $code

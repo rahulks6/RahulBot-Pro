@@ -51,8 +51,9 @@ type Json = Record<string, unknown>;
 const REQUIRED_PATHS = ['/pods', '/pods/{}', '/pods/{}/action', '/catalog/gpus'];
 const REQUIRED_CREATE_FIELDS = ['name', 'image', 'gpu'];
 const EXPECTED_CREATE_FIELDS = ['name', 'image', 'gpu', 'cloud', 'env', 'ports', 'mounts'];
-const CONTAINER_DISK_FIELDS = ['containerDiskInGb', 'containerDiskGb', 'containerDisk'];
-const REGISTRY_AUTH_FIELDS = ['registryAuthId', 'containerRegistryAuthId'];
+// First match wins; RunPod v2 (Sept 2026) names them `disk` and `registry`.
+const CONTAINER_DISK_FIELDS = ['disk', 'containerDiskInGb', 'containerDiskGb', 'containerDisk'];
+const REGISTRY_AUTH_FIELDS = ['registry', 'registryAuthId', 'containerRegistryAuthId'];
 
 const obj = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {});
 const str = (...vals: unknown[]): string | null => {
@@ -96,7 +97,8 @@ export function describeShape(body: unknown): string {
 export function normalizePodState(raw: string): CloudPodState {
   const s = raw.toLowerCase();
   if (/terminat|delet|remov/.test(s)) return 'terminated';
-  if (/exit|stop|paus/.test(s)) return 'stopped';
+  // v2 statuses: PROVISIONING, STARTING, RUNNING, EXITED, ERROR, TERMINATED.
+  if (/exit|stop|paus|error|fail/.test(s)) return 'stopped';
   if (/run/.test(s)) return 'running';
   if (/creat|pend|start|provision|queue|init|boot/.test(s)) return 'starting';
   return 'unknown';
@@ -112,9 +114,16 @@ export function parsePod(raw: unknown): CloudPod {
     name: str(p['name']) ?? '',
     state: normalizePodState(rawStatus),
     rawStatus,
-    hourlyUsd: num(p['costPerHr'], p['adjustedCostPerHr'], obj(p['cost'])['perHour'], p['pricePerHour']),
-    gpuName: str(gpu['displayName'], gpu['id'], machine['gpuDisplayName'], p['gpuTypeId']),
-    createdAt: str(p['createdAt'], p['lastStartedAt']),
+    // v2: `cost` is the current USD/hour (0 when EXITED or TERMINATED).
+    hourlyUsd: num(
+      p['cost'],
+      p['costPerHr'],
+      p['adjustedCostPerHr'],
+      obj(p['cost'])['perHour'],
+      p['pricePerHour'],
+    ),
+    gpuName: str(gpu['displayName'], gpu['name'], gpu['id'], machine['gpuDisplayName'], p['gpuTypeId']),
+    createdAt: str(p['createdAt'], p['startedAt'], p['lastStartedAt']),
   };
 }
 
@@ -140,52 +149,75 @@ const price = (...vals: unknown[]): number | null => {
   return null;
 };
 
+/**
+ * One entry of GET /v2/catalog/gpus (Runpod REST API 2.0.0, `GpuType`):
+ *   id, name, memory (VRAM in GB), secure / community (offered on that cloud),
+ *   price {secure, community, serverless} (USD per GPU-hour, list price),
+ *   availability (NONE|LOW|MEDIUM|HIGH) and dataCenters[{id, name, availability}] — the last two
+ *   only with include=AVAILABILITY&product=…, scoped by `cloud`, `count` and the CUDA filters.
+ * Older field names are still read as a fallback. Availability is never inferred from a price:
+ * without an availability level the GPU is "unknown" (null) and is not rented.
+ */
 export function parseGpuType(raw: unknown, cloud: 'SECURE' | 'COMMUNITY'): CloudGpuType {
   const g = obj(raw);
-  const lowest = obj(g['lowestPrice']);
-  const availList = Array.isArray(g['availability']) ? (g['availability'] as unknown[]).map(obj) : [];
-  const availability = Array.isArray(g['availability']) ? {} : obj(g['availability']);
-  const prices = obj(g['prices'] ?? g['pricing']);
   const secure = cloud === 'SECURE';
-
-  // Stock: a single status, or the best status across data centres.
-  const stocks = [
-    str(g['stockStatus'], availability['stockStatus'], lowest['stockStatus']),
-    ...availList.map((a) => str(a['stockStatus'], a['stock'])),
-  ].filter((x): x is string => x !== null);
-  const stock =
-    stocks.sort((a, b) => (STOCK_RANK[b.toLowerCase()] ?? 0) - (STOCK_RANK[a.toLowerCase()] ?? 0))[0] ?? null;
+  const cloudKey = secure ? 'secure' : 'community';
+  const priceObj = obj(g['price']);
+  const legacyPrices = obj(g['prices'] ?? g['pricing']);
+  const lowest = obj(g['lowestPrice']);
+  const legacyAvail =
+    typeof g['availability'] === 'object' && !Array.isArray(g['availability']) ? obj(g['availability']) : {};
 
   const hourlyUsd = price(
-    ...(secure
-      ? [g['securePrice'], prices['secure'], prices['SECURE'], availability['securePrice']]
-      : [g['communityPrice'], prices['community'], prices['COMMUNITY'], availability['communityPrice']]),
+    priceObj[cloudKey],
+    secure ? g['securePrice'] : g['communityPrice'],
+    legacyPrices[cloudKey],
+    legacyPrices[cloudKey.toUpperCase()],
     lowest['uninterruptablePrice'],
-    lowest['onDemandPrice'],
-    lowest['price'],
-    typeof g['lowestPrice'] === 'number' || typeof g['lowestPrice'] === 'string' ? g['lowestPrice'] : null,
-    g['price'],
-    g['pricePerHour'],
-    g['onDemandPrice'],
   );
 
+  // Offered on this cloud at all? (`secure` / `community` booleans; legacy secureCloud / communityCloud.)
+  const offeredRaw = [g[cloudKey], secure ? g['secureCloud'] : g['communityCloud']].find(
+    (v) => typeof v === 'boolean',
+  ) as boolean | undefined;
+
+  const level = typeof g['availability'] === 'string' ? (g['availability'] as string).toUpperCase() : null;
+  const dcs = Array.isArray(g['dataCenters']) ? (g['dataCenters'] as unknown[]).map(obj) : [];
+  const dcInStock = dcs.filter((d) => {
+    const a = str(d['availability'], d['stockStatus']);
+    return a !== null && !NO_STOCK.test(a);
+  }).length;
+  const legacyList = Array.isArray(g['availability']) ? (g['availability'] as unknown[]).map(obj) : [];
+  const legacyStocks = [
+    str(g['stockStatus'], legacyAvail['stockStatus'], lowest['stockStatus']),
+    ...legacyList.map((a) => str(a['stockStatus'], a['stock'])),
+  ].filter((x): x is string => x !== null);
+  const legacyStock =
+    legacyStocks.sort((a, b) => (STOCK_RANK[b.toLowerCase()] ?? 0) - (STOCK_RANK[a.toLowerCase()] ?? 0))[0] ??
+    null;
+
   let available: boolean | null = null;
-  const offeredHere = secure ? g['secureCloud'] : g['communityCloud'];
-  if (offeredHere === false) available = false;
-  else if (typeof availability['available'] === 'boolean') available = availability['available'] as boolean;
+  if (offeredRaw === false) available = false;
+  else if (level) available = !NO_STOCK.test(level);
+  else if (typeof legacyAvail['available'] === 'boolean') available = legacyAvail['available'] as boolean;
   else if (typeof g['available'] === 'boolean') available = g['available'] as boolean;
-  else if (availList.length)
-    available = availList.some(
+  else if (legacyList.length)
+    available = legacyList.some(
       (a) => a['available'] === true || (str(a['stockStatus'], a['stock']) ?? '').match(NO_STOCK) === null,
     );
-  else if (stock) available = !NO_STOCK.test(stock);
+  else if (legacyStock) available = !NO_STOCK.test(legacyStock);
+
+  const stock = level
+    ? `${level}${dcs.length ? ` in ${dcInStock} data centre${dcInStock === 1 ? '' : 's'}` : ''}`
+    : legacyStock;
   return {
-    id: str(g['id'], g['gpuTypeId']) ?? '',
-    displayName: str(g['displayName'], g['name'], g['id']) ?? 'unknown GPU',
-    vramGb: num(g['memoryInGb'], g['vramGb'], g['memoryGb'], g['vram'], g['vramInGb']) ?? 0,
+    id: str(g['id'], g['gpuTypeId'], g['gpuId']) ?? '',
+    displayName: str(g['name'], g['displayName'], g['id']) ?? 'unknown GPU',
+    vramGb: num(g['memory'], g['memoryInGb'], g['vramGb'], g['memoryGb'], g['vram'], g['vramInGb']) ?? 0,
     hourlyUsd,
     available,
     stock,
+    offered: offeredRaw ?? null,
   };
 }
 
@@ -209,19 +241,25 @@ export interface CatalogQueryPlan {
   notes: string[];
 }
 
-/** The parameters RunPod documents for GET /catalog/gpus (used only when openapi.json is unreadable). */
+/** The parameters Runpod publishes for GET /v2/catalog/gpus (used only when openapi.json is unreadable). */
 export const DOCUMENTED_CATALOG_PARAMS: ApiParam[] = [
   { name: 'include', required: false, enumValues: ['AVAILABILITY'], maximum: null, hasDefault: false },
   {
-    name: 'cloudType',
+    name: 'product',
     required: false,
-    enumValues: ['SECURE', 'COMMUNITY'],
+    enumValues: ['POD', 'CLUSTER', 'SERVERLESS'],
     maximum: null,
-    hasDefault: true,
+    hasDefault: false,
   },
-  { name: 'gpuCount', required: false, enumValues: [], maximum: null, hasDefault: true },
+  { name: 'count', required: false, enumValues: [], maximum: null, hasDefault: true },
+  { name: 'cloud', required: false, enumValues: ['SECURE', 'COMMUNITY'], maximum: null, hasDefault: true },
+  { name: 'countryCodes', required: false, enumValues: [], maximum: null, hasDefault: false },
+  { name: 'cudaVersions', required: false, enumValues: [], maximum: null, hasDefault: false },
   { name: 'minCudaVersion', required: false, enumValues: [], maximum: null, hasDefault: false },
 ];
+
+/** Studio rents pods, so availability is always asked for the POD product context. */
+export const STUDIO_PRODUCT = 'POD';
 
 const pick = (values: string[], wanted: string): string | null =>
   values.find((v) => v.toLowerCase() === wanted.toLowerCase()) ?? null;
@@ -235,7 +273,7 @@ const pick = (values: string[], wanted: string): string | null =>
 export function planCatalogQuery(
   declared: ApiParam[],
   cloud: 'SECURE' | 'COMMUNITY',
-  opts: { availability: boolean; source: 'openapi' | 'documented' },
+  opts: { availability: boolean; source: 'openapi' | 'documented'; minCudaVersion?: string },
 ): CatalogQueryPlan {
   const plan: CatalogQueryPlan = {
     params: {},
@@ -251,8 +289,16 @@ export function planCatalogQuery(
       ? pick(include.enumValues, 'AVAILABILITY')
       : 'AVAILABILITY'
     : null;
-  if (opts.availability && include && includeValue) {
+  // Availability is product-specific: the `product` context is required with include=AVAILABILITY.
+  const product = byName.get('product');
+  const productValue = product
+    ? product.enumValues.length
+      ? pick(product.enumValues, STUDIO_PRODUCT)
+      : null
+    : null;
+  if (opts.availability && include && includeValue && (!product || productValue)) {
     plan.params[include.name] = includeValue;
+    if (product && productValue) plan.params[product.name] = productValue;
     plan.availability = true;
   } else if (opts.availability && !include)
     plan.notes.push('RunPod no longer offers live stock in the GPU catalog.');
@@ -260,15 +306,24 @@ export function planCatalogQuery(
     plan.notes.push(
       `RunPod's catalog "include" no longer accepts AVAILABILITY (${include.enumValues.join(', ')}).`,
     );
+  else if (opts.availability && product && !productValue)
+    plan.notes.push(
+      `RunPod's catalog "product" does not list ${STUDIO_PRODUCT} (${product.enumValues.join(', ') || 'no values published'}), so pod stock cannot be requested.`,
+    );
   const unknownRequired: string[] = [];
   for (const p of declared) {
     const key = p.name.toLowerCase();
-    if (key === 'include') continue;
+    if (key === 'include' || key === 'product') continue;
+    // These refine availability and are valid ONLY together with include=AVAILABILITY (400 otherwise).
     if (key === 'cloudtype' || key === 'cloud') {
       if (plan.availability || p.required)
         plan.params[p.name] = p.enumValues.length ? (pick(p.enumValues, cloud) ?? cloud) : cloud;
-    } else if (key === 'gpucount') {
+    } else if (key === 'gpucount' || key === 'count') {
       if (plan.availability || p.required) plan.params[p.name] = '1';
+    } else if (key === 'mincudaversion') {
+      if (plan.availability && opts.minCudaVersion) plan.params[p.name] = opts.minCudaVersion;
+    } else if (key === 'cudaversions' || key === 'countrycodes') {
+      // not used: no country restriction; minCudaVersion covers the image's CUDA floor
     } else if (key === 'limit' || key === 'pagesize' || key === 'perpage' || key === 'per_page') {
       plan.params[p.name] = String(Math.min(p.maximum ?? 100, 100));
     } else if (
@@ -303,6 +358,7 @@ export class RunPodApi implements CloudGpuApi {
   private readonly retry: RetryPolicy | undefined;
   private contract: ContractReport | undefined;
   private createFieldTypes = new Map<string, string>();
+  private gpuCreateFields = new Set<string>();
   private spec: Json | null | undefined;
   private specError = '';
   /** What the last GPU catalog read did (shown by the dry-run diagnostics). */
@@ -444,7 +500,10 @@ export class RunPodApi implements CloudGpuApi {
    * the stock query, prices are read without it (a free, read-only GET) so the price
    * ceiling can still be enforced; the reason is kept in catalogNotes.
    */
-  async listGpuTypes(cloud: 'SECURE' | 'COMMUNITY' = 'SECURE'): Promise<CloudGpuType[]> {
+  async listGpuTypes(
+    cloud: 'SECURE' | 'COMMUNITY' = 'SECURE',
+    opts: { minCudaVersion?: string } = {},
+  ): Promise<CloudGpuType[]> {
     const notes: string[] = [];
     const spec = await this.loadSpec();
     const declared = spec ? this.catalogParams(spec) : null;
@@ -456,7 +515,7 @@ export class RunPodApi implements CloudGpuApi {
           : `RunPod’s API description could not be read (${this.specError || 'unknown error'}); using the documented catalog parameters.`,
       );
     const params = declared ?? DOCUMENTED_CATALOG_PARAMS;
-    const plan = planCatalogQuery(params, cloud, { availability: true, source });
+    const plan = planCatalogQuery(params, cloud, { availability: true, source, ...opts });
     notes.push(...plan.notes);
     if (plan.notes.some((n) => n.includes('requires'))) {
       this.catalogNotes = notes;
@@ -471,8 +530,11 @@ export class RunPodApi implements CloudGpuApi {
         this.catalogNotes = notes;
         throw err;
       }
-      // Stock query refused: read prices without it, so the price ceiling still applies.
-      notes.push(`Live stock query refused (${err.message}); prices were read without stock.`);
+      // Stock query refused: read the list and prices without it so the dry run can still show
+      // them — but without an availability level no GPU counts as available (none is rented).
+      notes.push(
+        `Live stock query refused (${err.message}); prices were read without stock, and no GPU is treated as available.`,
+      );
       rows = await this.readCatalog(planCatalogQuery(params, cloud, { availability: false, source }));
       plan.availability = false;
     }
@@ -482,8 +544,13 @@ export class RunPodApi implements CloudGpuApi {
         'CLOUD_BAD_REQUEST',
         'RunPod returned GPU catalog entries without ids. Nothing was rented. Update AI Story Studio.',
       );
+    if (plan.availability)
+      for (const t of types) if (t.available === null && t.offered !== false) t.available = false; // not reported = not in stock
+    const query = Object.entries(plan.params)
+      .map(([k, v]) => `${k}=${v}`)
+      .join('&');
     notes.push(
-      `${types.length} GPU type(s) listed; ${types.filter((t) => t.hourlyUsd !== null).length} with a ${cloud.toLowerCase()} price; stock ${plan.availability ? 'included' : 'not reported'} (catalog parameters from ${source === 'openapi' ? 'openapi.json' : 'the documentation'}: ${Object.keys(plan.params).join(', ') || 'none'}).`,
+      `${types.length} GPU type(s) listed; ${types.filter((t) => t.hourlyUsd !== null).length} with a ${cloud.toLowerCase()} price; ${plan.availability ? `${types.filter((t) => t.available).length} in stock for pods` : 'stock not reported'} (GET /v2/catalog/gpus${query ? `?${query}` : ''}; parameters from ${source === 'openapi' ? 'openapi.json' : 'the documentation'}).`,
     );
     this.catalogNotes = notes;
     return types;
@@ -529,11 +596,17 @@ export class RunPodApi implements CloudGpuApi {
     );
     const props = obj(createSchema['properties']);
     report.createFields = Object.keys(props).sort();
+    const typeName = (v: unknown): string => {
+      const t = resolve(v)['type'];
+      if (Array.isArray(t)) return str(...t.filter((x) => x !== 'null')) ?? 'object';
+      return str(t) ?? 'object';
+    };
     this.createFieldTypes = new Map(
-      Object.entries(props).map(([k, v]) => [k, str(resolve(v)['type']) ?? 'object'] as [string, string]),
+      Object.entries(props).map(([k, v]) => [k, typeName(v)] as [string, string]),
     );
     report.missingCreateFields = EXPECTED_CREATE_FIELDS.filter((f) => !(f in props));
     const gpuProps = obj(resolve(props['gpu'])['properties']);
+    this.gpuCreateFields = new Set(Object.keys(gpuProps));
     if ('gpu' in props && !('id' in gpuProps && 'count' in gpuProps))
       report.notes.push('The create-pod "gpu" object no longer declares both "id" and "count".');
     report.ok =
@@ -567,7 +640,14 @@ export class RunPodApi implements CloudGpuApi {
     const body: Json = {
       name: spec.name,
       image: spec.image,
-      gpu: { id: spec.gpuTypeId, count: spec.gpuCount },
+      gpu: {
+        id: spec.gpuTypeId,
+        count: spec.gpuCount,
+        // Host CUDA floor for the worker image, when the API declares it (v2: gpu.minCudaVersion).
+        ...(spec.minCudaVersion && this.gpuCreateFields.has('minCudaVersion')
+          ? { minCudaVersion: spec.minCudaVersion }
+          : {}),
+      },
       cloud: spec.cloud,
       env: spec.env,
       ports: spec.ports,

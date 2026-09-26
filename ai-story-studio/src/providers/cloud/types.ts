@@ -18,9 +18,11 @@ export interface CloudGpuType {
   vramGb: number;
   /** On-demand price per GPU-hour in USD, or null when the provider did not report one. */
   hourlyUsd: number | null;
-  /** false = the provider reports no stock right now; null = unknown. */
+  /** true only when the provider reports stock for pods right now; false = none; null = not reported. */
   available: boolean | null;
   stock: string | null;
+  /** Offered on the requested cloud at all (null = not reported). */
+  offered?: boolean | null;
 }
 
 export type CloudVolume =
@@ -38,6 +40,8 @@ export interface CloudPodSpec {
   containerDiskGb: number;
   volume?: CloudVolume;
   registryAuthId?: string;
+  /** Lowest host CUDA version the worker image needs (major.minor). */
+  minCudaVersion?: string;
 }
 
 export type CloudPodState = 'starting' | 'running' | 'stopped' | 'terminated' | 'unknown';
@@ -70,7 +74,7 @@ export interface CloudGpuApi {
   readonly supported: boolean;
   /** Authenticated no-op call. Throws CLOUD_AUTH_FAILED for a bad key. */
   testConnection(): Promise<{ ok: true; detail: string }>;
-  listGpuTypes(cloud?: 'SECURE' | 'COMMUNITY'): Promise<CloudGpuType[]>;
+  listGpuTypes(cloud?: 'SECURE' | 'COMMUNITY', opts?: { minCudaVersion?: string }): Promise<CloudGpuType[]>;
   /** NOT retried after an ambiguous failure: a lost response must never duplicate a billed pod. */
   createPod(spec: CloudPodSpec): Promise<CloudPod>;
   /** null when the pod no longer exists. */

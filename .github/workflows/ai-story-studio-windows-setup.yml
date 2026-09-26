@@ -100,6 +100,37 @@ jobs:
           $global:LASTEXITCODE = 0 # the refusal above is the expected result
           Write-Host 'Upgrade and folder-safety checks passed.'
 
+      - name: Worker-image scripts (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          # 1. Every script parses without errors in Windows PowerShell 5.1.
+          foreach ($f in Get-ChildItem "$dir\scripts\*.ps1") {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errs)
+            if ($errs) { $errs | Format-List | Out-String | Write-Host; throw "syntax errors in $($f.Name)" }
+            Write-Host "parsed OK: $($f.Name)"
+          }
+          $ErrorActionPreference = 'Continue' # child processes may write to stderr; exit codes are checked explicitly
+          # 2. The default image name is exactly the one the app uses.
+          $name = powershell -NoProfile -Command ". '$dir\scripts\worker-image-common.ps1'; (Resolve-Image '' '' '').Name"
+          if ($name -ne 'ghcr.io/rahulks6/ai-story-studio-worker:1.1.0') { throw "unexpected default image: $name" }
+          Write-Host "default image: $name"
+          # 3. The anonymous check runs and gives a definite registry answer (0 = public, 1 = not yet).
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\scripts\verify-worker-image.ps1" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -ne 0 -and $code -ne 1) { throw "verify-worker-image.ps1 exited with $code" }
+          if ($out -notmatch 'IMAGE (EXISTS AND PUBLICLY PULLABLE|REQUIRES AUTHENTICATION|DOES NOT EXIST)') { throw 'no registry verdict' }
+          # 4. The build script refuses clearly when Docker is not in Linux-container mode (runners use Windows containers).
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\scripts\build-worker-image.ps1" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -eq 0) { throw 'build script should not succeed on a Windows-containers runner' }
+          if ($out -notmatch 'Switch to Linux containers|not running|not installed') { throw 'no beginner-friendly Docker message' }
+          $global:LASTEXITCODE = 0
+
       - name: Upload the installer log
         if: always()
         uses: actions/upload-artifact@v4

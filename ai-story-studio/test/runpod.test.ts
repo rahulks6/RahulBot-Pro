@@ -9,7 +9,16 @@ import { backoffMs } from '../src/providers/cloud/http.ts';
 import { normalizePodState, parseGpuType, RunPodApi } from '../src/providers/cloud/runpod.ts';
 import { UnsupportedCloudApi } from '../src/providers/cloud/unsupported.ts';
 import { SecretStore } from '../src/services/secrets.ts';
+import { readFileSync } from 'node:fs';
 import { MockRunPod } from './fixtures/mock-runpod.ts';
+import { validate } from './fixtures/schema-lite.ts';
+
+const PODS = JSON.parse(
+  readFileSync(new URL('./fixtures/runpod-pods-openapi.json', import.meta.url), 'utf8'),
+) as {
+  createPodRequest: Record<string, unknown>;
+  podStatus: string[];
+};
 
 describe('RunPod API v2 adapter (against a local mock RunPod; nothing is billed)', () => {
   const rp = new MockRunPod();
@@ -71,23 +80,51 @@ describe('RunPod API v2 adapter (against a local mock RunPod; nothing is billed)
     );
   });
 
-  it('checks the published contract and sends only declared optional fields', async () => {
+  it('checks the published contract and sends a body that validates against it', async () => {
     const report = await api().checkContract();
     assert.equal(report.ok, true, JSON.stringify(report));
-    assert.ok(report.createFields.includes('containerDiskInGb'));
-    const pod = await api().createPod(spec);
-    assert.equal(pod.state, 'starting');
+    assert.ok(report.createFields.includes('disk') && report.createFields.includes('registry'));
+    const pod = await api().createPod({ ...spec, minCudaVersion: '12.6' });
+    assert.equal(pod.state, 'starting', 'PROVISIONING');
     const post = rp.requests.find((r) => r.method === 'POST')!;
     assert.deepEqual(post.body, {
       name: 'ais-abc123-x1',
       image: 'ghcr.io/example/worker:1',
-      gpu: { id: 'NVIDIA RTX A5000', count: 1 },
+      gpu: { id: 'NVIDIA RTX A5000', count: 1, minCudaVersion: '12.6' },
       cloud: 'SECURE',
       env: { WORKER_AUTH_TOKEN: 'aisw_secret' },
       ports: ['8765/http'],
       mounts: { persistent: { size: 60, path: '/workspace' } },
-      containerDiskInGb: 40,
+      disk: 40,
     });
+    assert.deepEqual(validate(post.body, PODS.createPodRequest), [], 'conforms to the published schema');
+    // A network volume and a registry credential use the published shapes too.
+    rp.requests = [];
+    await api().createPod({
+      ...spec,
+      volume: { kind: 'network', volumeId: 'vol123', path: '/workspace' },
+      registryAuthId: 'reg_1',
+    });
+    const body = rp.requests.find((r) => r.method === 'POST')!.body as Record<string, unknown>;
+    assert.deepEqual(body['mounts'], { network: [{ volumeId: 'vol123', path: '/workspace' }] });
+    assert.equal(body['registry'], 'reg_1');
+    assert.deepEqual(validate(body, PODS.createPodRequest), []);
+  });
+
+  it('the schema checker used above rejects what Runpod would reject', () => {
+    assert.match(
+      validate({ name: 'x', image: 'y', bogus: 1 }, PODS.createPodRequest).join(),
+      /"bogus" is not declared/,
+    );
+    assert.match(validate({ image: 'y' }, PODS.createPodRequest).join(), /missing required "name"/);
+    assert.match(
+      validate({ name: 'x', gpu: { id: 'g', minCudaVersion: '12' } }, PODS.createPodRequest).join(),
+      /minCudaVersion: does not match/,
+    );
+    assert.match(
+      validate({ name: 'x', mounts: { persistent: { size: 5, path: '/w' } } }, PODS.createPodRequest).join(),
+      /below minimum 10/,
+    );
   });
 
   it('refuses to create anything when RunPod API drifted', async () => {
@@ -96,11 +133,11 @@ describe('RunPod API v2 adapter (against a local mock RunPod; nothing is billed)
       /no longer matches.*field gpu.*Nothing was created/s.test(e.message),
     );
     assert.equal(rp.requests.filter((r) => r.method === 'POST').length, 0);
-    rp.dropCreateFields = ['containerDiskInGb'];
+    rp.dropCreateFields = ['disk'];
     const a = api();
     await a.createPod(spec);
     assert.ok(
-      !('containerDiskInGb' in (rp.requests.find((r) => r.method === 'POST')!.body as object)),
+      !('disk' in (rp.requests.find((r) => r.method === 'POST')!.body as object)),
       'undeclared optional field omitted',
     );
   });
@@ -156,6 +193,11 @@ describe('cloud helpers', () => {
     assert.equal(normalizePodState('RUNNING'), 'running');
     assert.equal(normalizePodState('EXITED'), 'stopped');
     assert.equal(normalizePodState('TERMINATED'), 'terminated');
+    // Every status in Runpod's published enum maps to a definite state; ERROR fails fast.
+    assert.deepEqual(
+      PODS.podStatus.map((st) => normalizePodState(st)),
+      ['starting', 'starting', 'running', 'stopped', 'stopped', 'terminated'],
+    );
     assert.equal(normalizePodState('CREATED'), 'starting');
     assert.equal(normalizePodState('???'), 'unknown');
     const g = parseGpuType(

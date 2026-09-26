@@ -8,7 +8,7 @@ import { AppError, toAppError } from '../lib/errors.ts';
 import type { Logger } from '../lib/logger.ts';
 import { runTool, type FfmpegTools } from '../media/ffmpeg.ts';
 import { CloudWorkerBridge } from '../providers/cloud/bridge.ts';
-import { CloudGpuProvider, ownedPodPrefix } from '../providers/cloud/gpu-provider.ts';
+import { CloudGpuProvider, ownedPodPrefix, WORKER_MIN_CUDA } from '../providers/cloud/gpu-provider.ts';
 import type { FetchFn, SleepFn } from '../providers/cloud/http.ts';
 import { RunPodApi } from '../providers/cloud/runpod.ts';
 import type { CloudGpuApi, CloudPod, ContractReport } from '../providers/cloud/types.ts';
@@ -438,22 +438,27 @@ export class CloudService {
       const tail = notes ? ` [${notes}]` : '';
       const priced = offers.filter((o) => Number.isFinite(o.hourlyRateInr));
       const good = offers.filter((o) => o.withinLimit);
-      if (good.length)
+      const stockUnknown = notes.includes('no GPU is treated as available');
+      if (good.length) {
+        const best = good[0]!;
         return {
           step,
           ok: true,
-          detail: `${good.length} GPU type(s) with ≥ ${minVram} GB VRAM within your ₹${limits.maxHourlyRateInr}/h limit (${cloud.toLowerCase()} cloud); cheapest: ${good[0]!.gpuModel} (${good[0]!.vramGb} GB) at ₹${good[0]!.hourlyRateInr}/h.${tail}`,
+          detail: `${good.length} GPU type(s) with ≥ ${minVram} GB VRAM in stock for pods in ${cloud.toLowerCase()} cloud (CUDA ≥ ${WORKER_MIN_CUDA}) at or below your ₹${limits.maxHourlyRateInr}/h limit; cheapest: ${best.gpuModel} (${best.vramGb} GB) at ₹${best.hourlyRateInr}/h, ${best.region}.${tail}`,
         };
+      }
       let why: string;
       if (!offers.length)
         why = `RunPod lists no GPU type with at least ${minVram} GB VRAM${this.d.settings.get('cloud').allowedGpuTypes.trim() ? ' among your allowed GPU types' : ''}.`;
       else if (!priced.length)
-        why = `RunPod listed ${offers.length} GPU type(s) with ≥ ${minVram} GB VRAM but no ${cloud.toLowerCase()} price, so none can be rented safely. Try the other cloud type under Advanced.`;
+        why = `RunPod listed ${offers.length} GPU type(s) with ≥ ${minVram} GB VRAM but none has a ${cloud.toLowerCase()}-cloud price, so none can be rented safely. Try the other cloud type under Advanced.`;
+      else if (stockUnknown)
+        why = `RunPod listed ${priced.length} priced GPU type(s) with ≥ ${minVram} GB VRAM, but did not report stock, so none is treated as available (a price is not availability).`;
       else if (!priced.some((o) => o.available))
-        why = `The ${priced.length} compatible GPU type(s) are out of stock in ${cloud.toLowerCase()} cloud right now. Try later or allow Community Cloud.`;
+        why = `The ${priced.length} compatible GPU type(s) (≥ ${minVram} GB VRAM, CUDA ≥ ${WORKER_MIN_CUDA}) are out of stock for pods in ${cloud.toLowerCase()} cloud right now. Try later or allow Community Cloud.`;
       else {
         const cheapest = priced.filter((o) => o.available)[0]!;
-        why = `No compatible GPU is currently available below your configured hourly price (₹${limits.maxHourlyRateInr}/h). Cheapest compatible: ${cheapest.gpuModel} (${cheapest.vramGb} GB) at ₹${cheapest.hourlyRateInr}/h. Raise the limit or allow Community Cloud.`;
+        why = `No compatible GPU is currently available below your configured hourly price (₹${limits.maxHourlyRateInr}/h). Cheapest compatible in stock: ${cheapest.gpuModel} (${cheapest.vramGb} GB) at ₹${cheapest.hourlyRateInr}/h. Raise the limit or allow Community Cloud.`;
       }
       return { step, ok: false, detail: `${why}${tail}` };
     } catch (err) {
