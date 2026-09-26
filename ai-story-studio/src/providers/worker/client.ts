@@ -27,6 +27,8 @@ export interface WorkerJob {
   metrics: Record<string, number>;
   error: { code: string; message: string } | null;
   logs: string[];
+  /** Worker decisions: memory plan, effective parameters, reference mode (worker 1.2+). */
+  details?: Record<string, unknown>;
 }
 
 export interface WorkerModel {
@@ -42,6 +44,7 @@ export interface WorkerModel {
   default: boolean;
   commercial_use?: string;
   license_url?: string;
+  capabilities?: string[];
 }
 
 export interface WorkerSystem {

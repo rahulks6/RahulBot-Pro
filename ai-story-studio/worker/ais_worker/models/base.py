@@ -40,6 +40,9 @@ class Model(ABC, Generic[Req]):
     def __init__(self) -> None:
         self.loaded = False
 
+    def prepare(self, request: Req, ctx: JobContext) -> None:
+        """Plan memory / parameters for this request before loading (real GPU models override)."""
+
     def load(self, ctx: JobContext) -> None:
         """Load weights. Override for real models; keep idempotent."""
         self.loaded = True

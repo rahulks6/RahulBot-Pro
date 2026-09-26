@@ -42,6 +42,7 @@ from .models.mock import MockAudioModel, MockImageModel, MockLipSyncModel, MockU
 from .models.registry import ModelRegistry
 from .schemas import ValidationError, parse_audio, parse_image, parse_lipsync, parse_upscale, parse_video
 from .security import SecurityError, check_bearer, validate_output_name
+from .vram import MemoryPolicy
 
 log = logging.getLogger("ais_worker.api")
 
@@ -225,10 +226,25 @@ class WorkerAPI:
 
     def _submit(self, job_kind: str, req: Any, model_kind: ModelKind) -> Response:
         model = self.registry.resolve(model_kind, getattr(req, "model", ""))
-        summary = {k: v for k, v in vars(req).items() if not isinstance(v, (bytes, bytearray))}
+        # Job records keep the request without file contents (images, audio): counts only.
+        summary: dict[str, Any] = {}
+        for k, v in vars(req).items():
+            if isinstance(v, (bytes, bytearray)):
+                continue
+            if isinstance(v, (tuple, list)) and any(isinstance(x, (bytes, bytearray)) for x in v):
+                summary[k] = f"{len(v)} file(s)"
+            else:
+                summary[k] = v
 
         def runner(ctx: JobContext) -> None:
             ctx.job.model = {"id": model.info.id, "version": model.info.version, "mock": model.info.mock}
+            policy = MemoryPolicy.from_settings(getattr(req, "settings", {}) or {})
+            if model.info.device == "cuda" and policy.auto_unload and not model.loaded:
+                # One large model in VRAM at a time (image, video, audio and upscaler models are not kept together).
+                unloaded = self.registry.unload_others(model)
+                if unloaded:
+                    ctx.log(f"unloaded {', '.join(unloaded)} to free GPU memory")
+            model.prepare(req, ctx)
             self.registry.ensure_loaded(model, ctx)
             ctx.set_status("running", "generating")
             started = time.monotonic()

@@ -71,6 +71,9 @@ function workerSettings(
   const failFirst = settings?.['mockFailAttempts'];
   if (typeof forced === 'string' && forced) out['mock_fail'] = forced;
   else if (typeof failFirst === 'number' && (ctx.attemptNumber ?? 1) <= failFirst) out['mock_fail'] = code;
+  // GPU memory policy from Settings → Execution & GPU (offload, tiling, max VRAM, quality reduction).
+  const memory = settings?.['memory'];
+  if (memory && typeof memory === 'object') out['memory'] = memory;
   return out;
 }
 
@@ -90,7 +93,16 @@ function result(job: WorkerJob, file: { meta: WorkerOutput; data: Buffer }, info
     modelVersion: job.model.version ?? info.modelVersion,
     generationSeconds: (job.metrics['run_seconds'] ?? 0) + (job.metrics['load_seconds'] ?? 0),
     isNativeResolution: m.native_resolution,
-    settings: { workerJob: job.id, workerModel: job.model.id, mock: m.mock },
+    settings: {
+      workerJob: job.id,
+      workerModel: job.model.id,
+      mock: m.mock,
+      ...(job.details && Object.keys(job.details).length ? { worker: job.details } : {}),
+      ...(job.metrics['peak_vram_mb'] !== undefined ? { peakVramMb: job.metrics['peak_vram_mb'] } : {}),
+      ...(job.metrics['estimated_vram_gb'] !== undefined
+        ? { estimatedVramGb: job.metrics['estimated_vram_gb'] }
+        : {}),
+    },
     logs: job.logs.slice(-10),
   };
 }
@@ -148,6 +160,11 @@ export class WorkerImageModel implements ImageModel {
       body['init_image'] = b64(req.initImage);
       if (req.strength) body['strength'] = Math.min(1, Math.max(0.05, req.strength));
     }
+    if (req.referenceImages?.length) {
+      body['reference_images'] = req.referenceImages.slice(0, 4).map(b64);
+      if (req.referenceStrength)
+        body['reference_strength'] = Math.min(1, Math.max(0.05, req.referenceStrength));
+    }
     const { job, files } = await this.client.run('/generate/image', body, ctx);
     return result(job, first(files, 'image'), this.info);
   }
@@ -175,6 +192,10 @@ export class WorkerVideoModel implements VideoModel {
         width: req.width,
         height: req.height,
         quality: req.quality,
+        ...(req.motionStrength !== undefined
+          ? { motion_strength: Math.min(1, Math.max(0, req.motionStrength)) }
+          : {}),
+        ...(req.cameraMovement ? { camera_movement: req.cameraMovement.slice(0, 200) } : {}),
         settings: workerSettings(req.settings, ctx, 'VIDEO_GENERATION_FAILED'),
       },
       ctx,

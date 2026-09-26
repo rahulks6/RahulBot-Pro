@@ -376,20 +376,56 @@ export class GenerationService {
   }
 
   /**
-   * Character consistency with real cloud models: the first approved character
-   * reference of the shot becomes the image-to-image starting point. Mock and
-   * local providers keep their existing behaviour.
+   * Character consistency with REAL image models (local GPU or cloud): the approved references
+   * of the shot's characters go with the request. Models with an IP-Adapter use them as identity
+   * references; others start image-to-image from the first one. Mock providers are unchanged.
    */
-  private async characterReferenceInit(
-    refs: ReferenceInput[],
-  ): Promise<{ data: Uint8Array; strength: number } | undefined> {
+  private async characterReferences(refs: ReferenceInput[]): Promise<{
+    init?: { data: Uint8Array; strength: number };
+    images: Uint8Array[];
+    used: string[];
+  }> {
     const info = this.s.providers.image.info;
     const strength = this.s.settings.get('generation').characterReferenceStrength;
-    if (info.computeLocation !== 'cloud_gpu' || !info.requiresPaidResources || strength <= 0)
-      return undefined;
-    const ref = refs.find((r) => r.role === 'character');
-    if (!ref || !(await this.s.storage.exists(ref.storageKey))) return undefined;
-    return { data: await this.s.storage.get(ref.storageKey), strength };
+    if (info.isMock) return { images: [], used: [] };
+    // Identity is best described by face / front views, then other views; poses and expressions last.
+    const rank = (r: ReferenceInput): number =>
+      /face|front/.test(r.label)
+        ? 0
+        : /three_quarter|full_body/.test(r.label)
+          ? 1
+          : /view:/.test(r.label)
+            ? 2
+            : 3;
+    const chosen = refs
+      .filter((r) => r.role === 'character')
+      .sort((a, b) => rank(a) - rank(b))
+      .slice(0, 3);
+    const images: Uint8Array[] = [];
+    const used: string[] = [];
+    for (const r of chosen) {
+      if (!(await this.s.storage.exists(r.storageKey))) continue;
+      images.push(await this.s.storage.get(r.storageKey));
+      used.push(r.label);
+    }
+    return {
+      images,
+      used,
+      ...(images[0] && strength > 0 ? { init: { data: images[0], strength } } : {}),
+    };
+  }
+
+  /** GPU memory policy for real models (Settings → Execution & GPU). */
+  memoryPolicy(): Record<string, unknown> {
+    const ex = this.s.settings.get('execution');
+    return {
+      max_vram_percent: ex.maxVramPercent,
+      cpu_offload: ex.cpuOffload,
+      vae_tiling: ex.vaeTiling,
+      attention: ex.attentionOptimization,
+      auto_unload: ex.autoUnloadModels,
+      allow_quality_reduction: ex.allowQualityReduction,
+    };
   }
 
   private isGpuJob(job: GenerationJob): boolean {
@@ -676,7 +712,7 @@ export class GenerationService {
         : {}),
     };
     const params = parseJson<Record<string, unknown>>(job.params_json, {});
-    const settings = { ...params };
+    const settings = { ...params, memory: this.memoryPolicy() };
     const project = this.s.projects.get(job.project_id);
 
     switch (job.kind) {
@@ -685,11 +721,13 @@ export class GenerationService {
         const prompt = this.promptFor(shot.id);
         const seed = this.seedFor(job, shot, attemptNumber);
         this.setStatus(job, 'generating_image', `seed ${seed}`);
-        const reference = await this.characterReferenceInit(prompt.references);
+        const refs = await this.characterReferences(prompt.references);
+        const reference = refs.init;
         const res = await this.s.providers.image.generate(
           {
             mode: reference ? 'image_to_image' : 'text_to_image',
             ...(reference ? { initImage: reference.data, strength: reference.strength } : {}),
+            ...(refs.images.length ? { referenceImages: refs.images } : {}),
             prompt: prompt.final.image,
             negativePrompt: prompt.final.negative,
             seed,
@@ -748,6 +786,8 @@ export class GenerationService {
             height: project.height,
             quality: job.mode,
             references: prompt.references,
+            motionStrength: typeof params['motionStrength'] === 'number' ? params['motionStrength'] : 0.5,
+            cameraMovement: shot.camera_movement,
             settings,
           },
           ctx,

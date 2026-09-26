@@ -156,6 +156,28 @@ class _V:
             return None
         return raw
 
+    def files(self, key: str, kinds: tuple[str, ...], *, max_items: int) -> tuple[bytes, ...]:
+        """A list of base64 files (each checked like ``file``); total size stays under the upload limit."""
+        self.seen.add(key)
+        v = self.data.get(key)
+        if v is None:
+            return ()
+        if not isinstance(v, list) or len(v) > max_items:
+            self.err(key, f"must be a list of at most {max_items} files")
+            return ()
+        out: list[bytes] = []
+        for i, item in enumerate(v):
+            sub = _V({"f": item}, self.max_bytes)
+            data = sub.file("f", kinds)
+            for e in sub.errors:
+                self.err(f"{key}[{i}]", e["message"])
+            if data is not None:
+                out.append(data)
+        if sum(len(b) for b in out) > self.max_bytes:
+            self.err(key, "files are larger than the upload limit together")
+            return ()
+        return tuple(out)
+
     def done(self) -> None:
         for key in self.data:
             if key not in self.seen:
@@ -194,6 +216,10 @@ class ImageRequest:
     settings: dict[str, Any]
     # Image-to-image strength (0.05 to 1.0); None = the model's default.
     strength: float | None = None
+    # Approved character / location references for identity conditioning (IP-Adapter where supported).
+    reference_images: tuple[bytes, ...] = ()
+    # IP-Adapter scale (0.05 to 1.0); None = the model's default.
+    reference_strength: float | None = None
 
 
 @dataclass(frozen=True)
@@ -209,6 +235,9 @@ class VideoRequest:
     quality: str
     model: str
     settings: dict[str, Any]
+    # 0 = barely moving … 1 = strong motion (mapped to the model's motion control where it has one).
+    motion_strength: float = 0.5
+    camera_movement: str = ""
 
 
 @dataclass(frozen=True)
@@ -272,6 +301,8 @@ def parse_image(body: Any, max_bytes: int) -> ImageRequest:
         init_image=v.file("init_image", ("png", "jpeg", "webp"), required=False),
         settings=v.dict_("settings"),
         strength=v.float_("strength", low=0.05, high=1.0, default=0) or None,
+        reference_images=v.files("reference_images", ("png", "jpeg", "webp"), max_items=4),
+        reference_strength=v.float_("reference_strength", low=0.05, high=1.0, default=0) or None,
     )
     v.done()
     return req
@@ -295,6 +326,8 @@ def parse_video(body: Any, max_bytes: int) -> VideoRequest:
         quality=v.enum("quality", QUALITY_MODES, "optimized"),
         model=v.str_("model", max_len=120),
         settings=v.dict_("settings"),
+        motion_strength=v.float_("motion_strength", low=0, high=1, default=0.5),
+        camera_movement=v.str_("camera_movement", max_len=200),
     )
     for dim in ("width", "height"):
         if getattr(req, dim) % 2:

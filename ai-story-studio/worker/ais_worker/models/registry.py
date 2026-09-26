@@ -11,6 +11,12 @@ from ..jobs import JobContext, JobError
 from .base import Model, ModelKind
 
 
+def _torch_if_loaded() -> Any:
+    import sys
+
+    return sys.modules.get("torch")
+
+
 class ModelRegistry:
     def __init__(self, max_loaded: int = 2) -> None:
         self._models: dict[str, Model[Any]] = {}
@@ -65,6 +71,18 @@ class ModelRegistry:
                 ctx.job.metrics["load_seconds"] = round(time.monotonic() - started, 3)
                 self._load_counts[model.info.id] = self._load_counts.get(model.info.id, 0) + 1
             self._last_used[model.info.id] = time.time()
+
+    def unload_others(self, keep: Model[Any]) -> list[str]:
+        """Unload every other GPU model (sequential model execution: one large model in VRAM at a time)."""
+        with self._lock:
+            victims = [m for m in self._models.values() if m is not keep and m.loaded and m.info.device == "cuda"]
+            for m in victims:
+                m.unload()
+            if victims:
+                from ..vram import release_cuda_memory
+
+                release_cuda_memory(getattr(keep, "torch", None) or _torch_if_loaded())
+            return [m.info.id for m in victims]
 
     def load_count(self, model_id: str) -> int:
         return self._load_counts.get(model_id, 0)

@@ -92,6 +92,9 @@ export interface ImageRequest {
   references: ReferenceInput[];
   initImage?: Uint8Array;
   strength?: number;
+  /** Approved character references for identity conditioning (IP-Adapter where the model supports it). */
+  referenceImages?: Uint8Array[];
+  referenceStrength?: number;
   settings: Record<string, unknown>;
 }
 
@@ -113,6 +116,9 @@ export interface VideoRequest {
   height: number;
   quality: QualityMode;
   references: ReferenceInput[];
+  /** 0 = barely moving … 1 = strong motion. */
+  motionStrength?: number;
+  cameraMovement?: string;
   settings: Record<string, unknown>;
 }
 

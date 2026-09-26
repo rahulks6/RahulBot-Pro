@@ -354,7 +354,9 @@ def test_gpu_models_refuse_to_run_without_cuda(tmp_path: Path, fakes: None) -> N
     path = write_catalog(tmp_path, entry(min_vram_gb=24))
     api = WorkerAPI(make_config(tmp_path, models_file=path, mock_models=False))
     _, job = post(api, "/generate/image", {"prompt": "x"})
-    assert wait(api, job["id"])["error"]["code"] == "CUDA_FAILURE"
+    error = wait(api, job["id"])["error"]
+    assert error["code"] == "CUDA_UNAVAILABLE"
+    assert "Install the GPU runtime" in error["message"] and "CLOUD GPU" in error["message"]
     api.close()
 
 

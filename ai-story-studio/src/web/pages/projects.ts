@@ -38,13 +38,13 @@ export function projectForm(web: Web, p: Partial<Project> = {}) {
           ['24', '24'],
           ['30', '30'],
         ],
-        p.fps ?? 24,
+        p.fps ?? Number(s.settings.get('execution').fps),
       )}
       ${select(
         'Default quality',
         'default_quality',
         QUALITY_MODES.map((q) => [q, q.replace('_', ' ')]),
-        p.default_quality ?? 'optimized',
+        p.default_quality ?? s.settings.get('execution').defaultQuality,
       )}
     </div>
     ${p.id

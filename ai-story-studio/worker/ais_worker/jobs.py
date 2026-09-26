@@ -73,6 +73,8 @@ class Job:
     metrics: dict[str, float] = field(default_factory=dict)
     error: dict[str, str] | None = None
     logs: list[str] = field(default_factory=list)
+    # Decisions recorded for the attempt: memory plan, effective parameters, references used.
+    details: dict[str, Any] = field(default_factory=dict)
 
     def public(self) -> dict[str, Any]:
         data = asdict(self)
