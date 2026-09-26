@@ -72,7 +72,7 @@ describe('server start-up', () => {
 
     const res = await fetch(`http://127.0.0.1:${port}/`);
     assert.equal(res.status, 200, 'first copy still serves');
-    assert.match(await res.text(), /MODE: MOCK/);
+    assert.match(await res.text(), /DEVELOPER TEST MODE/);
     first.proc.kill('SIGTERM');
     const code = await first.exit;
     // On Windows, kill() is a hard stop (no SIGTERM handler runs); elsewhere shutdown is clean.

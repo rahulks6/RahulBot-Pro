@@ -214,9 +214,16 @@ export class ExecutionRouter {
       await this.apply();
     }
     const st = this.status();
+    if (!st.ready && want === 'cloud_gpu') {
+      const engine = this.s.engine.status();
+      throw new AppError(
+        'CLOUD_GPU_DISABLED',
+        `The AI Engine is not ready: ${engine.issues.map((i) => `${i.message} (${i.fix}: Settings → AI Engine)`).join(' ') || st.problems.join(' ')}`,
+      );
+    }
     if (!st.ready && want !== 'mock')
       throw new AppError(
-        want === 'cloud_gpu' ? 'CLOUD_GPU_DISABLED' : 'WORKER_UNAVAILABLE',
+        'WORKER_UNAVAILABLE',
         `${LABEL[want]} mode is selected but cannot run: ${st.problems.join(' ')}`,
       );
   }

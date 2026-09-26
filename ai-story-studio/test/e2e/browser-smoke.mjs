@@ -191,11 +191,13 @@ if (!verifyOnly) {
   });
 }
 
-const NAV = [
+// Advanced Mode: every production tool is in the menu.
+const ADVANCED_NAV = [
+  'Home',
   'Dashboard',
   'Projects',
   'Stories',
-  'Characters',
+  'Project Characters',
   'Locations',
   'Props',
   'Styles',
@@ -205,25 +207,64 @@ const NAV = [
   'Quality Check',
   'Exports',
   'GPU & Costs',
+  'Cloud GPU',
   'Model Manager',
   'Model Benchmarks',
-  'Cloud GPU',
-  'Settings',
+  'Advanced Settings',
   'System Health',
   'Logs',
 ];
-for (const label of NAV) {
-  await step(`nav: ${label}`, async () => {
+// Simple Mode (the default): only the product pages.
+const SIMPLE_NAV = ['Home', 'My Videos', 'Characters', 'Settings'];
+// Real AI is the default; with no RunPod key the engine must say so (never pretend to be ready).
+const ENGINE_BANNER =
+  /AI ENGINE NOT READY|DEVELOPER TEST MODE|MODE: LOCAL GPU|MODE: REAL CLOUD|Needs attention|READY ✓/;
+
+async function setMode(mode) {
+  await page.goto(`${base}/`);
+  const label = mode === 'advanced' ? 'Advanced Mode' : 'Back to Simple Mode';
+  const button = page.locator('nav').getByRole('button', { name: label, exact: true });
+  if (await button.count()) {
+    const nav = page.waitForNavigation();
+    await button.click();
+    await nav;
+  }
+}
+
+async function clickNav(label) {
+  const res = page.waitForNavigation();
+  await page.locator('nav').getByRole('link', { name: label, exact: true }).click();
+  const r = await res;
+  expect(r && r.status() === 200, `HTTP ${r?.status()}`);
+  const title = await page.title();
+  expect(!title.startsWith('Error'), `error page: ${await page.locator('main').innerText()}`);
+}
+
+await step('Simple Mode is the default and shows the AI Engine state', async () => {
+  await page.goto(`${base}/`);
+  const text = await page.locator('body').innerText();
+  expect(/Turn your idea into a complete animated video/.test(text), 'Home subtitle missing');
+  expect(/AI Engine/.test(text), 'AI Engine card missing');
+  expect(!/Model Benchmarks/.test(await page.locator('nav').innerText()), 'Simple menu shows Advanced tools');
+});
+for (const label of SIMPLE_NAV) {
+  await step(`simple nav: ${label}`, async () => {
     await page.goto(`${base}/`);
-    const res = page.waitForNavigation();
-    await page.locator('nav').getByRole('link', { name: label, exact: true }).click();
-    const r = await res;
-    expect(r && r.status() === 200, `HTTP ${r?.status()}`);
-    const title = await page.title();
-    expect(!title.startsWith('Error'), `error page: ${await page.locator('main').innerText()}`);
-    expect(/MODE: MOCK/.test(await page.locator('body').innerText()), 'mock-mode banner missing');
+    await clickNav(label);
   });
 }
+await setMode('advanced');
+for (const label of ADVANCED_NAV) {
+  await step(`nav: ${label}`, async () => {
+    await page.goto(`${base}/`);
+    await clickNav(label);
+    expect(
+      ENGINE_BANNER.test(await page.locator('body').innerText()) || label === 'Home',
+      'engine state missing',
+    );
+  });
+}
+await setMode('simple');
 
 await step('no JavaScript errors in the pages', async () => {
   expect(consoleErrors.length === 0, consoleErrors.join('; '));

@@ -74,6 +74,8 @@ function stubClient(sent: Array<{ path: string; body: Record<string, unknown> }>
 describe('requests to real models', () => {
   const s = testStudio({ env: { mockGeneration: false } });
   after(() => s.cleanup());
+  // Providers are injected directly below: no execution router (no RunPod, no local worker).
+  s.settings.set('execution', { ...s.settings.get('execution'), mode: 'mock' });
   const sent: Array<{ path: string; body: Record<string, unknown> }> = [];
   s.providers.image = new WorkerImageModel(stubClient(sent), model('image', 'sdxl-base'));
   s.providers.video = new WorkerVideoModel(stubClient(sent), model('video', 'wan2.2-ti2v-5b'));

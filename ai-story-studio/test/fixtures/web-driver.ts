@@ -94,6 +94,20 @@ export function parseForms(html: string): Form[] {
       if ((type === 'checkbox' || type === 'radio') && !/\schecked\b/i.test(tag)) value = '';
       fields.push({ name, kind, type, value, options, multiple, selected });
     }
+    // Named submit buttons (e.g. TEST CONNECTION / SAVE): sent only when chosen in `submit` values.
+    for (const b of body.matchAll(/<button\b([^>]*)>/gi)) {
+      const name = attr(` ${b[1]}`, 'name');
+      if (name)
+        fields.push({
+          name,
+          kind: 'input',
+          type: 'submit',
+          value: attr(` ${b[1]}`, 'value') ?? '',
+          options: [],
+          multiple: false,
+          selected: [],
+        });
+    }
     forms.push({
       action: attr(` ${open}`, 'action') ?? '',
       method: (attr(` ${open}`, 'method') ?? 'get').toLowerCase(),

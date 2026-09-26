@@ -84,7 +84,7 @@ describe('Cloud GPU pages', () => {
       const res = await fetch(mockWeb.base + path);
       assert.equal(res.status, 200, path);
       const body = await res.text();
-      assert.match(body, /MODE: MOCK/, path);
+      assert.match(body, /DEVELOPER TEST MODE/, path);
       assert.ok(!body.includes('EMERGENCY STOP GPU'), `${path}: nothing to stop in mock mode`);
     }
     const cloudPage = await (await fetch(mockWeb.base + '/cloud')).text();
@@ -102,8 +102,13 @@ describe('Cloud GPU pages', () => {
     assert.equal(res.status, 303);
     assert.equal(cloud.cloud.mode(), 'REAL_CLOUD');
     const home = await (await fetch(cloudWeb.base + '/')).text();
-    assert.match(home, /MODE: REAL CLOUD/);
-    assert.match(home, /EMERGENCY STOP GPU/, 'emergency stop visible on every page in cloud mode');
+    assert.ok(!home.includes('MODE: REAL CLOUD'), 'Simple Mode shows no engine jargon');
+    assert.ok(!home.includes('EMERGENCY STOP GPU'), 'Simple Mode shows STOP only while a GPU runs');
+    await post(cloudWeb.base, '/ui-mode', { mode: 'advanced' });
+    const dash = await (await fetch(cloudWeb.base + '/dashboard')).text();
+    assert.match(dash, /MODE: REAL CLOUD/);
+    assert.match(dash, /EMERGENCY STOP GPU/);
+    await post(cloudWeb.base, '/ui-mode', { mode: 'simple' });
     res = await post(cloudWeb.base, '/cloud/test-connection', {});
     assert.match(notice(res), /key accepted/);
     const logPath = join(cloud.env.dataDir, 'logs', 'studio.log');

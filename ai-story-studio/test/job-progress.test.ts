@@ -59,6 +59,8 @@ describe('job progress', () => {
   it('generation jobs follow the worker: LOADING MODEL → GENERATING with measured progress → SUCCEEDED', async () => {
     const s = testStudio({ env: { mockGeneration: false } });
     after(() => s.cleanup());
+    // The provider is injected directly below: no execution router (no RunPod, no local worker).
+    s.settings.set('execution', { ...s.settings.get('execution'), mode: 'mock' });
     const { shots } = seedSmall(s);
     const snapshots: Array<{ status: string; progress: number; detail: string }> = [];
     const snap = (id: string) => {

@@ -124,7 +124,7 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     queueNarration(s);
     await assert.rejects(
       s.generation.processQueue(),
-      /Real cloud generation is not armed yet: Real generation switched on/,
+      /AI Engine is not ready: .*Real generation on RunPod is switched off/,
     );
     assert.equal(rp.livePods().length, 0, 'nothing rented without the real-generation switch');
     s.cleanup();

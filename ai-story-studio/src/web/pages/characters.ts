@@ -423,7 +423,9 @@ export function registerCharacterPages(web: Web): void {
     const result = await s.generation.processQueue();
     return web.redirect(
       `/characters/${id}`,
-      `Mock reference generated (${result.completed} job(s), simulated ₹${result.simulatedCostInr}). Review and approve it.`,
+      result.failed
+        ? `Reference not generated: ${result.messages.join(' ')}`
+        : `Reference generated (${result.completed} job(s)). Review and approve it.`,
     );
   });
   r.post(

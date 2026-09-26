@@ -4,7 +4,7 @@ import { badge, card, grid, html, inr, kv, table, when } from '../ui.ts';
 
 export function registerDashboard(web: Web): void {
   const s = web.studio;
-  web.router.get('/', (req) => {
+  web.router.get('/dashboard', (req) => {
     const simulated = s.env.mockGeneration;
     const budget = s.budget.status(simulated);
     const stats = new AnalyticsService(s).production(simulated);
@@ -81,6 +81,6 @@ export function registerDashboard(web: Web): void {
         <li>BUILD FINAL → quality check → human review → export</li>
       </ol>`,
     )}`;
-    return web.render(req, 'Dashboard', '/', body);
+    return web.render(req, 'Dashboard', '/dashboard', body);
   });
 }

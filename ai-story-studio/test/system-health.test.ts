@@ -89,7 +89,7 @@ describe('System Health and hardware status', () => {
     });
 
     it('"Max VRAM usage" changes the usable VRAM and the profile', async () => {
-      await web.get('/settings');
+      await web.get('/settings/advanced');
       const saved = await web.submit('/settings/execution', { maxVramPercent: '60' });
       assert.equal(saved.error, null);
       assert.equal(s.settings.get('execution').maxVramPercent, 60);
@@ -99,7 +99,7 @@ describe('System Health and hardware status', () => {
     });
 
     it('execution settings persist and are validated', async () => {
-      await web.get('/settings');
+      await web.get('/settings/advanced');
       const p = await web.submit('/settings/execution', {
         mode: 'local_gpu',
         defaultQuality: 'high_quality',
@@ -113,7 +113,7 @@ describe('System Health and hardware status', () => {
         [ex.mode, ex.defaultQuality, ex.cpuOffload, ex.vaeTiling, ex.allowCloudFallback],
         ['local_gpu', 'high_quality', 'sequential', 'on', true],
       );
-      await web.get('/settings');
+      await web.get('/settings/advanced');
       const bad = await web.submit('/settings/execution', { maxVramPercent: '5' });
       assert.ok(bad.error, 'out-of-range VRAM percent is refused');
       assert.equal(s.settings.get('execution').maxVramPercent, 60, 'nothing changed');

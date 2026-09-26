@@ -1,6 +1,7 @@
 # Builds AI-Story-Studio-Setup-<version>.exe and tests it on a real Windows machine:
-# unattended install (prerequisite checks, npm ci, build, Python venv, safe .env), start the app
-# in MOCK mode and load the home page, then re-run the setup and check that .env and data/ are kept.
+# unattended install (prerequisite checks, npm ci, build, Python venv, .env), start the app and load
+# the home page (real AI by default; no RunPod key here, so the AI Engine must say "not connected"),
+# then re-run the setup and check that .env and data/ are kept.
 # Download the .exe from the run's "Artifacts" section. No secrets are used; nothing paid is started.
 name: AI Story Studio Windows setup
 
@@ -49,6 +50,10 @@ jobs:
         working-directory: ai-story-studio/installer/windows/setup
         run: go test ./...
 
+      - name: Saved keys are encrypted with Windows DPAPI (secret store tests on Windows)
+        working-directory: ai-story-studio
+        run: node --disable-warning=ExperimentalWarning --test test/secrets.test.ts
+
       - name: Build the setup .exe
         shell: bash
         run: ai-story-studio/installer/windows/build-setup.sh "$RUNNER_TEMP/out"
@@ -69,7 +74,7 @@ jobs:
           & $exe -yes -no-shortcut -no-start -dir "$env:RUNNER_TEMP\AI Story Studio"
           if ($LASTEXITCODE -ne 0) { throw "setup exited with code $LASTEXITCODE" }
 
-      - name: Start the installed app and load the home page (mock mode)
+      - name: Start the installed app and load the home page (real AI default, no RunPod key yet)
         run: |
           $dir = "$env:RUNNER_TEMP\AI Story Studio"
           $p = Start-Process -FilePath node -ArgumentList '--disable-warning=ExperimentalWarning', 'dist/src/web/server.js' `
@@ -80,12 +85,12 @@ jobs:
             Start-Sleep -Seconds 2
             try {
               $r = Invoke-WebRequest 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 5
-              $ok = $r.StatusCode -eq 200 -and $r.Content -match 'MODE: MOCK'
+              $ok = $r.StatusCode -eq 200 -and $r.Content -match 'AI Engine' -and $r.Content -match 'RunPod is not connected yet'
             } catch {}
           }
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           Get-Content "$env:RUNNER_TEMP\app.out", "$env:RUNNER_TEMP\app.err" -ErrorAction SilentlyContinue
-          if (-not $ok) { throw 'The installed app did not serve its home page in MOCK mode.' }
+          if (-not $ok) { throw 'The installed app did not serve its home page (expected: AI Engine needs a RunPod key).' }
 
       - name: Run the setup again (upgrade keeps .env and data)
         run: |

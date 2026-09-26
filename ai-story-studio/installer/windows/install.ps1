@@ -193,7 +193,7 @@ try {
     Write-Log '.env already exists - left unchanged.' 'Green'
   } else {
     Copy-Item '.env.example' '.env'
-    Write-Log 'Created .env with safe defaults (MOCK_GENERATION=true, ENABLE_CLOUD_GPU=false).' 'Green'
+    Write-Log 'Created .env (real AI; connect your RunPod key in the app: Settings -> AI Engine).' 'Green'
   }
   New-Item -ItemType Directory -Force -Path 'data' | Out-Null
   try {
@@ -220,7 +220,7 @@ try {
   $checks = @(
     @{ Name = 'Built server'; Ok = (Test-Path 'dist\src\web\server.js') },
     @{ Name = '.env present'; Ok = (Test-Path '.env') },
-    @{ Name = 'Mock mode is the default'; Ok = ((Get-Content '.env' -Raw) -match '(?m)^MOCK_GENERATION=true') },
+    @{ Name = '.env readable'; Ok = ((Get-Content '.env' -Raw) -match '(?m)^MOCK_GENERATION=') },
     @{ Name = 'Worker environment'; Ok = (Test-Path 'worker\.venv\Scripts\python.exe') },
     @{ Name = 'Database migrations'; Ok = (Test-Path 'migrations\0004_cloud_gpu.sql') }
   )

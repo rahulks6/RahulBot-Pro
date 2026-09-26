@@ -103,8 +103,9 @@ export function registerBenchmarkPages(web: Web): void {
             <button class="primary">Start benchmark</button>`,
         )
       : html`<p>
-          Connect the local AI worker first (<a href="/settings">Settings → Local AI worker</a>). Benchmarks
-          run on the worker so they measure the real GPU, VRAM and speed.
+          Connect the local AI worker first (<a href="/settings/advanced"
+            >Advanced Settings → Local AI worker</a
+          >). Benchmarks run on the worker so they measure the real GPU, VRAM and speed.
         </p>`;
     const selections = service.selections().filter((x) => x.active);
     return web.render(

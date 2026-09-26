@@ -218,7 +218,7 @@ describe('create / edit / delete through the web forms', () => {
       encoding: { videoCrf: '21', preset: 'fast' },
     };
     for (const [section, values] of Object.entries(changes)) {
-      await web.get('/settings');
+      await web.get('/settings/advanced');
       ok(await web.submit(`/settings/${section}`, values), 'Settings saved');
     }
     assert.equal(studio.settings.get('audioMix').musicDb, -21.5);
@@ -229,7 +229,7 @@ describe('create / edit / delete through the web forms', () => {
     await shutdown();
     await boot();
     assert.equal(studio.settings.get('encoding').videoCrf, 21);
-    const page = ok(await web.get('/settings'));
+    const page = ok(await web.get('/settings/advanced'));
     assert.ok(page.html.includes('value="21"'), 'the form shows the saved value');
     const before = studio.settings.get('encoding').videoCrf;
     const bad = await web.submit('/settings/encoding', { videoCrf: 'not-a-number' });
@@ -243,7 +243,11 @@ describe('create / edit / delete through the web forms', () => {
     const page = ok(await web.get('/cloud'));
     assert.ok(!page.html.includes(FAKE_KEY), 'key not in the Cloud page');
     assert.ok(!page.html.includes(FAKE_KEY.slice(4, 20)), 'no partial key either');
-    assert.match(page.text, /MODE: MOCK/);
+    assert.match(page.text, /DEVELOPER TEST MODE/);
+    assert.ok(
+      !readFileSync(join(dataDir, 'secrets.json'), 'utf8').includes(FAKE_KEY),
+      'key encrypted in the secret store',
+    );
     const logs = ok(await web.get('/logs'));
     assert.ok(!logs.html.includes(FAKE_KEY));
     const log = readFileSync(join(dataDir, 'logs', 'studio.log'), 'utf8');

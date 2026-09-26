@@ -17,3 +17,6 @@ export function num(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return value !== undefined && value !== '' && Number.isFinite(n) ? n : fallback;
 }
+
+/** A checkbox value from a form (the hidden "false" field is overridden by the checked box). */
+export const yes = (v: string | undefined): boolean => v === 'true' || v === 'on' || v === '1';

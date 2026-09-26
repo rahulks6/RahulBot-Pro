@@ -171,19 +171,22 @@ export class CloudService {
     if (provider !== 'runpod') return new UnsupportedCloudApi(provider);
     const key = this.d.secrets.get('runpodApiKey');
     if (!key)
-      throw new AppError('CLOUD_AUTH_FAILED', 'No RunPod API key is saved. Add it in Settings → Cloud GPU.');
-    if (this.apiCache?.key !== key)
-      this.apiCache = {
-        key,
-        api: new RunPodApi({
-          apiKey: key,
-          ...(this.d.runpodBaseUrl ? { baseUrl: this.d.runpodBaseUrl } : {}),
-          ...(this.d.proxyUrlTemplate ? { proxyUrlTemplate: this.d.proxyUrlTemplate } : {}),
-          ...(this.d.fetch ? { fetch: this.d.fetch } : {}),
-          ...(this.d.sleep ? { sleep: this.d.sleep } : {}),
-        }),
-      };
+      throw new AppError(
+        'CLOUD_AUTH_FAILED',
+        'RunPod is not connected yet. Open Settings → AI Engine and paste your RunPod API key.',
+      );
+    if (this.apiCache?.key !== key) this.apiCache = { key, api: this.runpodApi(key) };
     return this.apiCache.api;
+  }
+
+  private runpodApi(key: string): RunPodApi {
+    return new RunPodApi({
+      apiKey: key,
+      ...(this.d.runpodBaseUrl ? { baseUrl: this.d.runpodBaseUrl } : {}),
+      ...(this.d.proxyUrlTemplate ? { proxyUrlTemplate: this.d.proxyUrlTemplate } : {}),
+      ...(this.d.fetch ? { fetch: this.d.fetch } : {}),
+      ...(this.d.sleep ? { sleep: this.d.sleep } : {}),
+    });
   }
 
   get provider(): CloudGpuProvider {
@@ -369,10 +372,16 @@ export class CloudService {
 
   // --- connection test and diagnostics (never provisions anything) -------------------------
 
-  async testConnection(): Promise<{ ok: boolean; detail: string; contract?: ContractReport }> {
+  /**
+   * Checks the saved key, or a key that has not been saved yet (AI Engine → TEST CONNECTION).
+   * Read-only RunPod calls: nothing is rented.
+   */
+  async testConnection(
+    candidateKey?: string,
+  ): Promise<{ ok: boolean; detail: string; contract?: ContractReport }> {
     const at = this.d.clock.now().toISOString();
     try {
-      const api = this.api();
+      const api = candidateKey ? this.runpodApi(candidateKey) : this.api();
       const { detail } = await api.testConnection();
       const contract = await api.checkContract();
       const cdetail = contract.checked

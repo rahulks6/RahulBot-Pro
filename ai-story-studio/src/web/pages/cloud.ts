@@ -4,10 +4,9 @@ import { join } from 'node:path';
 import { AppError, toAppError } from '../../lib/errors.ts';
 import type { DiagnosticStep } from '../../services/cloud.ts';
 import type { Web } from '../app.ts';
+import { yes } from '../forms.ts';
 import { html, raw, type SafeHtml } from '../html.ts';
 import { badge, button, card, checkbox, field, kv, postForm, select, table, when } from '../ui.ts';
-
-const yes = (v: string | undefined): boolean => v === 'true' || v === 'on' || v === '1';
 
 function gateTable(web: Web): SafeHtml {
   return html`<table class="gates">
@@ -361,7 +360,10 @@ export function registerCloudPages(web: Web): void {
     const provider = req.form['provider'] ?? 'runpod';
     s.settings.set('cloud', { ...s.settings.get('cloud'), provider });
     const key = (req.form['api_key'] ?? '').trim();
-    if (key) s.secrets.set('runpodApiKey', key);
+    if (key) {
+      s.secrets.set('runpodApiKey', key);
+      s.engine.forgetTest();
+    }
     s.logger.info('cloud provider settings saved', { provider, keyChanged: Boolean(key) });
     return refreshAfter(key ? 'API key saved (stored on this PC only).' : 'Provider saved.');
   });
@@ -369,6 +371,7 @@ export function registerCloudPages(web: Web): void {
     if (s.cloud.activeInstance())
       throw new AppError('CONFLICT', 'Stop the running GPU before removing the key.');
     s.secrets.delete('runpodApiKey');
+    s.engine.forgetTest();
     return refreshAfter('Saved API key removed.');
   });
   r.post('/cloud/test-connection', async () => {

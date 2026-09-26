@@ -18,8 +18,10 @@ import { registerProjectPages } from './pages/projects.ts';
 import { registerQualityPages } from './pages/quality.ts';
 import { registerModelPages } from './pages/models.ts';
 import { registerStoryPages } from './pages/stories.ts';
+import { registerLibraryPages } from './pages/library.ts';
+import { registerSimplePages } from './pages/simple.ts';
 import { registerSystemPages } from './pages/system.ts';
-import { csrf, html, page } from './ui.ts';
+import { csrf, html, NAV, navAvailable, page } from './ui.ts';
 
 export interface Web {
   studio: Studio;
@@ -51,6 +53,7 @@ function modeInfo(studio: Studio): NonNullable<import('./ui.ts').PageOpts['mode'
       : null,
     // Visible whenever a paid GPU could exist: cloud allowed, a GPU is tracked, or leftovers were found.
     emergency: st.canProvision || anyActive || (st.recovery?.ownedPods.length ?? 0) > 0,
+    active: anyActive || (st.recovery?.ownedPods.length ?? 0) > 0,
   };
 }
 
@@ -72,6 +75,7 @@ export function createWebApp(
           mock: studio.env.mockGeneration,
           cloudGpu: studio.env.enableCloudGpu,
           mode: modeInfo(studio),
+          simple: studio.settings.get('app').uiMode === 'simple',
         }),
       };
     },
@@ -94,6 +98,9 @@ export function createWebApp(
   registerCloudPages(web);
   registerSystemPages(web);
   registerModelPages(web);
+  registerSimplePages(web);
+  registerLibraryPages(web);
+  for (const [path] of NAV) if (router.match('GET', path)) navAvailable.paths.add(path);
 
   // Media from local storage (keys are validated by the storage provider: no traversal).
   router.get('/media/:key*', (req) => {

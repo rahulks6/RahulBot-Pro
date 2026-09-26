@@ -96,7 +96,7 @@ export function registerOpsPages(web: Web): void {
                 `${inr(budget.monthly.spentInr)} / ${inr(budget.monthly.limitInr)} (${budget.monthly.percent}%)`,
               ],
             ])}${budget.messages.map((m) => html`<p class="muted">${m}</p>`)}
-            <p><a href="/settings">Change budgets →</a></p>`,
+            <p><a href="/settings/advanced">Change budgets →</a></p>`,
         ),
         card('Next batch pre-flight', preflight),
         card(
@@ -222,7 +222,7 @@ export function registerOpsPages(web: Web): void {
   });
 
   // --- Settings -----------------------------------------------------------------------
-  r.get('/settings', (req) => {
+  r.get('/settings/advanced', (req) => {
     const all = s.settings.all();
     const b = all.budget;
     const g = all.gpu;
@@ -234,8 +234,8 @@ export function registerOpsPages(web: Web): void {
     const opt = (v: string[]) => v.map((x) => [x, x] as [string, string]);
     return web.render(
       req,
-      'Settings',
-      '/settings',
+      'Advanced Settings',
+      '/settings/advanced',
       html`${card(
         'Execution & GPU',
         postForm(
@@ -557,7 +557,7 @@ export function registerOpsPages(web: Web): void {
   r.post('/settings/worker/connect', async () => {
     const c = await connectWorker(s);
     return web.redirect(
-      '/settings',
+      '/settings/advanced',
       `Connected to worker ${c.version} (${c.models.length} models${c.models.every((m) => m.mock) ? ', all mock' : ''})`,
     );
   });
@@ -573,14 +573,23 @@ export function registerOpsPages(web: Web): void {
       const st = await s.router.apply();
       if (st.lockedByEnv)
         return web.redirect(
-          '/settings',
+          '/settings/advanced',
           'Settings saved. MOCK_GENERATION=true in .env keeps the studio in MOCK mode.',
         );
       return st.ready
-        ? web.redirect('/settings', `Settings saved. Execution mode: ${st.label}.`)
-        : web.redirect('/settings', undefined, `Settings saved, but ${st.label}: ${st.problems.join(' ')}`);
+        ? web.redirect('/settings/advanced', `Settings saved. Execution mode: ${st.label}.`)
+        : web.redirect(
+            '/settings/advanced',
+            undefined,
+            `Settings saved, but ${st.label}: ${st.problems.join(' ')}`,
+          );
     }
-    return web.redirect('/settings', 'Settings saved');
+    return web.redirect('/settings/advanced', 'Settings saved');
+  });
+
+  r.get('/docs/runpod-setup', (req) => {
+    const text = readFileSync(join(appRoot(), 'docs', 'RUNPOD_SETUP.md'), 'utf8');
+    return web.render(req, 'RunPod setup', '/settings', html`<pre class="doc">${text}</pre>`);
   });
 
   r.get('/docs/story-package', (req) => {

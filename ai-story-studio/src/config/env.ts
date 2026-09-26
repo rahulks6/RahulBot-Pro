@@ -5,9 +5,12 @@ import { appRoot } from '../lib/paths.ts';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface AppEnv {
-  /** When true (the default) nothing paid can run: mock providers only. */
+  /**
+   * Developer test mode: labelled placeholder media instead of real AI, nothing paid. For automated
+   * tests only; the product default is false (real AI on RunPod).
+   */
   mockGeneration: boolean;
-  /** Independent second gate for cloud GPUs. No real cloud provider exists yet. */
+  /** Allows paid cloud GPUs (RunPod). Default true; set false to forbid renting any GPU. */
   enableCloudGpu: boolean;
   host: string;
   port: number;
@@ -162,9 +165,10 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const level = (source.LOG_LEVEL ?? 'info').toLowerCase();
   const dataDir = source.DATA_DIR?.trim() || './data';
   return {
-    // MOCK_GENERATION defaults to TRUE: an unset or empty value never enables paid generation.
-    mockGeneration: bool(source.MOCK_GENERATION, true),
-    enableCloudGpu: bool(source.ENABLE_CLOUD_GPU, false),
+    // Real AI is the product. Nothing is rented until a RunPod key is connected in the app, and
+    // then only within the spending limits; MOCK_GENERATION=true is the developer test mode.
+    mockGeneration: bool(source.MOCK_GENERATION, false),
+    enableCloudGpu: bool(source.ENABLE_CLOUD_GPU, true),
     host: source.HOST?.trim() || '127.0.0.1',
     port: num(source.PORT, 3000),
     dataDir: isAbsolute(dataDir) ? dataDir : join(appRoot(), dataDir),

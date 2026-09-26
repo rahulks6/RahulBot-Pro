@@ -137,12 +137,16 @@ describe('generation queue, history and review', () => {
     assert.equal(s.db.scalar('SELECT COUNT(*) FROM gpu_instances'), 0, 'no GPU started for an empty batch');
   });
 
-  it('refuses to generate when MOCK_GENERATION=false (Phase 1 has no real providers)', async () => {
+  it('real AI without a connected RunPod: refuses with what to do, never makes placeholders', async () => {
     const real = testStudio({ env: { mockGeneration: false } });
     try {
       const { shots } = seedSmall(real);
       real.generation.queueImage(shots[0]!.id);
-      await assert.rejects(real.generation.processQueue(), (e: AppError) => e.code === 'MOCK_MODE_REQUIRED');
+      await assert.rejects(
+        real.generation.processQueue(),
+        (e: AppError) => e.code === 'CLOUD_GPU_DISABLED' && /RunPod is not connected yet/.test(e.message),
+      );
+      assert.equal(real.assets.list({}).length, 0, 'no placeholder assets');
       assert.equal(real.db.scalar('SELECT COUNT(*) FROM gpu_instances'), 0);
     } finally {
       real.cleanup();

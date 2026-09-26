@@ -57,12 +57,14 @@ describe('security-sensitive validation', () => {
     if (!r.ok) assert.deepEqual(r.errors.map((e) => e.path).sort(), ['extra', 'name', 'tags']);
   });
 
-  it('defaults to mock mode and cloud GPU off', () => {
+  it('defaults to real AI (developer test mode off); nothing is rented without a connected key', () => {
     const env = readEnv({});
-    assert.equal(env.mockGeneration, true);
-    assert.equal(env.enableCloudGpu, false);
+    assert.equal(env.mockGeneration, false);
+    assert.equal(env.enableCloudGpu, true);
     assert.equal(env.host, '127.0.0.1');
-    assert.equal(readEnv({ MOCK_GENERATION: '' }).mockGeneration, true);
+    assert.equal(readEnv({ MOCK_GENERATION: '' }).mockGeneration, false);
+    assert.equal(readEnv({ MOCK_GENERATION: 'true' }).mockGeneration, true);
+    assert.equal(readEnv({ ENABLE_CLOUD_GPU: 'false' }).enableCloudGpu, false);
   });
 });
 

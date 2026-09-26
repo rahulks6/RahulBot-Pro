@@ -39,6 +39,8 @@ export function testStudio(
     ...(opts.ffmpeg !== undefined ? { ffmpeg: opts.ffmpeg } : {}),
     ...(opts.cloud ? { cloud: opts.cloud } : {}),
     ...(opts.localWorker ? { localWorker: opts.localWorker } : {}),
+    // Never touch the app's real .env from a test.
+    envFile: opts.envFile ?? join(dir, '.env'),
     // Never let a real RUNPOD_API_KEY from the developer's environment reach tests.
     secretEnv: opts.secretEnv ?? {},
     // Tests never depend on the GPU of the machine running them.

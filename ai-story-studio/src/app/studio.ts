@@ -24,6 +24,8 @@ import { BudgetService } from '../services/budget.ts';
 import { ExportService } from '../services/export.ts';
 import { GenerationService } from '../services/generation.ts';
 import { GpuSupervisor } from '../services/gpu-supervisor.ts';
+import { EngineService } from '../services/engine.ts';
+import { VideoRepository } from '../repositories/videos.ts';
 import { ExecutionRouter } from '../services/execution-router.ts';
 import { HardwareService } from '../services/hardware.ts';
 import { LocalModelService } from '../services/local-models.ts';
@@ -90,6 +92,10 @@ export interface Studio {
   localModels: LocalModelService;
   /** Installs the worker's Python packages (PyTorch, diffusers, Kokoro) from the app. */
   runtime: RuntimeInstaller;
+  /** The AI Engine as Simple Mode sees it (RunPod connection and readiness). */
+  engine: EngineService;
+  /** Simple Mode videos, their Shorts and YouTube publications. */
+  videos: VideoRepository;
   close(): void;
 }
 
@@ -118,6 +124,8 @@ export interface StudioOptions {
   secretEnv?: NodeJS.ProcessEnv;
   /** Tests: replay nvidia-smi results instead of querying this machine. */
   hardware?: HardwareService;
+  /** Tests: the .env file the AI Engine may update (defaults to the app folder's .env). */
+  envFile?: string;
   /** Tests: local worker process control (spawn, Python discovery, catalog). */
   localWorker?: Partial<
     Pick<
@@ -156,6 +164,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   const gpuRepo = new GpuRepository(db);
   const timelines = new TimelineRepository(db);
   const reports = new ReportRepository(db);
+  const videos = new VideoRepository(db, () => clock.now().toISOString());
   const budget = new BudgetService(gpuRepo, settings, clock);
   const gpu = new GpuSupervisor({
     provider: providers.gpu,
@@ -260,6 +269,8 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     worker: null,
     hardware: opts.hardware ?? new HardwareService(),
     router: null as unknown as ExecutionRouter,
+    engine: null as unknown as EngineService,
+    videos,
     localModels,
     runtime: new RuntimeInstaller({
       logger,
@@ -270,6 +281,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   };
   studio.router = new ExecutionRouter(studio, { localWorker, localCatalog, baseProviders });
   routerRef = studio.router;
+  studio.engine = new EngineService(studio, opts.envFile ? { envFile: opts.envFile } : {});
   // After the runtime install: forget the old PyTorch result and restart an idle local worker.
   studio.runtime.onComplete = () => {
     studio.hardware.torch = null;

@@ -4,11 +4,23 @@ import { html, join, raw, type SafeHtml } from './html.ts';
 /** Per-process CSRF token, set by the server at start-up. */
 export const csrf = { token: '' };
 
+/** Simple Mode: the whole product in six places. */
+export const SIMPLE_NAV: Array<[string, string]> = [
+  ['/', 'Home'],
+  ['/create', 'Create'],
+  ['/videos', 'My Videos'],
+  ['/library/characters', 'Characters'],
+  ['/publish', 'Publish'],
+  ['/settings', 'Settings'],
+];
+
+/** Advanced Mode: Simple Mode plus every production tool. */
 export const NAV: Array<[string, string]> = [
-  ['/', 'Dashboard'],
+  ...SIMPLE_NAV,
+  ['/dashboard', 'Dashboard'],
   ['/projects', 'Projects'],
   ['/stories', 'Stories'],
-  ['/characters', 'Characters'],
+  ['/characters', 'Project Characters'],
   ['/locations', 'Locations'],
   ['/props', 'Props'],
   ['/styles', 'Styles'],
@@ -18,19 +30,24 @@ export const NAV: Array<[string, string]> = [
   ['/quality', 'Quality Check'],
   ['/exports', 'Exports'],
   ['/gpu', 'GPU & Costs'],
+  ['/cloud', 'Cloud GPU'],
   ['/models', 'Model Manager'],
   ['/benchmarks', 'Model Benchmarks'],
-  ['/cloud', 'Cloud GPU'],
-  ['/settings', 'Settings'],
+  ['/settings/advanced', 'Advanced Settings'],
   ['/health', 'System Health'],
   ['/logs', 'Logs'],
 ];
+
+/** Pages that exist in this build (set by the web app), so the menu never links to a missing page. */
+export const navAvailable = { paths: new Set<string>() };
 
 export interface PageOpts {
   notice?: string | null;
   error?: string | null;
   mock: boolean;
   cloudGpu: boolean;
+  /** Simple Mode (default) hides production tools and technical detail. */
+  simple?: boolean;
   /** Phase 5: current generation mode and live cloud GPU status (always shown). */
   mode?: {
     kind: 'MOCK' | 'LOCAL_WORKER' | 'REAL_CLOUD';
@@ -38,7 +55,49 @@ export interface PageOpts {
     gpu: { state: string; model: string; runtimeSec: number; spentInr: number } | null;
     /** Show the global EMERGENCY STOP GPU button. */
     emergency: boolean;
+    /** A paid GPU is running now, or leftovers from a crash were found. */
+    active?: boolean;
   };
+}
+
+function stopButton(label = 'EMERGENCY STOP GPU'): SafeHtml {
+  return postForm(
+    '/cloud/emergency-stop',
+    html`<input type="hidden" name="confirm" value="STOP" /><button class="danger emergency">
+        ${label}
+      </button>`,
+    {
+      cls: 'inline',
+      confirm:
+        'EMERGENCY STOP: terminate every cloud GPU this AI Story Studio created, right now? Running generations are lost.',
+    },
+  );
+}
+
+/**
+ * Simple Mode shows no engine jargon. Two things are always visible, whatever the mode: developer
+ * test mode (so placeholders are never mistaken for real AI) and a running paid GPU with its STOP.
+ */
+function simpleBanner(opts: PageOpts): SafeHtml {
+  const m = opts.mode;
+  const parts: SafeHtml[] = [];
+  if (opts.mock)
+    parts.push(
+      html`<div class="banner danger mode">
+        <strong>DEVELOPER TEST MODE</strong> — MOCK_GENERATION=true in .env: pictures, clips and sounds are
+        labelled placeholders, not real AI. <a href="/settings/ai-engine">Switch to real AI →</a>
+      </div>`,
+    );
+  if (m?.gpu && m.gpu.state !== 'TERMINATED')
+    parts.push(
+      html`<div class="banner ok mode">
+        <strong>Cloud GPU running</strong> · ${Math.floor(m.gpu.runtimeSec / 60)} min ·
+        ₹${m.gpu.spentInr.toFixed(2)} so far. It stops by itself when the work is done.
+        ${stopButton('STOP GPU NOW')}
+      </div>`,
+    );
+  else if (m?.active) parts.push(html`<div class="gpu-stop">${stopButton()}</div>`);
+  return html`${parts}`;
 }
 
 function modeBanner(opts: PageOpts): SafeHtml {
@@ -49,39 +108,33 @@ function modeBanner(opts: PageOpts): SafeHtml {
         ₹${m.gpu.spentInr.toFixed(2)}</span
       >`
     : '';
-  const stop = m?.emergency
-    ? postForm(
-        '/cloud/emergency-stop',
-        html`<input type="hidden" name="confirm" value="STOP" /><button class="danger emergency">
-            EMERGENCY STOP GPU
-          </button>`,
-        {
-          cls: 'inline',
-          confirm:
-            'EMERGENCY STOP: terminate every cloud GPU this AI Story Studio created, right now? Running generations are lost.',
-        },
-      )
-    : '';
+  const stop = m?.emergency ? stopButton() : '';
   if (m?.kind === 'REAL_CLOUD')
     return html`<div class="banner danger mode">
       <strong>MODE: REAL CLOUD</strong> — generation rents a paid NVIDIA GPU (RunPod) and runs real AI models.
       ${gpu} ${stop}
     </div>`;
   if (opts.mock)
+    return html`<div class="banner danger mode">
+      <strong>DEVELOPER TEST MODE</strong> — MOCK_GENERATION=true: every image, clip and sound is a labelled
+      placeholder, not real AI. No GPU is rented (₹0). ${gpu} ${stop}
+    </div>`;
+  if (m?.kind === 'LOCAL_WORKER')
     return html`<div class="banner ok mode">
-      <strong>MODE: MOCK</strong> — every image, clip and sound is a labelled placeholder. No GPU is rented
-      and no paid API is called (₹0). ${gpu} ${stop}
+      <strong>MODE: LOCAL GPU</strong> — real models on this computer (₹0). ${gpu} ${stop}
     </div>`;
   return html`<div class="banner danger mode">
-    <strong>MODE: ${m?.kind === 'LOCAL_WORKER' ? 'LOCAL WORKER' : 'MOCK PROVIDERS'}</strong> —
-    MOCK_GENERATION=false. Real open-source models run only on a local worker (₹0). Paid cloud GPUs
-    ${opts.cloudGpu ? 'are allowed by .env but real cloud generation is not switched on.' : 'stay disabled.'}
-    ${gpu} ${stop}
+    <strong>AI ENGINE NOT READY</strong> — real generation on RunPod is not connected or not switched on, so
+    nothing can be generated. <a href="/settings/ai-engine">Open AI Engine settings →</a> ${gpu} ${stop}
   </div>`;
 }
 
 export function page(title: string, active: string, body: SafeHtml, opts: PageOpts): SafeHtml {
-  const banner = modeBanner(opts);
+  const simple = opts.simple ?? false;
+  const banner = simple ? simpleBanner(opts) : modeBanner(opts);
+  const nav = (simple ? SIMPLE_NAV : NAV).filter(
+    ([href]) => navAvailable.paths.size === 0 || navAvailable.paths.has(href),
+  );
   return html`<!doctype html>
     <html lang="en">
       <head>
@@ -91,12 +144,21 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
         <link rel="stylesheet" href="/static/app.css" />
         <script src="/static/app.js" defer></script>
       </head>
-      <body>
+      <body class="${simple ? 'simple' : 'advanced'}">
         <nav class="sidebar">
-          <div class="brand">AI Story Studio<span>v1.1.1 · Phase 5</span></div>
-          ${NAV.map(
+          <div class="brand">AI Story Studio<span>v1.2.0${simple ? '' : ' · Advanced Mode'}</span></div>
+          ${nav.map(
             ([href, label]) =>
               html`<a href="${href}" class="${active === href ? 'active' : ''}">${label}</a>`,
+          )}
+          ${postForm(
+            '/ui-mode',
+            html`<input type="hidden" name="mode" value="${simple ? 'advanced' : 'simple'}" /><button
+                class="ghost modeswitch"
+              >
+                ${simple ? 'Advanced Mode' : 'Back to Simple Mode'}
+              </button>`,
+            { cls: 'inline modeform' },
           )}
         </nav>
         <main>

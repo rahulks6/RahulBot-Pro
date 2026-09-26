@@ -1,5 +1,6 @@
 import type { Database } from '../db/database.ts';
 import { QUALITY_MODES } from '../domain/enums.ts';
+import { DEFAULT_STYLE_ID, VIDEO_LENGTHS } from '../domain/video-styles.ts';
 import { parseJson } from '../lib/json.ts';
 import { boolean, enumOf, number, object, parseOrThrow, string, type Infer } from '../lib/schema.ts';
 
@@ -78,6 +79,26 @@ export const cloudSchema = object({
   testAsset: enumOf(['tts', 'image'] as const),
 });
 export type CloudSettings = Infer<typeof cloudSchema>;
+
+/** Simple Mode preferences (what a new video starts with) and the interface mode. */
+export const appSchema = object({
+  uiMode: enumOf(['simple', 'advanced'] as const),
+  firstRunComplete: boolean(),
+  defaultStyle: string({ min: 1, max: 60 }),
+  defaultLength: enumOf(Object.keys(VIDEO_LENGTHS) as Array<keyof typeof VIDEO_LENGTHS>),
+  /** Minutes for CUSTOM length. */
+  customMinutes: number({ min: 0.5, max: 30 }),
+  makeEpisode: boolean(),
+  makeShorts: boolean(),
+  /** How many Shorts to cut from each episode. */
+  shortsCount: number({ min: 1, max: 5, int: true }),
+  narrator: enumOf(['female', 'male'] as const),
+  language: enumOf(['en', 'hi', 'hinglish'] as const),
+  backgroundMusic: enumOf(['auto', 'calm', 'playful', 'adventure', 'emotional', 'off'] as const),
+  /** Burn captions into Shorts (a separate caption file is always made too). */
+  burnShortsCaptions: boolean(),
+});
+export type AppSettings = Infer<typeof appSchema>;
 
 /**
  * Where generation runs (MOCK / LOCAL GPU / CLOUD GPU) and how local GPU memory is used.
@@ -165,6 +186,7 @@ export const encodingSchema = object({
 export type EncodingSettings = Infer<typeof encodingSchema>;
 
 export interface AllSettings {
+  app: AppSettings;
   execution: ExecutionSettings;
   budget: BudgetSettings;
   gpu: GpuSettings;
@@ -176,8 +198,22 @@ export interface AllSettings {
 }
 
 export const DEFAULT_SETTINGS: AllSettings = {
+  app: {
+    uiMode: 'simple',
+    firstRunComplete: false,
+    defaultStyle: DEFAULT_STYLE_ID,
+    defaultLength: 'short',
+    customMinutes: 2,
+    makeEpisode: true,
+    makeShorts: true,
+    shortsCount: 2,
+    narrator: 'female',
+    language: 'en',
+    backgroundMusic: 'auto',
+    burnShortsCaptions: true,
+  },
   execution: {
-    mode: 'mock',
+    mode: 'cloud_gpu',
     imageModel: '',
     videoModel: '',
     ttsModel: '',
@@ -217,8 +253,9 @@ export const DEFAULT_SETTINGS: AllSettings = {
   },
   cloud: {
     provider: 'runpod',
-    cloudEnabled: false,
-    realGeneration: false,
+    // Real AI on RunPod is the product: the only thing missing on a new install is the API key.
+    cloudEnabled: true,
+    realGeneration: true,
     workerImage: 'ghcr.io/rahulks6/ai-story-studio-worker:1.1.0',
     registryAuthId: '',
     cloudType: 'SECURE',
@@ -267,6 +304,7 @@ export const DEFAULT_SETTINGS: AllSettings = {
 };
 
 const SCHEMAS = {
+  app: appSchema,
   execution: executionSchema,
   budget: budgetSchema,
   gpu: gpuSchema,
@@ -294,6 +332,7 @@ export class SettingsService {
 
   all(): AllSettings {
     return {
+      app: this.get('app'),
       execution: this.get('execution'),
       budget: this.get('budget'),
       gpu: this.get('gpu'),
