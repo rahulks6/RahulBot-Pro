@@ -20,7 +20,7 @@ $ErrorActionPreference = 'Stop'
 $UninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AIStoryStudio'
 
 if (-not $AppDir) { $AppDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
-$AppDir = $AppDir.TrimEnd('\')
+$AppDir = [IO.Path]::GetFullPath($AppDir).TrimEnd('\')
 
 # Run from a temporary copy, so the app folder (which contains this script) can be removed.
 if ($PSScriptRoot -and $PSScriptRoot.StartsWith($AppDir, [StringComparison]::OrdinalIgnoreCase)) {
@@ -56,6 +56,8 @@ if (Test-Path $envFile) {
     $dataDir = if ([IO.Path]::IsPathRooted($v)) { $v } else { Join-Path $AppDir $v }
   }
 }
+# Normalise (".\data" -> "data") so the comparison below cannot miss it.
+$dataDir = [IO.Path]::GetFullPath($dataDir).TrimEnd('\')
 
 # Refuse while the app is running (it would hold files open).
 try {
@@ -98,14 +100,23 @@ if ((Test-Path $menu) -and -not (Get-ChildItem $menu)) { Remove-Item $menu -Forc
 if (Test-Path $UninstallKey) { Remove-Item $UninstallKey -Recurse -Force; Say 'Removed from Settings > Apps.' }
 
 # 2. App files. The data folder and .env (with its backups) are kept unless deleting data was confirmed.
-$keep = @('.env')
-$dataInside = $dataDir.TrimEnd('\').StartsWith($AppDir + '\', [StringComparison]::OrdinalIgnoreCase)
-$dataTop = if ($dataInside) { ($dataDir.Substring($AppDir.Length + 1) -split '[\\/]')[0] } else { '' }
+# Safety net: the default 'data' folder, the configured one, and any folder that holds a database or
+# keys are never removed without the typed DELETE confirmation.
+$keep = @('.env', 'data')
+$dataInside = $dataDir.StartsWith($AppDir + '\', [StringComparison]::OrdinalIgnoreCase)
+if ($dataInside) { $keep += ($dataDir.Substring($AppDir.Length + 1) -split '[\\/]')[0] }
+function Test-HoldsUserData([IO.FileSystemInfo]$Item) {
+  if (-not ($Item -is [IO.DirectoryInfo])) { return $false }
+  foreach ($marker in @('studio.sqlite', 'secrets.json', 'secrets.key')) {
+    if (Test-Path -LiteralPath (Join-Path $Item.FullName $marker)) { return $true }
+  }
+  return $false
+}
 foreach ($item in Get-ChildItem -LiteralPath $AppDir -Force) {
   $name = $item.Name
   if (-not $deleteData) {
     if ($keep -contains $name -or $name -like '.env.backup-*') { continue }
-    if ($dataTop -and $name -ieq $dataTop) { continue }
+    if (Test-HoldsUserData $item) { Say "Kept $($item.FullName) (it holds your data)." 'Green'; continue }
   }
   Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
 }

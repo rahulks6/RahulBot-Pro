@@ -212,5 +212,6 @@ jobs:
           if (Test-Path "$dir\dist") { throw 'app files still present' }
           if (Test-Path "$dir\installer") { throw 'installer folder still present' }
           if (-not (Test-Path "$dir\data\keep-me.txt")) { throw 'the data folder was not kept' }
+          if (-not (Test-Path "$dir\data\studio.sqlite")) { throw 'the database was not kept' }
           if (-not (Test-Path "$dir\.env")) { throw '.env was not kept' }
           Write-Host 'Uninstall removed the app and kept data\ and .env.'
