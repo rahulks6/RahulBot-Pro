@@ -36,6 +36,14 @@ export interface CatalogModel {
   capabilities: string[];
   defaultEnabled: boolean;
   isDefault: boolean;
+  /** Local catalog: VRAM with sequential CPU offload (0 = same as minVramGb). */
+  offloadMinVramGb: number;
+  /** Adapter parameters from the catalog (e.g. hf_filename, presets). */
+  params: Record<string, unknown>;
+  /** Model Manager download: file patterns for the main repository. */
+  download: { allowPatterns?: string[]; ignorePatterns?: string[] };
+  /** Additional repositories the model needs (e.g. IP-Adapter weights). */
+  extraDownloads: Array<{ repo: string; allowPatterns?: string[]; ignorePatterns?: string[] }>;
 }
 
 export interface ModelState extends CatalogModel {
@@ -46,6 +54,16 @@ export interface ModelState extends CatalogModel {
   blockedReason: string | null;
   /** From the running worker: weights already in the cache (null = unknown, no GPU running). */
   cached: boolean | null;
+}
+
+const strings = (v: unknown): string[] | undefined =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined;
+
+function patterns(v: unknown): { allowPatterns?: string[]; ignorePatterns?: string[] } {
+  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  const allow = strings(o['allow_patterns']);
+  const ignore = strings(o['ignore_patterns']);
+  return { ...(allow ? { allowPatterns: allow } : {}), ...(ignore ? { ignorePatterns: ignore } : {}) };
 }
 
 interface Overrides {
@@ -107,6 +125,15 @@ export class ModelManager {
         capabilities: Array.isArray(m['capabilities']) ? (m['capabilities'] as unknown[]).map(String) : [],
         defaultEnabled: m['enabled'] === true,
         isDefault: m['default'] === true,
+        offloadMinVramGb: n(m['offload_min_vram_gb'], n(m['min_vram_gb'])),
+        params: (m['params'] && typeof m['params'] === 'object' ? m['params'] : {}) as Record<
+          string,
+          unknown
+        >,
+        download: patterns(m['download']),
+        extraDownloads: (Array.isArray(m['extra_downloads']) ? (m['extra_downloads'] as unknown[]) : [])
+          .map((d) => ({ repo: s((d as Record<string, unknown>)['repo']), ...patterns(d) }))
+          .filter((d) => d.repo.includes('/')),
       }));
     return this.catalog;
   }
@@ -177,12 +204,12 @@ export class ModelManager {
     return usable.find((m) => m.isDefault) ?? usable[0];
   }
 
-  /** Environment for a new cloud worker session. */
-  workerEnv(): Record<string, string> {
+  /** Environment for a new worker session (`include` narrows it, e.g. to installed models). */
+  workerEnv(include: (m: ModelState) => boolean = () => true): Record<string, string> {
     const states = this.states();
     return {
       WORKER_ENABLED_MODELS: states
-        .filter((m) => m.usable)
+        .filter((m) => m.usable && include(m))
         .map((m) => m.id)
         .join(','),
       WORKER_LICENSE_ACK: states

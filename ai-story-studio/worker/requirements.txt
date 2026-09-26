@@ -1,3 +1,5 @@
 # Production HTTP stack (optional: the worker also runs on the Python standard library).
 fastapi>=0.110
 uvicorn[standard]>=0.29
+# Model Manager downloads (resumable; used only when you press Install in the app).
+huggingface_hub>=0.34

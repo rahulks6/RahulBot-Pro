@@ -1,8 +1,13 @@
 import { classify, GPU_STATE_LABEL, PROFILE_LABEL, type HardwareStatus } from '../../services/hardware.ts';
+import { cleanup, diskUsage, type CleanupTarget } from '../../services/disk.ts';
+import { planRuntime, type RuntimeKind } from '../../services/runtime-installer.ts';
+import { join } from 'node:path';
+import { appRoot } from '../../lib/paths.ts';
 import { runHealthCheck, type HealthLevel } from '../../services/system-health.ts';
 import type { Web } from '../app.ts';
 import type { SafeHtml } from '../html.ts';
-import { badge, button, card, html, kv, table } from '../ui.ts';
+import { AppError } from '../../lib/errors.ts';
+import { badge, button, card, html, kv, postForm, table } from '../ui.ts';
 
 const LEVEL_BADGE: Record<HealthLevel, [string, string]> = {
   ok: ['OK', 'good'],
@@ -149,8 +154,122 @@ export function registerSystemPages(web: Web): void {
               'Check PyTorch',
             )}`,
         )}
-        ${hardwareCard(report.hardware, '/health?refresh=1')}`,
+        ${hardwareCard(report.hardware, '/health?refresh=1')} ${runtimeCard(report.hardware.device !== null)}`,
     );
+  });
+
+  function runtimeCard(hasGpu: boolean): SafeHtml {
+    const st = s.runtime.status();
+    return card(
+      'Worker runtime (Python packages for LOCAL GPU)',
+      html`${kv([
+        ['State', st.state === 'idle' ? 'no installation run yet' : st.state],
+        ['Current step', st.step || '—'],
+        ['Log', st.logPath],
+        ...(st.error ? ([['Problem', st.error]] as Array<[string, string]>) : []),
+      ])}
+      ${st.state === 'running'
+        ? html`<p>
+            <a class="button" href="/health">Refresh</a> ${button('/health/runtime/cancel', 'Cancel')}
+          </p>`
+        : html`<div class="row">
+            ${hasGpu
+              ? html`<a class="button primary" href="/health/runtime/gpu">Install GPU runtime (~3.5 GB)</a>`
+              : ''}
+            <a class="button" href="/health/runtime/cpu">Install CPU runtime (Kokoro TTS only, ~1 GB)</a>
+          </div>`}
+      ${st.tail.length ? html`<pre class="doc">${st.tail.join('\n')}</pre>` : ''}`,
+    );
+  }
+
+  r.get('/health/runtime/:kind', async (req) => {
+    const kind = req.params['kind'] as RuntimeKind;
+    if (kind !== 'gpu' && kind !== 'cpu') throw new AppError('NOT_FOUND', 'Unknown runtime');
+    const plan = planRuntime(kind, await s.hardware.nvidia(), join(appRoot(), 'worker'));
+    return web.render(
+      req,
+      kind === 'gpu' ? 'Install the GPU runtime?' : 'Install the CPU runtime?',
+      '/health',
+      card(
+        'Confirm',
+        html`${kv([
+            ['Downloads', `about ${plan.sizeGb} GB from pypi.org and download.pytorch.org`],
+            [
+              'PyTorch build',
+              plan.wheel === 'cpu' ? 'CPU only' : `CUDA (${plan.wheel}), matching your NVIDIA driver`,
+            ],
+            ['Installed into', plan.venv],
+          ])}
+          <ol>
+            ${plan.steps.map((st) => html`<li>${st.title}</li>`)}
+          </ol>
+          <p class="muted">
+            Nothing else on the computer changes. AI model weights are NOT part of this; install them in the
+            Model Manager. This takes several minutes.
+          </p>
+          ${postForm(
+            `/health/runtime/${kind}`,
+            html`<input type="hidden" name="confirm" value="yes" /><button class="primary">
+                Install now
+              </button>
+              <a class="button" href="/health">Cancel</a>`,
+          )}`,
+      ),
+    );
+  });
+
+  r.post('/health/runtime/cancel', () => {
+    s.runtime.cancel();
+    return web.redirect('/health', 'Installation cancelled.');
+  });
+
+  r.post('/health/runtime/:kind', async (req) => {
+    const kind = req.params['kind'] as RuntimeKind;
+    if (kind !== 'gpu' && kind !== 'cpu') throw new AppError('NOT_FOUND', 'Unknown runtime');
+    if (req.form['confirm'] !== 'yes')
+      throw new AppError('PRECONDITION_FAILED', 'Confirm the installation first.');
+    await s.runtime.start(planRuntime(kind, await s.hardware.nvidia(), join(appRoot(), 'worker')));
+    return web.redirect('/health', 'Installation started. This page shows its progress (refresh it).');
+  });
+
+  r.get('/disk', (req) => {
+    const areas = diskUsage(s);
+    const size = (b: number) =>
+      b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` : `${(b / 1024 ** 2).toFixed(1)} MB`;
+    return web.render(
+      req,
+      'Disk & Storage',
+      '/health',
+      html`${card(
+          'Disk usage',
+          table(
+            ['Area', 'Size', 'Folder', 'Free on that drive', 'Notes', ''],
+            areas.map((a) => [
+              a.label,
+              size(a.bytes),
+              a.path,
+              a.freeGb === null ? '—' : `${a.freeGb} GB`,
+              a.note,
+              a.clearable && a.bytes > 0
+                ? button(`/disk/clean/${a.key}`, 'Clear', {}, { confirm: `Clear ${a.label}?` })
+                : '',
+            ]),
+          ),
+        )}
+        <p class="muted">
+          Projects, approved references and final exports are never deleted here. AI models are removed one at
+          a time in the <a href="/models">Model Manager</a>.
+        </p>`,
+    );
+  });
+
+  r.post('/disk/clean/:target', (req) => {
+    const target = req.params['target'] as CleanupTarget;
+    if (!['render_temp', 'download_cache', 'worker_jobs'].includes(target))
+      throw new AppError('NOT_FOUND', 'Only temporary areas can be cleared here.');
+    const freed = cleanup(s, target);
+    s.logger.info('disk cleanup', { target, freedBytes: freed });
+    return web.redirect('/disk', `Freed ${(freed / 1024 ** 2).toFixed(1)} MB.`);
   });
 
   r.post('/health/check-torch', async () => {

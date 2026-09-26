@@ -18,6 +18,7 @@ export const NAV: Array<[string, string]> = [
   ['/quality', 'Quality Check'],
   ['/exports', 'Exports'],
   ['/gpu', 'GPU & Costs'],
+  ['/models', 'Model Manager'],
   ['/benchmarks', 'Model Benchmarks'],
   ['/cloud', 'Cloud GPU'],
   ['/settings', 'Settings'],

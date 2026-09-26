@@ -106,17 +106,22 @@ describe('execution router', () => {
       assert.equal(s.gpu.currentProvider.id, 'local-worker');
       assert.equal(s.gpu.currentProvider.paid, false);
       assert.equal(s.cloud.canProvision(), false, 'cloud gates fail outside CLOUD GPU mode');
-      assert.equal(s.providers.tts.info.isMock, false, 'real TTS model from the local catalog');
-      assert.equal(s.providers.tts.info.id, 'kokoro-82m');
-      assert.equal(s.providers.image.info.isMock, false);
+      // Nothing is installed in this test environment: no real TTS model is offered, and no mock either.
+      assert.equal(s.providers.tts.info.isMock, false);
+      assert.equal(s.providers.tts.info.id, 'worker-tts-missing');
+      assert.equal(s.providers.upscaler.info.id, 'ffmpeg-lanczos', 'built-in models need no download');
 
       const job = narrationJob(s);
       const r = await s.generation.processQueue();
       assert.equal(r.failed, 1);
       const j = s.jobs.get(job);
       assert.equal(j.status, 'failed');
-      // No weights / packages here: the reason names what is missing and how to fix it.
-      assert.match(j.error_message ?? '', /kokoro|not installed|missing dependency|Model Manager/i);
+      // No weights here: the reason names what is missing and how to fix it.
+      assert.equal(j.error_code, 'MODEL_NOT_INSTALLED');
+      assert.match(
+        j.error_message ?? '',
+        /No text-to-speech model is installed for LOCAL GPU.*Model Manager/,
+      );
       assert.equal(s.assets.list({}).length, 0, 'no mock placeholder was substituted');
       assert.equal(s.gpuRepo.list().filter((g) => g.provider !== 'local-worker').length, 0);
 

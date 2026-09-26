@@ -205,6 +205,7 @@ const NAV = [
   'Quality Check',
   'Exports',
   'GPU & Costs',
+  'Model Manager',
   'Model Benchmarks',
   'Cloud GPU',
   'Settings',

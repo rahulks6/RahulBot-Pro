@@ -106,6 +106,25 @@ function first(
 
 const b64 = (data: Uint8Array): string => Buffer.from(data).toString('base64');
 
+const TASK_NAME: Record<string, string> = {
+  image: 'image',
+  video: 'image-to-video',
+  tts: 'text-to-speech',
+  music: 'music',
+  sfx: 'sound-effect / ambience',
+  upscale: 'upscaling',
+  lipsync: 'lip-sync',
+};
+
+/** No model of this kind on the worker: say which model to install, before any request is sent. */
+function requireModel(info: ProviderInfo, kind: string): void {
+  if (info.id.endsWith('-missing'))
+    throw new ProviderError(
+      'MODEL_NOT_INSTALLED',
+      `No ${TASK_NAME[kind] ?? kind} model is installed for LOCAL GPU. Install one in the Model Manager (/models), or choose MOCK / CLOUD GPU in Settings.`,
+    );
+}
+
 export class WorkerImageModel implements ImageModel {
   readonly info: ProviderInfo;
   private readonly client: WorkerClient;
@@ -114,6 +133,7 @@ export class WorkerImageModel implements ImageModel {
     this.info = infoFor(model, 'image');
   }
   async generate(req: ImageRequest, ctx: RunContext): Promise<ModelResult> {
+    requireModel(this.info, 'image');
     const body: Record<string, unknown> = {
       model: this.info.id,
       prompt: req.prompt || 'untitled',
@@ -141,6 +161,7 @@ export class WorkerVideoModel implements VideoModel {
     this.info = infoFor(model, 'video');
   }
   async animate(req: VideoRequest, ctx: RunContext): Promise<ModelResult> {
+    requireModel(this.info, 'video');
     const { job, files } = await this.client.run(
       '/generate/image-to-video',
       {
@@ -170,6 +191,7 @@ export class WorkerUpscaler implements Upscaler {
     this.info = infoFor(model, 'upscale');
   }
   async upscale(req: UpscaleRequest, ctx: RunContext): Promise<ModelResult> {
+    requireModel(this.info, 'upscale');
     const { job, files } = await this.client.run(
       '/process/upscale',
       {
@@ -192,6 +214,7 @@ export class WorkerTts implements TextToSpeechProvider {
     this.info = infoFor(model, 'tts');
   }
   async synthesize(req: TtsRequest, ctx: RunContext): Promise<ModelResult> {
+    requireModel(this.info, 'tts');
     const { job, files } = await this.client.run(
       '/generate/audio',
       {
@@ -226,6 +249,7 @@ export class WorkerMusic implements MusicProvider {
     this.info = infoFor(model, 'music');
   }
   async compose(req: MusicRequest, ctx: RunContext): Promise<ModelResult> {
+    requireModel(this.info, 'music');
     const { job, files } = await this.client.run(
       '/generate/audio',
       {
@@ -250,6 +274,7 @@ export class WorkerSfx implements SoundEffectProvider {
     this.info = infoFor(model, 'sfx');
   }
   async create(req: SfxRequest, ctx: RunContext): Promise<ModelResult> {
+    requireModel(this.info, 'sfx');
     const { job, files } = await this.client.run(
       '/generate/audio',
       {
@@ -273,6 +298,7 @@ export class WorkerLipSync implements LipSyncProvider {
     this.info = infoFor(model, 'lipsync');
   }
   async sync(req: LipSyncRequest, ctx: RunContext): Promise<ModelResult> {
+    requireModel(this.info, 'lipsync');
     const { job, files } = await this.client.run(
       '/process/lipsync',
       { model: this.info.id, video: b64(req.video), audio: b64(req.audio) },

@@ -26,7 +26,9 @@ import { GenerationService } from '../services/generation.ts';
 import { GpuSupervisor } from '../services/gpu-supervisor.ts';
 import { ExecutionRouter } from '../services/execution-router.ts';
 import { HardwareService } from '../services/hardware.ts';
+import { LocalModelService } from '../services/local-models.ts';
 import { LocalWorkerManager } from '../services/local-worker.ts';
+import { RuntimeInstaller } from '../services/runtime-installer.ts';
 import { QualityService } from '../services/quality/quality-service.ts';
 import { SettingsService } from '../services/settings.ts';
 import { TimelineService } from '../services/timeline.ts';
@@ -84,6 +86,10 @@ export interface Studio {
   hardware: HardwareService;
   /** Decides where generation runs: MOCK / LOCAL GPU / CLOUD GPU. */
   router: ExecutionRouter;
+  /** LOCAL GPU Model Manager: install state, confirmed downloads. */
+  localModels: LocalModelService;
+  /** Installs the worker's Python packages (PyTorch, diffusers, Kokoro) from the app. */
+  runtime: RuntimeInstaller;
   close(): void;
 }
 
@@ -212,16 +218,30 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     logger.error('cloud mode not applied', { error: (err as Error).message });
   }
   const cloudTest = new CloudGpuTest({ db, env, gpu, gpuRepo, cloud, models, storage, clock, logger });
-  const localModels = new ModelManager(
+  const localCatalog = new ModelManager(
     db,
     opts.localWorker?.catalogPath ?? join(appRoot(), 'worker', 'models.local.json'),
     'model_overrides_local',
   );
+  let routerRef: ExecutionRouter | null = null;
+  const localModels = new LocalModelService({
+    db,
+    env,
+    logger,
+    catalog: localCatalog,
+    secrets,
+    // A newly installed model is offered to the local worker by restarting it (when idle).
+    onInstalled: () => void routerRef?.onModelInstalled(),
+  });
   const localWorker = new LocalWorkerManager({
     env,
     logger,
     ffmpeg,
-    modelEnv: () => localModels.workerEnv(),
+    // Only installed models are offered to the worker (nothing ever downloads during generation).
+    modelEnv: () => {
+      const installed = localModels.installedIds();
+      return localCatalog.workerEnv((m) => installed.has(m.id));
+    },
     port: () => settings.get('execution').localWorkerPort,
     ...(opts.localWorker ?? {}),
   });
@@ -240,9 +260,21 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     worker: null,
     hardware: opts.hardware ?? new HardwareService(),
     router: null as unknown as ExecutionRouter,
+    localModels,
+    runtime: new RuntimeInstaller({
+      logger,
+      dataDir: env.dataDir,
+      workerDir: opts.localWorker?.workerDir ?? join(appRoot(), 'worker'),
+    }),
     close: () => db.close(),
   };
-  studio.router = new ExecutionRouter(studio, { localWorker, localModels, baseProviders });
+  studio.router = new ExecutionRouter(studio, { localWorker, localCatalog, baseProviders });
+  routerRef = studio.router;
+  // After the runtime install: forget the old PyTorch result and restart an idle local worker.
+  studio.runtime.onComplete = () => {
+    studio.hardware.torch = null;
+    void studio.router.onModelInstalled();
+  };
   generation.router = studio.router;
   return studio;
 }

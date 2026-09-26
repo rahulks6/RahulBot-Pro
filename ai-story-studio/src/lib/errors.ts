@@ -43,6 +43,11 @@ export const ERROR_CODES = [
   'SESSION_BUDGET_REACHED',
   'GPU_LIMIT',
   'NOT_SUPPORTED',
+  // LOCAL GPU
+  'MODEL_NOT_INSTALLED',
+  'INSUFFICIENT_VRAM',
+  'CUDA_UNAVAILABLE',
+  'DISK_FULL',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

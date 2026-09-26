@@ -16,6 +16,7 @@ import { registerOpsPages } from './pages/ops.ts';
 import { registerProductionPages } from './pages/production.ts';
 import { registerProjectPages } from './pages/projects.ts';
 import { registerQualityPages } from './pages/quality.ts';
+import { registerModelPages } from './pages/models.ts';
 import { registerStoryPages } from './pages/stories.ts';
 import { registerSystemPages } from './pages/system.ts';
 import { csrf, html, page } from './ui.ts';
@@ -92,6 +93,7 @@ export function createWebApp(
   registerBenchmarkPages(web);
   registerCloudPages(web);
   registerSystemPages(web);
+  registerModelPages(web);
 
   // Media from local storage (keys are validated by the storage provider: no traversal).
   router.get('/media/:key*', (req) => {

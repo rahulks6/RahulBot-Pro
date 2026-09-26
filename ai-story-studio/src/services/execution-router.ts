@@ -45,19 +45,19 @@ export class ExecutionRouter {
   private readonly s: Studio;
   private readonly mockSet: ProviderSet;
   readonly localWorker: LocalWorkerManager;
-  readonly localModels: ModelManager;
+  readonly localCatalog: ModelManager;
   private localBound = false;
   private lastLocalError: string | null = null;
   private applying: Promise<RouteStatus> | null = null;
 
   constructor(
     s: Studio,
-    deps: { localWorker: LocalWorkerManager; localModels: ModelManager; baseProviders: ProviderSet },
+    deps: { localWorker: LocalWorkerManager; localCatalog: ModelManager; baseProviders: ProviderSet },
   ) {
     this.s = s;
     this.mockSet = { ...deps.baseProviders };
     this.localWorker = deps.localWorker;
-    this.localModels = deps.localModels;
+    this.localCatalog = deps.localCatalog;
   }
 
   requested(): ExecutionMode {
@@ -219,6 +219,16 @@ export class ExecutionRouter {
         want === 'cloud_gpu' ? 'CLOUD_GPU_DISABLED' : 'WORKER_UNAVAILABLE',
         `${LABEL[want]} mode is selected but cannot run: ${st.problems.join(' ')}`,
       );
+  }
+
+  /** A model finished installing: restart an idle local worker so it can use it. */
+  async onModelInstalled(): Promise<void> {
+    if (this.requested() !== 'local_gpu' || this.s.gpuRepo.active().length > 0) return;
+    try {
+      await this.startLocal();
+    } catch (err) {
+      this.s.logger.warn('local worker restart after install failed', { error: toAppError(err).message });
+    }
   }
 
   async shutdown(): Promise<void> {
