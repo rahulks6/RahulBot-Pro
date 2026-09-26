@@ -135,11 +135,26 @@ describe('GPU safety', () => {
   });
 
   it('handles provisioning failure without leaving anything running', async () => {
-    s.mockGpu.failNextProvisions = 1;
+    s.mockGpu.failNextProvisions = 5;
     const plan = await s.gpu.plan(24, 60);
     await assert.rejects(s.gpu.start(plan), (e: AppError) => e.code === 'PROVISION_FAILED');
     assert.equal(s.mockGpu.activeCount(), 0);
     assert.ok(s.gpuRepo.events().some((e) => e.event === 'provision_failed'));
+    s.mockGpu.failNextProvisions = 0;
+  });
+
+  it('falls back to the next compatible GPU type when one cannot be rented', async () => {
+    const plan = await s.gpu.plan(24, 60);
+    assert.ok(plan.alternatives.length > 0, 'alternatives are planned');
+    s.mockGpu.failNextProvisions = 1;
+    const tried: string[] = [];
+    const sess = await s.gpu.start(plan, {
+      onFallback: (from, to) => tried.push(`${from.gpuModel}→${to.gpuModel}`),
+    });
+    assert.equal(tried.length, 1);
+    assert.equal(sess.instance.gpu_model, plan.alternatives[0]!.gpuModel);
+    await s.gpu.terminate(sess.id, 'job_completion');
+    assert.equal(s.mockGpu.activeCount(), 0);
   });
 
   it('retries failed terminations via the watchdog', async () => {

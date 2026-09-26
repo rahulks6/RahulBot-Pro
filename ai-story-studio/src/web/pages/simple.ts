@@ -4,6 +4,7 @@ import type { Video } from '../../repositories/videos.ts';
 import type { EngineStatus } from '../../services/engine.ts';
 import type { Web } from '../app.ts';
 import { yes } from '../forms.ts';
+import { raw } from '../html.ts';
 import {
   button,
   card,
@@ -150,6 +151,7 @@ export function registerSimplePages(web: Web): void {
             <a href="/settings">Settings</a>.
           </p>`,
       )}
+      ${realTestCard(web)}
       <section class="card" id="worker">
         <header><h2>The AI worker</h2></header>
         <p>
@@ -207,6 +209,102 @@ export function registerSimplePages(web: Web): void {
   r.post('/settings/ai-engine/turn-on', async () => {
     await s.engine.turnOn();
     return web.redirect('/settings/ai-engine', 'Real generation on RunPod is switched on.');
+  });
+
+  // --- Real Mode Test (milestone 1) -------------------------------------------------------------
+
+  r.post('/settings/ai-engine/real-test', async () => {
+    if (s.realTest.running) throw new AppError('CONFLICT', 'A Real Mode Test is already running.');
+    const { record } = await s.realTest.prepare();
+    return web.redirect(`/settings/ai-engine/real-test/${record.id}`);
+  });
+  r.get('/settings/ai-engine/real-test/:id', (req) => {
+    const t = s.realTest.get(req.params['id']!);
+    const waiting = t.status === 'running' && t.steps.find((x) => x.n === 4)?.status === 'RUNNING';
+    const running = t.status === 'running' && !waiting;
+    const body = html`${running ? raw('<meta http-equiv="refresh" content="5" />') : ''}
+      ${card(
+        'Milestone 1',
+        html`<p>
+            RUNPOD CONNECTED → REAL GPU → REAL IMAGE → REAL ANIMATION → REAL NARRATION → REAL PLAYABLE MP4.
+            Every step below is executed for real; a step that was not reached says NOT TESTED.
+          </p>
+          <table class="steps">
+            <tr>
+              <th>#</th>
+              <th>Step</th>
+              <th>Result</th>
+              <th>Details</th>
+            </tr>
+            ${t.steps.map(
+              (x) =>
+                html`<tr>
+                  <td>${x.n}</td>
+                  <td>${x.name}</td>
+                  <td><span class="badge ${resultKind(x.status)}">${x.status}</span></td>
+                  <td>${x.detail}</td>
+                </tr>`,
+            )}
+          </table>
+          ${waiting
+            ? html`<p class="flash">
+                  Nothing has been rented yet. Pressing <strong>CONFIRM AND RUN</strong> rents the GPU shown
+                  in step 3 until the test finishes (it is stopped automatically, even if something fails).
+                </p>
+                <div class="actions">
+                  ${button(
+                    `/settings/ai-engine/real-test/${t.id}/confirm`,
+                    'CONFIRM AND RUN',
+                    {},
+                    { kind: 'primary' },
+                  )}
+                  ${button(`/settings/ai-engine/real-test/${t.id}/cancel`, 'Cancel')}
+                </div>`
+            : ''}
+          ${running
+            ? html`<p class="muted">
+                  Running… this page refreshes every 5 seconds. The first run downloads the AI models on the
+                  GPU.
+                </p>
+                ${button(
+                  `/settings/ai-engine/real-test/${t.id}/cancel`,
+                  'Cancel test',
+                  {},
+                  { kind: 'danger' },
+                )}`
+            : ''}
+          ${t.output_key
+            ? html`<h3>The real short MP4</h3>
+                <video class="player" controls src="${mediaUrl(t.output_key)}"></video>
+                <p><a href="${mediaUrl(t.output_key)}" download>Download the MP4</a></p>`
+            : ''}
+          ${t.finished_at
+            ? kv([
+                ['Overall', t.status === 'success' ? 'PASS — milestone 1 reached' : t.status.toUpperCase()],
+                ['GPU', t.gpu_model ?? '—'],
+                ['GPU time', t.runtime_sec !== null ? `${t.runtime_sec} s` : '—'],
+                ['Estimated cost', t.cost_inr !== null ? inr(t.cost_inr) : '—'],
+              ])
+            : ''}`,
+      )}
+      <p><a href="/settings/ai-engine">← AI Engine</a></p>`;
+    return web.render(req, 'Real Mode Test', '/settings', body);
+  });
+  r.post('/settings/ai-engine/real-test/:id/confirm', (req) => {
+    const id = req.params['id']!;
+    void s.realTest
+      .confirm(id)
+      .catch((err: unknown) =>
+        s.logger.error('real mode test failed', { test: id, error: toAppError(err).message }),
+      );
+    return web.redirect(
+      `/settings/ai-engine/real-test/${id}`,
+      'Started. The GPU is stopped automatically at the end.',
+    );
+  });
+  r.post('/settings/ai-engine/real-test/:id/cancel', (req) => {
+    s.realTest.cancel(req.params['id']!);
+    return web.redirect(`/settings/ai-engine/real-test/${req.params['id']}`, 'Cancelled.');
   });
 
   // --- Simple Settings -------------------------------------------------------------------------
@@ -447,4 +545,43 @@ export function videoCard(web: Web, v: Video): SafeHtml {
 
 export function errorText(err: unknown): string {
   return toAppError(err).message;
+}
+
+function resultKind(st: string): string {
+  return st === 'PASS'
+    ? 'good'
+    : st === 'FAIL'
+      ? 'bad'
+      : st === 'BLOCKED' || st === 'RUNNING'
+        ? 'warn'
+        : 'neutral';
+}
+
+/** The latest Real Mode Test and the button to run one. */
+function realTestCard(web: Web): SafeHtml {
+  const s = web.studio;
+  const last = s.realTest.latest();
+  const ready = s.engine.status().state === 'READY';
+  return card(
+    'Real Mode Test (milestone 1)',
+    html`<p>
+        Proves the whole chain on a real RunPod GPU: one real picture, animated by AI, with real narration,
+        combined into a short MP4 that is checked and played. It rents a GPU for a few minutes (the price is
+        shown before anything is rented).
+      </p>
+      ${last
+        ? html`<p>
+            Last run ${when(last.started_at)}:
+            <span
+              class="badge ${last.status === 'success' ? 'good' : last.status === 'running' ? 'warn' : 'bad'}"
+              >${last.status === 'success' ? 'PASS' : last.status.toUpperCase()}</span
+            >
+            ${last.steps.filter((x) => x.status === 'PASS').length}/${last.steps.length} steps passed ·
+            <a href="/settings/ai-engine/real-test/${last.id}">details</a>
+          </p>`
+        : html`<p class="muted">Not run yet: every real-AI step is NOT TESTED until this runs.</p>`}
+      ${ready
+        ? button('/settings/ai-engine/real-test', 'RUN REAL MODE TEST', {}, { kind: 'primary' })
+        : html`<p class="muted">Connect RunPod first (above).</p>`}`,
+  );
 }

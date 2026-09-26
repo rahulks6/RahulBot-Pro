@@ -50,6 +50,20 @@ export class GpuRepository {
     );
   }
 
+  /** Start-up history per GPU type (paid sessions): how many became ready, how many failed to start. */
+  startHistory(provider: string): Map<string, { ok: number; failed: number }> {
+    const rows = this.db.all<{ gpu_model: string; ok: number; failed: number }>(
+      `SELECT gpu_model,
+              SUM(CASE WHEN ready_at IS NOT NULL THEN 1 ELSE 0 END) AS ok,
+              SUM(CASE WHEN ready_at IS NULL AND termination_reason IN
+                  ('provision_failed', 'worker_start_timeout', 'worker_start_failed', 'provision_lost')
+                  THEN 1 ELSE 0 END) AS failed
+         FROM gpu_instances WHERE provider = ? AND is_mock = 0 GROUP BY gpu_model`,
+      provider,
+    );
+    return new Map(rows.map((r) => [r.gpu_model, { ok: r.ok, failed: r.failed }]));
+  }
+
   active(): GpuInstance[] {
     return this.db.all<GpuInstance>(
       "SELECT * FROM gpu_instances WHERE status IN ('provisioning', 'running', 'terminating')",

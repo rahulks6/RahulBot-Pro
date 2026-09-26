@@ -40,6 +40,10 @@ export class FakeCloudWorker {
   corruptDownloads = 0;
   /** Jobs stay running this many polls. */
   jobPolls = 0;
+  /** Real media to return instead of the tiny built-in files (e.g. an FFmpeg-made MP4 for video). */
+  media: { image?: Buffer; video?: Buffer; audio?: Buffer } = {};
+  /** Report the video as the non-AI still-image camera move (the worker's labelled fallback). */
+  stillMotion = false;
   private seq = 0;
   private readonly runpod: MockRunPod;
 
@@ -72,7 +76,18 @@ export class FakeCloudWorker {
 
   private output(kind: string): { name: string; mime: string; data: Buffer } {
     if (kind === 'image')
-      return { name: 'image.png', mime: 'image/png', data: encodePng(64, 64, (x, y) => [x * 4, y * 4, 120]) };
+      return {
+        name: 'image.png',
+        mime: 'image/png',
+        data: this.media.image ?? encodePng(64, 64, (x, y) => [x * 4, y * 4, 120]),
+      };
+    if (kind === 'video')
+      return {
+        name: 'clip.mp4',
+        mime: 'video/mp4',
+        data: this.media.video ?? Buffer.from('000000186674797069736f6d0000000069736f6d', 'hex'),
+      };
+    if (this.media.audio) return { name: 'audio.wav', mime: 'audio/wav', data: this.media.audio };
     const sr = 24000;
     const samples = Float32Array.from({ length: sr }, (_, i) => 0.2 * Math.sin((2 * Math.PI * 220 * i) / sr));
     return { name: 'audio.wav', mime: 'audio/wav', data: encodeWav({ sampleRate: sr, samples }) };
@@ -85,7 +100,12 @@ export class FakeCloudWorker {
       status: job.status,
       progress: job.status === 'complete' ? 1 : 0.5,
       message: '',
-      model: { id: job.kind === 'image' ? 'flux1-schnell' : 'kokoro-82m', version: 'main', mock: false },
+      model: {
+        id: job.kind === 'image' ? 'flux1-schnell' : job.kind === 'video' ? 'wan2.2-ti2v-5b' : 'kokoro-82m',
+        version: 'main',
+        mock: false,
+      },
+      details: job.kind === 'video' ? { still_motion: this.stillMotion } : {},
       outputs:
         job.status === 'complete'
           ? job.outputs.map((o) => ({
@@ -165,6 +185,19 @@ export class FakeCloudWorker {
             cached: true,
           },
           {
+            id: 'wan2.2-ti2v-5b',
+            kind: 'video',
+            display_name: 'Wan 2.2 TI2V 5B',
+            version: 'main',
+            license: 'Apache-2.0',
+            min_vram_gb: 24,
+            device: 'cuda',
+            mock: false,
+            loaded: false,
+            default: true,
+            cached: false,
+          },
+          {
             id: 'flux1-schnell',
             kind: 'image',
             display_name: 'FLUX.1 [schnell]',
@@ -179,12 +212,12 @@ export class FakeCloudWorker {
           },
         ],
       });
-    let jm = /^\/generate\/(audio|image)$/.exec(path);
+    let jm = /^\/generate\/(audio|image|image-to-video)$/.exec(path);
     if (jm && req.method === 'POST') {
       const body = JSON.parse(raw || '{}') as Record<string, unknown>;
       this.submitted.push({ podId, path, body });
       const id = `job${++this.seq}`;
-      const kind = jm[1] === 'image' ? 'image' : 'audio';
+      const kind = jm[1] === 'image' ? 'image' : jm[1] === 'image-to-video' ? 'video' : 'audio';
       const job: FakeJob = {
         id,
         kind,

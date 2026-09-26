@@ -1,5 +1,6 @@
 import { NARRATOR_VOICE_NEEDED } from './audio-messages.ts';
 import type { StudioCore } from '../app/studio.ts';
+import type { ModelCategory } from './model-manager.ts';
 import { TERMINAL_JOB_STATUSES, type JobKind, type JobStatus, type QualityMode } from '../domain/enums.ts';
 import type { GeneratedAsset, GenerationAttempt, GenerationJob, Shot } from '../domain/types.ts';
 import { AppError, RETRYABLE_CODES, toAppError, type ErrorCode } from '../lib/errors.ts';
@@ -57,6 +58,8 @@ export class GenerationService {
   private running = false;
   /** Set by the composition root: the ExecutionRouter's readiness check (restarts a crashed local worker). */
   router: { ensureReady(): Promise<void> } | null = null;
+  /** Cloud model catalog (recommended VRAM for the GPU choice); set by the composition root. */
+  cloudModels: { selected(kind: ModelCategory): { recommendedVramGb: number } | undefined } | null = null;
 
   constructor(core: StudioCore & { audio: AudioPipeline }) {
     this.s = core;
@@ -316,7 +319,9 @@ export class GenerationService {
         const estimate = this.estimateGpuSeconds(gpuJobs);
         let plan;
         try {
-          plan = await this.s.gpu.plan(minVram, estimate);
+          plan = await this.s.gpu.plan(minVram, estimate, {
+            recommendedVramGb: this.recommendedVramGb(gpuJobs),
+          });
         } catch (err) {
           const e = toAppError(err);
           for (const job of gpuJobs) this.failJob(job, e.code, e.message, result);
@@ -679,6 +684,22 @@ export class GenerationService {
     if (params['seed'] !== 'new' && shot?.seed !== null && shot?.seed !== undefined && attemptNumber === 1)
       return shot.seed;
     return seedFrom(`${job.id}:${attemptNumber}`) % 2 ** 31;
+  }
+
+  /** The largest RECOMMENDED VRAM of the cloud models a batch uses (the GPU choice prefers it). */
+  private recommendedVramGb(jobs: GenerationJob[]): number {
+    const category: Partial<Record<JobKind, ModelCategory>> = {
+      reference: 'image',
+      image: 'image',
+      video: 'video',
+      upscale: 'upscale',
+      tts: 'tts',
+      music: 'music',
+      sfx: 'sfx',
+      ambience: 'sfx',
+    };
+    const kinds = [...new Set(jobs.map((j) => category[j.kind]).filter((k): k is ModelCategory => !!k))];
+    return Math.max(0, ...kinds.map((k) => this.cloudModels?.selected(k)?.recommendedVramGb ?? 0));
   }
 
   /** The step each running job is in (generating / upscaling …), to return to after the worker loads a model. */

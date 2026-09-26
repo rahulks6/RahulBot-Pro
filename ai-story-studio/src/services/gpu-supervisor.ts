@@ -9,6 +9,7 @@ import type { GpuRepository } from '../repositories/gpu.ts';
 import { costFor } from '../repositories/gpu.ts';
 import type { BudgetService, BudgetStatus } from './budget.ts';
 import { effectiveLimits, type EffectiveLimits } from './cloud-limits.ts';
+import { rankOffers } from './gpu-selection.ts';
 import type { SettingsService } from './settings.ts';
 
 /** Every GPU resource the studio creates carries this tag; only tagged resources are ever terminated. */
@@ -18,6 +19,10 @@ export const KILL_ONE_CONFIRMATION = 'TERMINATE';
 
 export interface GpuPlan {
   offer: GpuOffer;
+  /** Other compatible GPU types, best first: tried when the first cannot be rented or its worker fails. */
+  alternatives: GpuOffer[];
+  /** Why the first choice was made (VRAM, past starts, stock) — shown in Advanced Mode. */
+  reasons: string[];
   minVramGb: number;
   estimatedGpuSeconds: number;
   estimatedCostInr: number;
@@ -34,7 +39,19 @@ export interface GpuPlan {
 export interface StartOptions {
   purpose?: 'generation' | 'test';
   signal?: AbortSignal;
+  /** Called when a GPU type could not be used and the next compatible type is tried. */
+  onFallback?: (from: GpuOffer, to: GpuOffer, reason: string) => void;
 }
+
+/** Start-up failures where another GPU type may work (no capacity, worker did not start). */
+const FALLBACK_CODES = new Set([
+  'PROVISION_FAILED',
+  'GPU_UNAVAILABLE',
+  'WORKER_START_TIMEOUT',
+  'WORKER_UNAVAILABLE',
+  'WORKER_START_FAILED',
+  'CUDA_FAILURE',
+]);
 
 /** Callbacks the composition root installs to bind the cloud worker to the AI providers. */
 export interface SupervisorHooks {
@@ -220,8 +237,15 @@ export class GpuSupervisor {
     this.hooks.assertCloudAllowed?.();
   }
 
-  /** Choose the cheapest suitable offer and compute the worst-case cost, without provisioning anything. */
-  async plan(minVramGb: number, estimatedGpuSeconds: number): Promise<GpuPlan> {
+  /**
+   * Choose the GPU for a batch (see gpu-selection.ts: compatibility, VRAM, past success, stock and
+   * speed before price) and compute the worst-case cost, without provisioning anything.
+   */
+  async plan(
+    minVramGb: number,
+    estimatedGpuSeconds: number,
+    opts: { recommendedVramGb?: number } = {},
+  ): Promise<GpuPlan> {
     this.assertProviderAllowed();
     const gpu = this.settings.get('gpu');
     const limits = this.limits();
@@ -231,11 +255,13 @@ export class GpuSupervisor {
     const available = offers.filter((o) => o.available);
     if (available.length === 0)
       throw new AppError('GPU_UNAVAILABLE', `No available GPU with ≥ ${need} GB VRAM`);
-    const affordable = available
-      .filter((o) => o.hourlyRateInr <= limits.maxHourlyRateInr)
-      .sort((a, b) => a.hourlyRateInr - b.hourlyRateInr);
-    const offer = affordable[0];
-    if (!offer) {
+    const ranked = rankOffers(available, {
+      needVramGb: need,
+      recommendedVramGb: Math.max(need, opts.recommendedVramGb ?? need),
+      maxHourlyRateInr: limits.maxHourlyRateInr,
+      history: this.provider.paid ? this.repo.startHistory(this.provider.id) : new Map(),
+    });
+    if (ranked.length === 0) {
       const cheapest = Math.min(...available.map((o) => o.hourlyRateInr));
       throw new AppError(
         'PRICE_TOO_HIGH',
@@ -244,35 +270,84 @@ export class GpuSupervisor {
           : `Cheapest suitable GPU costs ₹${cheapest}/h, above the configured maximum ₹${limits.maxHourlyRateInr}/h. Nothing was provisioned.`,
       );
     }
-    const estimatedCostInr = costFor(estimatedGpuSeconds, offer.hourlyRateInr);
-    let estimatedMaxCostInr = costFor(limits.maxLifetimeMinutes * 60, offer.hourlyRateInr);
-    if (limits.sessionBudgetInr !== null) {
-      if (estimatedCostInr > limits.sessionBudgetInr)
-        throw new AppError(
-          'SESSION_BUDGET_REACHED',
-          `This batch is estimated at ₹${estimatedCostInr.toFixed(2)}, above your session budget of ₹${limits.sessionBudgetInr}. Nothing was provisioned; generate fewer shots at once or raise the session budget.`,
-        );
+    // Keep only GPU types whose estimated cost fits the session and daily/monthly budgets.
+    const costs = (o: GpuOffer) => {
+      const estimatedCostInr = costFor(estimatedGpuSeconds, o.hourlyRateInr);
+      let estimatedMaxCostInr = costFor(limits.maxLifetimeMinutes * 60, o.hourlyRateInr);
       // The session is terminated when its spend reaches the session budget.
-      estimatedMaxCostInr = Math.min(estimatedMaxCostInr, limits.sessionBudgetInr);
+      if (limits.sessionBudgetInr !== null)
+        estimatedMaxCostInr = Math.min(estimatedMaxCostInr, limits.sessionBudgetInr);
+      return { estimatedCostInr, estimatedMaxCostInr };
+    };
+    let firstError: AppError | null = null;
+    const fitting: Array<{ offer: (typeof ranked)[number]; budget: BudgetStatus }> = [];
+    for (const offer of ranked) {
+      const c = costs(offer);
+      try {
+        if (limits.sessionBudgetInr !== null && c.estimatedCostInr > limits.sessionBudgetInr)
+          throw new AppError(
+            'SESSION_BUDGET_REACHED',
+            `This batch is estimated at ₹${c.estimatedCostInr.toFixed(2)}, above your session budget of ₹${limits.sessionBudgetInr}. Nothing was provisioned; generate fewer shots at once or raise the session budget.`,
+          );
+        // Budget is checked against the worst case (session killed by the max-lifetime safeguard).
+        fitting.push({ offer, budget: this.budget.assertCanSpend(c.estimatedMaxCostInr, this.simulated) });
+      } catch (err) {
+        firstError ??= toAppError(err);
+      }
     }
-    // Budget is checked against the worst case (session killed by the max-lifetime safeguard).
-    const budget = this.budget.assertCanSpend(estimatedMaxCostInr, this.simulated);
+    const chosen = fitting[0];
+    if (!chosen) throw firstError ?? new AppError('GPU_UNAVAILABLE', 'No GPU fits the budget');
+    const { reasons, ...offer } = chosen.offer;
+    const c = costs(offer);
     return {
       offer,
+      alternatives: fitting.slice(1, 4).map(({ offer: { reasons: _r, ...o } }) => o),
+      reasons,
       minVramGb: need,
       estimatedGpuSeconds,
-      estimatedCostInr,
-      estimatedMaxCostInr,
+      estimatedCostInr: c.estimatedCostInr,
+      estimatedMaxCostInr: c.estimatedMaxCostInr,
       maxLifetimeMinutes: limits.maxLifetimeMinutes,
       idleTimeoutMinutes: limits.idleMinutes,
       sessionBudgetInr: limits.sessionBudgetInr,
-      budget,
+      budget: chosen.budget,
       simulated: this.simulated,
     };
   }
 
-  /** Provision a tagged instance and return a session. Prefer `withSession`, which guarantees cleanup. */
+  /**
+   * Provision a GPU and start the worker, falling back to the next compatible GPU type (up to three
+   * types) when RunPod has no capacity or the worker does not start. Every failed attempt is
+   * terminated before the next one. Prefer `withSession`, which guarantees cleanup.
+   */
   async start(plan: GpuPlan, opts: StartOptions = {}): Promise<GpuSession> {
+    const candidates = [plan.offer, ...(plan.alternatives ?? [])].slice(0, 3);
+    for (const [i, offer] of candidates.entries()) {
+      const limits = this.limits();
+      let max = costFor(limits.maxLifetimeMinutes * 60, offer.hourlyRateInr);
+      if (limits.sessionBudgetInr !== null) max = Math.min(max, limits.sessionBudgetInr);
+      try {
+        return await this.startOn(
+          { ...plan, offer, estimatedMaxCostInr: i === 0 ? plan.estimatedMaxCostInr : max },
+          opts,
+        );
+      } catch (err) {
+        const e = toAppError(err);
+        const next = candidates[i + 1];
+        if (!next || !FALLBACK_CODES.has(e.code) || opts.signal?.aborted) throw e;
+        this.logger.warn('gpu type unusable; trying the next compatible type', {
+          from: offer.gpuModel,
+          to: next.gpuModel,
+          reason: e.message,
+        });
+        opts.onFallback?.(offer, next, e.message);
+      }
+    }
+    throw new AppError('GPU_UNAVAILABLE', 'No GPU could be started');
+  }
+
+  /** Provision one tagged instance of `plan.offer` and return a session. */
+  private async startOn(plan: GpuPlan, opts: StartOptions): Promise<GpuSession> {
     this.assertProviderAllowed();
     const limits = this.limits();
     if (this.provider.paid) {

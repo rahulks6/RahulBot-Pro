@@ -25,6 +25,7 @@ import { ExportService } from '../services/export.ts';
 import { GenerationService } from '../services/generation.ts';
 import { GpuSupervisor } from '../services/gpu-supervisor.ts';
 import { EngineService } from '../services/engine.ts';
+import { RealModeTest } from '../services/real-mode-test.ts';
 import { VideoRepository } from '../repositories/videos.ts';
 import { ExecutionRouter } from '../services/execution-router.ts';
 import { HardwareService } from '../services/hardware.ts';
@@ -96,6 +97,8 @@ export interface Studio {
   engine: EngineService;
   /** Simple Mode videos, their Shorts and YouTube publications. */
   videos: VideoRepository;
+  /** Milestone 1: the one-click real RunPod test (image → animation → narration → MP4). */
+  realTest: RealModeTest;
   close(): void;
 }
 
@@ -271,6 +274,19 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     router: null as unknown as ExecutionRouter,
     engine: null as unknown as EngineService,
     videos,
+    realTest: new RealModeTest({
+      db,
+      env,
+      gpu,
+      gpuRepo,
+      cloud,
+      models,
+      storage,
+      ffmpeg,
+      clock,
+      logger,
+      tempDir: storagePaths(env).tempRender,
+    }),
     localModels,
     runtime: new RuntimeInstaller({
       logger,
@@ -288,6 +304,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     void studio.router.onModelInstalled();
   };
   generation.router = studio.router;
+  generation.cloudModels = models;
   return studio;
 }
 

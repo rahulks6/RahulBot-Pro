@@ -228,17 +228,32 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
 
   it('handles provisioning failures and provider outages without leaving anything', async () => {
     s = cloudStudio();
+    // RunPod has no capacity for the first GPU type: the next compatible type is used.
     rp.failNext('POST', /^\/pods$/, 500);
     queueNarration(s);
     let r = await s.generation.processQueue();
+    assert.equal(r.completed, 1, r.messages.join(' '));
+    const all = s.gpuRepo.list();
+    const first = all.find((i) => i.termination_reason === 'provision_failed');
+    const second = all.find((i) => i !== first);
+    assert.equal(first!.status, 'failed');
+    assert.equal(first!.termination_reason, 'provision_failed');
+    assert.notEqual(second!.gpu_model, first!.gpu_model, 'another GPU type was tried');
+    assert.equal(second!.status, 'terminated');
+    assert.equal(rp.livePods().length, 0);
+    // Every compatible type fails: the job fails and nothing is left running.
+    rp.failNext('POST', /^\/pods$/, 500, 5);
+    s.generation.queueNarrationAudio(nar2(s));
+    r = await s.generation.processQueue();
     assert.equal(r.failed, 1);
     assert.equal(rp.livePods().length, 0);
-    assert.equal(s.gpuRepo.list()[0]!.status, 'failed');
+    rp.failures.length = 0;
     rp.failNext('GET', /^\/catalog\/gpus$/, 503, 10);
     s.generation.queueNarrationAudio(nar2(s!));
+    const posts = rp.requests.filter((q) => q.method === 'POST').length;
     r = await s.generation.processQueue();
     assert.match(r.messages.join(' '), /temporarily unavailable/);
-    assert.equal(rp.requests.filter((q) => q.method === 'POST').length, 1, 'no create during the outage');
+    assert.equal(rp.requests.filter((q) => q.method === 'POST').length, posts, 'no create during the outage');
   });
 
   it('refuses a GPU above the hourly price and a batch above the session budget', async () => {
@@ -279,7 +294,9 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
   });
 
   it('stops for the session budget, idle timeout and maximum lifetime', async () => {
-    s = cloudStudio({ cloud: { autoTerminate: 'idle_timeout', sessionBudgetInr: 10 } });
+    s = cloudStudio({
+      cloud: { autoTerminate: 'idle_timeout', sessionBudgetInr: 10, allowedGpuTypes: 'NVIDIA RTX A5000' },
+    });
     queueNarration(s);
     await s.generation.processQueue();
     let inst = s.gpuRepo.active()[0]!;
@@ -426,7 +443,8 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
       steps.slice(0, 3).map((x) => x.status),
       ['ok', 'ok', 'ok'],
     );
-    assert.match(steps[2]!.detail, /₹23\.76\/h/);
+    assert.match(steps[2]!.detail, /₹60\.72\/h/);
+    assert.match(steps[1]!.detail, /RTX 4090/, 'best compatible GPU, not the cheapest');
     assert.equal(steps[3]!.status, 'running', 'waiting for confirmation');
     assert.equal(rp.pods.size, 0, 'nothing rented before confirmation');
     const done = await s.cloudTest.confirm(prep.prepared.id);
@@ -436,7 +454,7 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
       final.every((x) => x.status === 'ok'),
       JSON.stringify(final.filter((x) => x.status !== 'ok')),
     );
-    assert.match(final[11]!.detail, /SUCCESS · RTX A5000 · runtime \d+ s · estimated cost ₹/);
+    assert.match(final[11]!.detail, /SUCCESS · RTX 4090 · runtime \d+ s · estimated cost ₹/);
     assert.ok(done.output_key && (await s.storage.exists(done.output_key)));
     assert.equal(rp.livePods().length, 0, 'GPU terminated');
     // Cancelling before confirmation rents nothing.

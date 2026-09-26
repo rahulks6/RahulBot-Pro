@@ -139,7 +139,7 @@ describe('Cloud GPU pages', () => {
     assert.match(loc, /^\/cloud\/test\/ctest_/);
     const page = await (await fetch(cloudWeb.base + loc)).text();
     assert.match(page, /Step 4 — confirm provisioning/);
-    assert.match(page, /RTX A5000 at ₹23\.76\/h/);
+    assert.match(page, /RTX 4090 at ₹60\.72\/h/, 'best compatible GPU (stock HIGH), not the cheapest');
     assert.equal(rp.pods.size, 0, 'nothing rented before confirmation');
     await post(cloudWeb.base, `${loc}/confirm`, {});
     await cloud.cloudTest.running;
