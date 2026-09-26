@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -69,6 +69,38 @@ describe('configurable storage paths (for a second drive)', () => {
       assert.ok(existsSync(join(dir, 'data', 'studio.sqlite')));
     } finally {
       s.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a storage drive that is not available', () => {
+  it('stops the start with a plain message naming the .env setting (no silent fallback)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ais-nodrive-'));
+    try {
+      // A path below a FILE can never be created: the same failure as a disconnected drive.
+      const blocker = join(dir, 'not-a-folder');
+      writeFileSync(blocker, 'x');
+      assert.throws(
+        () =>
+          createStudio({
+            env: {
+              mockGeneration: true,
+              enableCloudGpu: false,
+              dataDir: join(dir, 'data'),
+              logLevel: 'error',
+              mockFailureRate: 0,
+              assemblyMode: 'mock',
+              paths: { generatedAssets: join(blocker, 'assets') },
+            },
+            dbPath: join(dir, 'data', 'studio.sqlite'),
+            logSinks: [],
+            secretEnv: {},
+          }),
+        /GENERATED_ASSETS_PATH=.* is not available .*Connect that drive, or remove the line from \.env/,
+      );
+      assert.ok(!existsSync(join(dir, 'data', 'studio.sqlite')), 'nothing was created in the data folder');
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });

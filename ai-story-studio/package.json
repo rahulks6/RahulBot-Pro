@@ -1,6 +1,6 @@
 {
   "name": "ai-story-studio",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Private, local-first AI Story Studio: story to final MP4, mock by default, real generation on a rented cloud GPU (RunPod) when you switch it on.",
   "type": "module",

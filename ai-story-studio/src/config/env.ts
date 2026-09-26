@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { appRoot } from '../lib/paths.ts';
 
@@ -126,6 +126,36 @@ export function storagePaths(env: Pick<AppEnv, 'dataDir' | 'paths'>): StoragePat
     downloadCache: p.downloadCache ?? join(env.dataDir, 'tmp', 'downloads'),
     modelCache: p.modelCache ?? join(env.dataDir, 'models'),
   };
+}
+
+const PATH_VARS: Array<[keyof Omit<StoragePaths, 'modelCache'>, string]> = [
+  ['generatedAssets', 'GENERATED_ASSETS_PATH'],
+  ['tempRender', 'TEMP_RENDER_PATH'],
+  ['downloadCache', 'DOWNLOAD_CACHE_PATH'],
+];
+
+/**
+ * Checks the storage folders set in .env before anything is written. A missing drive (e.g. D:
+ * not connected yet) stops the start with a plain message instead of failing every generation
+ * later, and never falls back silently (that would split media across two places). The folders
+ * are created when the drive exists. MODEL_CACHE_PATH is only used by the local worker.
+ */
+export function checkStoragePaths(env: Pick<AppEnv, 'dataDir' | 'paths'>): void {
+  const problems: string[] = [];
+  for (const [key, name] of PATH_VARS) {
+    const dir = env.paths?.[key];
+    if (!dir) continue;
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? 'error';
+      problems.push(`${name}=${dir} is not available (${code})`);
+    }
+  }
+  if (problems.length)
+    throw new Error(
+      `${problems.join('; ')}. Connect that drive, or remove the line from .env to keep using the data folder.`,
+    );
 }
 
 export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {

@@ -91,7 +91,7 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
       </head>
       <body>
         <nav class="sidebar">
-          <div class="brand">AI Story Studio<span>v1.1.0 · Phase 5</span></div>
+          <div class="brand">AI Story Studio<span>v1.1.1 · Phase 5</span></div>
           ${NAV.map(
             ([href, label]) =>
               html`<a href="${href}" class="${active === href ? 'active' : ''}">${label}</a>`,

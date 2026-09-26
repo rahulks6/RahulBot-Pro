@@ -8,7 +8,14 @@ import { createWebApp } from './app.ts';
  * single-user tool). A GPU watchdog runs on an interval, and on shutdown any
  * GPU still tracked as active is terminated.
  */
-const studio = createStudio();
+let studio: ReturnType<typeof createStudio>;
+try {
+  studio = createStudio();
+} catch (err) {
+  // E.g. a storage drive from .env that is not connected: a plain message, not a stack trace.
+  console.error(`AI Story Studio could not start: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
 const { handle } = createWebApp(studio);
 const url = `http://${studio.env.host}:${studio.env.port}/`;
 

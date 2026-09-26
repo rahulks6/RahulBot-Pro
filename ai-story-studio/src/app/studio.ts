@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { AppEnv } from '../config/env.ts';
-import { loadDotEnv, readEnv, storagePaths } from '../config/env.ts';
+import { checkStoragePaths, loadDotEnv, readEnv, storagePaths } from '../config/env.ts';
 import { Database } from '../db/database.ts';
 import { migrate } from '../db/migrate.ts';
 import type { Clock } from '../lib/clock.ts';
@@ -107,6 +107,7 @@ export interface StudioOptions {
 export function createStudio(opts: StudioOptions = {}): Studio {
   loadDotEnv();
   const env: AppEnv = { ...readEnv(), ...opts.env };
+  checkStoragePaths(env);
   const clock = opts.clock ?? systemClock;
   const sinks = opts.logSinks ?? [stdoutSink, fileSink(join(env.dataDir, 'logs', 'studio.log'))];
   const logger = new Logger(env.logLevel, sinks, { app: 'ai-story-studio', mock: env.mockGeneration });

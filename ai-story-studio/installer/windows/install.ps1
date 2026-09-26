@@ -1,4 +1,4 @@
-# AI Story Studio - Windows installer (v1.1.0)
+# AI Story Studio - Windows installer (v1.1.1)
 #
 # Safe to run more than once. It:
 #   1. checks Node.js (>= 22.18), Python (>= 3.11) and FFmpeg, and installs one with WinGet

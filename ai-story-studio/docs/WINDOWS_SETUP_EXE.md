@@ -1,10 +1,10 @@
-# Windows setup program (`AI-Story-Studio-Setup-1.1.0.exe`)
+# Windows setup program (`AI-Story-Studio-Setup-1.1.1.exe`)
 
 A single `.exe` that carries the whole app. It is the easiest way to install AI Story Studio on Windows.
 
 ## Install
 
-1. Double-click **`AI-Story-Studio-Setup-1.1.0.exe`**.
+1. Double-click **`AI-Story-Studio-Setup-1.1.1.exe`**.
 2. Windows may show **"Windows protected your PC"**, because the program is not code-signed (a certificate costs money). Click **More info → Run anyway**. Some antivirus programs are also suspicious of new unsigned programs; allow it if you downloaded it yourself from your own GitHub repository.
 3. A black window opens. Press **Enter** to install into `C:\Users\<you>\AI-Story-Studio`, or type another folder.
    - The folder must be empty, new, or an earlier AI Story Studio installation. The setup refuses any other folder, so it can never overwrite unrelated files.
@@ -37,7 +37,7 @@ Close AI Story Studio before upgrading.
 ## Options (for automated installs)
 
 ```
-AI-Story-Studio-Setup-1.1.0.exe -dir "D:\Apps\AI-Story-Studio" -yes -no-start
+AI-Story-Studio-Setup-1.1.1.exe -dir "D:\Apps\AI-Story-Studio" -yes -no-start
 ```
 
 | Option          | Meaning                                                                                 |
