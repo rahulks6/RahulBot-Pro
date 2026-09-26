@@ -1,0 +1,109 @@
+# Builds AI-Story-Studio-Setup-<version>.exe and tests it on a real Windows machine:
+# unattended install (prerequisite checks, npm ci, build, Python venv, safe .env), start the app
+# in MOCK mode and load the home page, then re-run the setup and check that .env and data/ are kept.
+# Download the .exe from the run's "Artifacts" section. No secrets are used; nothing paid is started.
+name: AI Story Studio Windows setup
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ai-story-studio/installer/**"
+      - "ai-story-studio/package.json"
+      - "ai-story-studio/package-lock.json"
+      - ".github/workflows/ai-story-studio-windows-setup.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  setup-exe:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Keep line endings exactly as committed
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup program unit tests
+        working-directory: ai-story-studio/installer/windows/setup
+        run: go test ./...
+
+      - name: Build the setup .exe
+        shell: bash
+        run: ai-story-studio/installer/windows/build-setup.sh "$RUNNER_TEMP/out"
+
+      - name: Upload the setup .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Story-Studio-Setup
+          path: ${{ runner.temp }}/out/*.exe
+          if-no-files-found: error
+
+      - name: Install FFmpeg (a prerequisite the installer checks)
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install with the .exe (unattended)
+        run: |
+          $exe = (Get-ChildItem "$env:RUNNER_TEMP\out\*.exe" | Select-Object -First 1).FullName
+          & $exe -yes -no-shortcut -no-start -dir "$env:RUNNER_TEMP\AI Story Studio"
+          if ($LASTEXITCODE -ne 0) { throw "setup exited with code $LASTEXITCODE" }
+
+      - name: Start the installed app and load the home page (mock mode)
+        run: |
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          $p = Start-Process -FilePath node -ArgumentList '--disable-warning=ExperimentalWarning', 'dist/src/web/server.js' `
+            -WorkingDirectory $dir -PassThru `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\app.out" -RedirectStandardError "$env:RUNNER_TEMP\app.err"
+          $ok = $false
+          for ($i = 0; $i -lt 45 -and -not $ok; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $r = Invoke-WebRequest 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 5
+              $ok = $r.StatusCode -eq 200 -and $r.Content -match 'MODE: MOCK'
+            } catch {}
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-Content "$env:RUNNER_TEMP\app.out", "$env:RUNNER_TEMP\app.err" -ErrorAction SilentlyContinue
+          if (-not $ok) { throw 'The installed app did not serve its home page in MOCK mode.' }
+
+      - name: Run the setup again (upgrade keeps .env and data)
+        run: |
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          Add-Content "$dir\.env" '# user edit kept by the upgrade'
+          Set-Content "$dir\data\user-file.txt" 'kept'
+          $before = (Get-FileHash "$dir\.env").Hash
+          $exe = (Get-ChildItem "$env:RUNNER_TEMP\out\*.exe" | Select-Object -First 1).FullName
+          & $exe -yes -extract-only -dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "setup exited with code $LASTEXITCODE" }
+          if ((Get-FileHash "$dir\.env").Hash -ne $before) { throw '.env was changed by the upgrade' }
+          if (-not (Test-Path "$dir\data\user-file.txt")) { throw 'data folder was changed by the upgrade' }
+          & $exe -yes -extract-only -dir $env:SystemRoot
+          if ($LASTEXITCODE -eq 0) { throw 'setup accepted an unrelated folder' }
+          $global:LASTEXITCODE = 0 # the refusal above is the expected result
+          Write-Host 'Upgrade and folder-safety checks passed.'
+
+      - name: Upload the installer log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-log
+          path: ${{ runner.temp }}/AI Story Studio/installer/windows/install.log
+          if-no-files-found: ignore

@@ -10,7 +10,9 @@ This app is self-contained in `ai-story-studio/` and does not touch the trading-
 
 ## Quick start
 
-**Windows (recommended):** run `installer\windows\Install-AI-Story-Studio.bat`, then start the app from the **AI Story Studio** desktop shortcut. See [docs/TROUBLESHOOTING_WINDOWS.md](docs/TROUBLESHOOTING_WINDOWS.md).
+**Windows (easiest):** double-click **`AI-Story-Studio-Setup-1.1.0.exe`**. It copies the app to `%USERPROFILE%\AI-Story-Studio`, checks Node.js, Python and FFmpeg (installing only what is missing), builds the app and creates the **AI Story Studio** desktop shortcut. Running it again upgrades the app and keeps your `.env` and `data` folder. See [docs/WINDOWS_SETUP_EXE.md](docs/WINDOWS_SETUP_EXE.md).
+
+**Windows (from the zip):** run `installer\windows\Install-AI-Story-Studio.bat`, then start the app from the **AI Story Studio** desktop shortcut. See [docs/TROUBLESHOOTING_WINDOWS.md](docs/TROUBLESHOOTING_WINDOWS.md).
 
 **Any OS, by hand.** Requirements: **Node.js ≥ 22.18**. The app uses Node's built-in SQLite and runs TypeScript natively, and it has no runtime npm dependencies.
 

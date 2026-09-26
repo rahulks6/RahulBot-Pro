@@ -2,7 +2,7 @@
 
 ## Installing
 
-The installer is `installer\windows\Install-AI-Story-Studio.bat`. `Check-Prerequisites.bat` checks without installing. The log is written to `installer\windows\install.log`.
+The easiest installer is `AI-Story-Studio-Setup-1.1.0.exe` ([WINDOWS_SETUP_EXE.md](WINDOWS_SETUP_EXE.md)); it runs the same installer script as `installer\windows\Install-AI-Story-Studio.bat`. `Check-Prerequisites.bat` checks without installing. The log is written to `installer\windows\install.log`.
 
 | Problem                                                     | What to do                                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -12,6 +12,8 @@ The installer is `installer\windows\Install-AI-Story-Studio.bat`. `Check-Prerequ
 | FFmpeg missing                                              | `winget install Gyan.FFmpeg`, or download "release essentials" from https://www.gyan.dev/ffmpeg/builds/, unzip it, and set `FFMPEG_PATH=C:\path\to\ffmpeg.exe` and `FFPROBE_PATH=...\ffprobe.exe` in `.env`.                                                                                                                                         |
 | "running scripts is disabled on this system"                | Use the `.bat` files: they run the script with `-ExecutionPolicy Bypass` for that run only.                                                                                                                                                                                                                                                          |
 | SmartScreen or antivirus blocks the `.bat`                  | Choose **More info → Run anyway**, or right-click → Properties → **Unblock**.                                                                                                                                                                                                                                                                        |
+| SmartScreen blocks `AI-Story-Studio-Setup-1.1.0.exe`        | The program is not code-signed. Choose **More info → Run anyway**.                                                                                                                                                                                                                                                                                   |
+| Setup says "Cannot install into … not AI Story Studio"      | That folder already holds other files; the setup never overwrites them. Press Enter for the default folder or type an empty one.                                                                                                                                                                                                                     |
 
 This PC does **not** need an NVIDIA GPU, CUDA or NVIDIA drivers; the installer never installs them.
 
