@@ -48,7 +48,9 @@ jobs:
       - name: Start the worker the way RunPod does, and check /health and /system (CPU only)
         run: |
           token="aisw_$(openssl rand -hex 32)"
-          docker run -d --name w -p 8765:8765 -e WORKER_AUTH_TOKEN="$token" ai-story-studio-worker:check
+          name=ais-worker-check
+          trap 'echo "--- worker logs ---"; docker logs "$name" 2>&1 | tail -40; docker rm -f "$name" > /dev/null 2>&1 || true' EXIT
+          docker run -d --name "$name" -p 8765:8765 -e WORKER_AUTH_TOKEN="$token" ai-story-studio-worker:check
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8765/health; then break; fi
             sleep 2
@@ -58,5 +60,4 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/models)" = 401
           curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:8765/system | python3 -c "import json,sys; s=json.load(sys.stdin); print('torch:', s['torch']); print('gpu:', s['gpu']); assert s['torch']['installed'] and not s['mock_models']"
           curl -fsS -H "Authorization: Bearer $token" http://127.0.0.1:8765/models | python3 -c "import json,sys; m=json.load(sys.stdin); print([x['id'] for x in m['models']]); assert not m['mock_only']"
-          docker logs w | tail -20
-          docker rm -f w
+          echo "Worker container contract OK"
