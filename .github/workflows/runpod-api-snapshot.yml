@@ -1,0 +1,76 @@
+# Read-only snapshot of RunPod's PUBLISHED API description, used to keep the GPU catalog adapter
+# (ai-story-studio/src/providers/cloud/runpod.ts) in line with the live contract.
+# No API key, no secret, nothing is created or rented: it downloads public documents and prints
+# the GPU-catalog part (query parameters and response schema) to the job log.
+name: RunPod API schema snapshot (read-only)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/runpod-api-snapshot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download the public documents (no credentials)
+        run: |
+          mkdir -p out
+          for u in https://api.runpod.io/v2/openapi.json https://docs.runpod.io/api-reference-v2/openapi.json; do
+            code=$(curl -sSL -o out/tmp.json -w '%{http_code}' "$u" || echo 000)
+            echo "$u -> HTTP $code"
+            if [ "$code" = 200 ] && python3 -c "import json;json.load(open('out/tmp.json'))" 2>/dev/null; then mv out/tmp.json out/openapi.json; break; fi
+          done
+          curl -sSL -o out/llms.txt https://docs.runpod.io/llms.txt || true
+          grep -oE 'https://docs.runpod.io/api-reference-v2/(catalog|pods)/[a-z0-9-]+\.md' out/llms.txt | sort -u > out/pages.txt || true
+          echo "pages:"; cat out/pages.txt
+          for p in catalog/list-gpu-types pods/create-a-pod pods/get-a-pod pods/list-pods pods/delete-a-pod $(sed -E 's#.*/api-reference-v2/##; s#\.md$##' out/pages.txt | grep '^pods/' ); do
+            f="out/$(echo "$p" | tr / _).md"
+            [ -f "$f" ] && continue
+            code=$(curl -sSL -o "$f" -w '%{http_code}' "https://docs.runpod.io/api-reference-v2/$p.md" || echo 000)
+            echo "docs $p.md -> HTTP $code ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Print the GPU catalog contract
+        run: |
+          python3 - <<'PY'
+          import json, os
+          if not os.path.exists('out/openapi.json'):
+              print('openapi.json could not be downloaded anonymously')
+          else:
+              spec = json.load(open('out/openapi.json'))
+              comps = spec.get('components', {})
+              def res(o, seen=()):
+                  if isinstance(o, dict) and '$ref' in o:
+                      ref = o['$ref']
+                      if ref in seen: return {'$ref': ref, 'note': 'recursive'}
+                      _, _, sect, name = ref.split('/')
+                      return res(comps.get(sect, {}).get(name, {}), seen + (ref,))
+                  if isinstance(o, dict): return {k: res(v, seen) for k, v in o.items() if k not in ('example', 'examples')}
+                  if isinstance(o, list): return [res(v, seen) for v in o]
+                  return o
+              print('servers:', spec.get('servers'))
+              print('info:', spec.get('info', {}).get('version'))
+              print('paths:', sorted(spec.get('paths', {})))
+              want = {'/v2/catalog/gpus': ['get'], '/v2/pods': ['post'], '/v2/pods/{podId}': ['get', 'delete'], '/v2/pods/{podId}/action': ['post']}
+              for path, item in spec.get('paths', {}).items():
+                  norm = path.replace('{id}', '{podId}')
+                  for method in want.get(norm, []):
+                      if method in item:
+                          op = dict(item[method])
+                          op.pop('responses', None) if method == 'delete' else None
+                          print('=' * 30, method.upper(), path)
+                          if method == 'post' and norm == '/v2/pods':
+                              op = {'requestBody': op.get('requestBody')}
+                          print(json.dumps(res(op), separators=(',', ':'))[:120000])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runpod-api-snapshot
+          path: out/

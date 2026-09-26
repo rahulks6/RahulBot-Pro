@@ -1,0 +1,190 @@
+# Builds AI-Story-Studio-Setup-<version>.exe and tests it on a real Windows machine:
+# unattended install (prerequisite checks, npm ci, build, Python venv, .env), start the app and load
+# the home page (real AI by default; no RunPod key here, so the AI Engine must say "not connected"),
+# then re-run the setup and check that .env and data/ are kept.
+# Download the .exe from the run's "Artifacts" section. No secrets are used; nothing paid is started.
+name: AI Story Studio Windows setup
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ai-story-studio/installer/**"
+      - "ai-story-studio/src/**"
+      - "ai-story-studio/scripts/**"
+      - "ai-story-studio/test/e2e/**"
+      - "ai-story-studio/package.json"
+      - "ai-story-studio/package-lock.json"
+      - ".github/workflows/ai-story-studio-windows-setup.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  setup-exe:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Keep line endings exactly as committed
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup program unit tests
+        working-directory: ai-story-studio/installer/windows/setup
+        run: go test ./...
+
+      - name: Saved keys are encrypted with Windows DPAPI (secret store tests on Windows)
+        working-directory: ai-story-studio
+        run: node --disable-warning=ExperimentalWarning --test test/secrets.test.ts
+
+      - name: Build the setup .exe
+        shell: bash
+        run: ai-story-studio/installer/windows/build-setup.sh "$RUNNER_TEMP/out"
+
+      - name: Upload the setup .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Story-Studio-Setup
+          path: ${{ runner.temp }}/out/*.exe
+          if-no-files-found: error
+
+      - name: Install FFmpeg (a prerequisite the installer checks)
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install with the .exe (unattended)
+        run: |
+          $exe = (Get-ChildItem "$env:RUNNER_TEMP\out\*.exe" | Select-Object -First 1).FullName
+          & $exe -yes -no-shortcut -no-start -dir "$env:RUNNER_TEMP\AI Story Studio"
+          if ($LASTEXITCODE -ne 0) { throw "setup exited with code $LASTEXITCODE" }
+
+      - name: Start the installed app and load the home page (real AI default, no RunPod key yet)
+        run: |
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          $p = Start-Process -FilePath node -ArgumentList '--disable-warning=ExperimentalWarning', 'dist/src/web/server.js' `
+            -WorkingDirectory $dir -PassThru `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\app.out" -RedirectStandardError "$env:RUNNER_TEMP\app.err"
+          $ok = $false
+          for ($i = 0; $i -lt 45 -and -not $ok; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $r = Invoke-WebRequest 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 5
+              $ok = $r.StatusCode -eq 200 -and $r.Content -match 'AI Engine' -and $r.Content -match 'RunPod is not connected yet'
+            } catch {}
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Get-Content "$env:RUNNER_TEMP\app.out", "$env:RUNNER_TEMP\app.err" -ErrorAction SilentlyContinue
+          if (-not $ok) { throw 'The installed app did not serve its home page (expected: AI Engine needs a RunPod key).' }
+
+      - name: Run the setup again (upgrade keeps .env and data)
+        run: |
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          Add-Content "$dir\.env" '# user edit kept by the upgrade'
+          Set-Content "$dir\data\user-file.txt" 'kept'
+          $before = (Get-FileHash "$dir\.env").Hash
+          $exe = (Get-ChildItem "$env:RUNNER_TEMP\out\*.exe" | Select-Object -First 1).FullName
+          & $exe -yes -extract-only -dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "setup exited with code $LASTEXITCODE" }
+          if ((Get-FileHash "$dir\.env").Hash -ne $before) { throw '.env was changed by the upgrade' }
+          if (-not (Test-Path "$dir\data\user-file.txt")) { throw 'data folder was changed by the upgrade' }
+          & $exe -yes -extract-only -dir $env:SystemRoot
+          if ($LASTEXITCODE -eq 0) { throw 'setup accepted an unrelated folder' }
+          $global:LASTEXITCODE = 0 # the refusal above is the expected result
+          Write-Host 'Upgrade and folder-safety checks passed.'
+
+      - name: Browser smoke test in Microsoft Edge (Milo workflow, restart, persistence)
+        run: |
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          npm install --silent --no-audit --no-fund --prefix "$env:RUNNER_TEMP\pw" playwright-core@1
+          $env:PLAYWRIGHT_MODULE = "$env:RUNNER_TEMP\pw\node_modules\playwright-core"
+          $out = "$env:RUNNER_TEMP\e2e-results"
+          function Start-App {
+            $p = Start-Process -FilePath node -ArgumentList '--disable-warning=ExperimentalWarning', 'dist/src/web/server.js' `
+              -WorkingDirectory $dir -PassThru -RedirectStandardOutput "$out-server-$(Get-Random).log" -RedirectStandardError "$out-server-err-$(Get-Random).log"
+            for ($i = 0; $i -lt 30; $i++) { Start-Sleep 1; try { Invoke-WebRequest 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 3 | Out-Null; return $p } catch {} }
+            throw 'app did not start'
+          }
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $app = Start-App
+          node ai-story-studio/test/e2e/browser-smoke.mjs --base http://127.0.0.1:3000 --channel msedge --out $out
+          $first = $LASTEXITCODE
+          Stop-Process -Id $app.Id -Force
+          Start-Sleep 2
+          $app = Start-App
+          node ai-story-studio/test/e2e/browser-smoke.mjs --base http://127.0.0.1:3000 --channel msedge --out $out --verify-only
+          $second = $LASTEXITCODE
+          # A second copy (Start double-clicked twice) must refuse and leave the running one alone.
+          Push-Location $dir
+          $dup = cmd /c "node --disable-warning=ExperimentalWarning dist/src/web/server.js 2>&1"
+          $dupCode = $LASTEXITCODE
+          Pop-Location
+          Write-Host ($dup | Out-String)
+          $stillUp = (Invoke-WebRequest 'http://127.0.0.1:3000/' -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200
+          Stop-Process -Id $app.Id -Force
+          if ($first -ne 0 -or $second -ne 0) { throw "browser smoke failed (first run $first, after restart $second)" }
+          if ($dupCode -ne 1 -or ($dup | Out-String) -notmatch 'already running at' -or -not $stillUp) { throw "duplicate start not handled (exit $dupCode, first copy up: $stillUp)" }
+          Write-Host 'Duplicate start refused; the running copy kept serving.'
+          $global:LASTEXITCODE = 0
+
+      - name: Upload browser test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: ${{ runner.temp }}/e2e-results*
+          if-no-files-found: ignore
+
+      - name: Worker-image scripts (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = "$env:RUNNER_TEMP\AI Story Studio"
+          # 1. Every script parses without errors in Windows PowerShell 5.1.
+          foreach ($f in Get-ChildItem "$dir\scripts\*.ps1") {
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errs)
+            if ($errs) { $errs | Format-List | Out-String | Write-Host; throw "syntax errors in $($f.Name)" }
+            Write-Host "parsed OK: $($f.Name)"
+          }
+          $ErrorActionPreference = 'Continue' # child processes may write to stderr; exit codes are checked explicitly
+          # 2. The default image name is exactly the one the app uses.
+          $name = powershell -NoProfile -Command ". '$dir\scripts\worker-image-common.ps1'; (Resolve-Image '' '' '').Name"
+          if ($name -ne 'ghcr.io/rahulks6/ai-story-studio-worker:1.2.0') { throw "unexpected default image: $name" }
+          Write-Host "default image: $name"
+          # 3. The anonymous check runs and gives a definite registry answer (0 = public, 1 = not yet).
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\scripts\verify-worker-image.ps1" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -ne 0 -and $code -ne 1) { throw "verify-worker-image.ps1 exited with $code" }
+          if ($out -notmatch 'IMAGE (EXISTS AND PUBLICLY PULLABLE|REQUIRES AUTHENTICATION|DOES NOT EXIST)') { throw 'no registry verdict' }
+          # 4. The build script refuses clearly when Docker is not in Linux-container mode (runners use Windows containers).
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\scripts\build-worker-image.ps1" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -eq 0) { throw 'build script should not succeed on a Windows-containers runner' }
+          if ($out -notmatch 'Switch to Linux containers|not running|not installed') { throw 'no beginner-friendly Docker message' }
+          $global:LASTEXITCODE = 0
+
+      - name: Upload the installer log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-log
+          path: ${{ runner.temp }}/AI Story Studio/installer/windows/install.log
+          if-no-files-found: ignore

@@ -1,0 +1,491 @@
+{
+  "_readme": "LOCAL GPU model catalog (this computer). Nothing is downloaded until you press Install in the Model Manager and confirm; generation never downloads (HF_HUB_OFFLINE=1). VRAM figures are approximate planning values: min_vram_gb = with the fastest memory settings that still fit, offload_min_vram_gb = with sequential CPU offload (much slower), recommended_vram_gb = comfortable. storage_gb = the files the Model Manager downloads (download.allow_patterns / ignore_patterns skip duplicate single-file checkpoints). Licence facts were collected from public sources in September 2026 — re-check each model card before publishing.",
+  "models": [
+    {
+      "id": "qwen2.5-7b-instruct",
+      "kind": "text",
+      "adapter": "transformers_llm",
+      "display_name": "Qwen2.5 7B Instruct (story writer)",
+      "repo": "Qwen/Qwen2.5-7B-Instruct",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "",
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE",
+      "min_vram_gb": 18,
+      "enabled": true,
+      "default": true,
+      "params": {
+        "dtype": "bfloat16",
+        "max_new_tokens": 8192,
+        "top_p": 0.9
+      },
+      "recommended_vram_gb": 24,
+      "precision": "bf16",
+      "storage_gb": 16,
+      "capabilities": ["text", "json", "multilingual"],
+      "license_acknowledged": false,
+      "download": {
+        "allow_patterns": ["*.json", "*.safetensors", "*.txt", "tokenizer*", "merges.txt", "vocab.json"]
+      }
+    },
+    {
+      "id": "sdxl-base",
+      "kind": "image",
+      "adapter": "diffusers_image",
+      "display_name": "Stable Diffusion XL 1.0 (+ IP-Adapter for character references)",
+      "repo": "stabilityai/stable-diffusion-xl-base-1.0",
+      "revision": "main",
+      "license": "CreativeML Open RAIL++-M",
+      "commercial_use": "conditional",
+      "license_notes": "Commercial use is permitted subject to the licence's use-based restrictions (read them before acknowledging). The IP-Adapter weights (h94/IP-Adapter) are Apache-2.0.",
+      "license_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+      "license_acknowledged": false,
+      "min_vram_gb": 8,
+      "offload_min_vram_gb": 4,
+      "recommended_vram_gb": 12,
+      "precision": "fp16",
+      "storage_gb": 10,
+      "capabilities": ["text_to_image", "image_to_image", "ip_adapter_reference", "negative_prompt", "seed"],
+      "enabled": true,
+      "default": false,
+      "params": {
+        "dtype": "float16",
+        "variant": "fp16",
+        "num_inference_steps": 30,
+        "guidance_scale": 6.0,
+        "max_side": 1344,
+        "dim_multiple": 8,
+        "img2img_strength": 0.7,
+        "reference_mode": "ip_adapter",
+        "ip_adapter": {
+          "repo": "h94/IP-Adapter",
+          "subfolder": "sdxl_models",
+          "weight_name": "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+          "image_encoder_folder": "models/image_encoder",
+          "scale": 0.6
+        }
+      },
+      "presets": {
+        "fast_preview": {
+          "num_inference_steps": 14,
+          "max_side": 1024
+        },
+        "optimized": {
+          "num_inference_steps": 28,
+          "max_side": 1344
+        },
+        "high_quality": {
+          "num_inference_steps": 40,
+          "max_side": 1536
+        }
+      },
+      "download": {
+        "allow_patterns": [
+          "model_index.json",
+          "scheduler/*",
+          "tokenizer/*",
+          "tokenizer_2/*",
+          "text_encoder/config.json",
+          "text_encoder/model.fp16.safetensors",
+          "text_encoder_2/config.json",
+          "text_encoder_2/model.fp16.safetensors",
+          "unet/config.json",
+          "unet/diffusion_pytorch_model.fp16.safetensors",
+          "vae/config.json",
+          "vae/diffusion_pytorch_model.fp16.safetensors"
+        ]
+      },
+      "extra_downloads": [
+        {
+          "repo": "h94/IP-Adapter",
+          "allow_patterns": [
+            "sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors",
+            "models/image_encoder/config.json",
+            "models/image_encoder/model.safetensors"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "flux1-schnell",
+      "kind": "image",
+      "adapter": "diffusers_image",
+      "display_name": "FLUX.1 [schnell]",
+      "repo": "black-forest-labs/FLUX.1-schnell",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+      "license_notes": "Apache-2.0 per the model card (verify before publishing). No negative prompt support. Character references use image-to-image from the approved reference.",
+      "license_acknowledged": false,
+      "min_vram_gb": 24,
+      "offload_min_vram_gb": 6,
+      "recommended_vram_gb": 32,
+      "precision": "bf16",
+      "storage_gb": 34,
+      "capabilities": ["text_to_image", "image_to_image", "seed"],
+      "enabled": true,
+      "default": true,
+      "params": {
+        "dtype": "bfloat16",
+        "num_inference_steps": 4,
+        "guidance_scale": 0.0,
+        "max_sequence_length": 256,
+        "max_side": 1344,
+        "dim_multiple": 16,
+        "img2img_strength": 0.8,
+        "reference_mode": "img2img"
+      },
+      "presets": {
+        "fast_preview": {
+          "num_inference_steps": 2,
+          "max_side": 1024
+        },
+        "optimized": {
+          "num_inference_steps": 4,
+          "max_side": 1344
+        },
+        "high_quality": {
+          "num_inference_steps": 6,
+          "max_side": 1536
+        }
+      },
+      "download": {
+        "ignore_patterns": ["flux1-schnell.safetensors", "ae.safetensors"]
+      }
+    },
+    {
+      "id": "wan2.2-ti2v-5b",
+      "kind": "video",
+      "adapter": "diffusers_i2v",
+      "display_name": "Wan 2.2 TI2V 5B (image-to-video)",
+      "repo": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "Animates the approved still (image-first workflow). Needs CPU offload and VAE tiling below 24 GB.",
+      "license_url": "https://huggingface.co/Wan-AI",
+      "license_acknowledged": false,
+      "min_vram_gb": 16,
+      "offload_min_vram_gb": 10,
+      "recommended_vram_gb": 24,
+      "precision": "bf16",
+      "storage_gb": 34,
+      "capabilities": ["image_to_video", "seed", "motion_prompt"],
+      "enabled": true,
+      "default": true,
+      "params": {
+        "dtype": "bfloat16",
+        "native_fps": 24,
+        "frame_multiple": 4,
+        "dim_multiple": 32,
+        "max_side": 1280,
+        "num_inference_steps": 30,
+        "guidance_scale": 5.0,
+        "pipeline_class": "WanImageToVideoPipeline",
+        "require_image_input": true
+      },
+      "presets": {
+        "fast_preview": {
+          "num_inference_steps": 16,
+          "max_side": 832
+        },
+        "optimized": {
+          "num_inference_steps": 30,
+          "max_side": 1280
+        },
+        "high_quality": {
+          "num_inference_steps": 50,
+          "max_side": 1280
+        }
+      }
+    },
+    {
+      "id": "ltx-video",
+      "kind": "video",
+      "adapter": "diffusers_i2v",
+      "display_name": "LTX-Video (image-to-video; check for newer releases)",
+      "repo": "Lightricks/LTX-Video",
+      "revision": "main",
+      "license": "LTX community licence",
+      "commercial_use": "conditional",
+      "license_notes": "Free for companies under about US$10M annual revenue; a commercial tier applies above that. Read the current terms before acknowledging. The repository also holds many single-file checkpoints: only the diffusers folders are downloaded.",
+      "license_url": "https://huggingface.co/Lightricks",
+      "license_acknowledged": false,
+      "min_vram_gb": 12,
+      "offload_min_vram_gb": 8,
+      "recommended_vram_gb": 16,
+      "precision": "bf16",
+      "storage_gb": 30,
+      "capabilities": ["image_to_video", "seed", "motion_prompt"],
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "bfloat16",
+        "native_fps": 24,
+        "frame_multiple": 8,
+        "dim_multiple": 32,
+        "max_side": 1216,
+        "num_inference_steps": 40,
+        "guidance_scale": 3.0,
+        "pipeline_class": "LTXImageToVideoPipeline"
+      },
+      "presets": {
+        "fast_preview": {
+          "num_inference_steps": 20,
+          "max_side": 768
+        },
+        "optimized": {
+          "num_inference_steps": 40,
+          "max_side": 1216
+        },
+        "high_quality": {
+          "num_inference_steps": 50,
+          "max_side": 1216
+        }
+      },
+      "download": {
+        "ignore_patterns": ["*.safetensors"],
+        "allow_patterns": [
+          "model_index.json",
+          "scheduler/*",
+          "tokenizer/*",
+          "text_encoder/*",
+          "transformer/*",
+          "vae/*"
+        ]
+      }
+    },
+    {
+      "id": "ffmpeg-still-motion",
+      "kind": "video",
+      "adapter": "ffmpeg_still_motion",
+      "display_name": "Still image + camera move (FFmpeg, NOT AI video)",
+      "repo": "",
+      "revision": "",
+      "license": "FFmpeg (LGPL/GPL build dependent)",
+      "commercial_use": "allowed",
+      "license_notes": "No AI and no download: a slow zoom/pan over the approved image. For computers without a large GPU. Quality Check reports these clips as still-image motion.",
+      "license_url": "https://ffmpeg.org/legal.html",
+      "license_acknowledged": false,
+      "min_vram_gb": 0,
+      "offload_min_vram_gb": 0,
+      "recommended_vram_gb": 0,
+      "precision": "n/a",
+      "storage_gb": 0,
+      "capabilities": ["image_to_video", "no_ai"],
+      "enabled": true,
+      "default": false,
+      "params": {
+        "zoom": 0.08
+      }
+    },
+    {
+      "id": "kokoro-82m",
+      "kind": "tts",
+      "adapter": "kokoro_tts",
+      "display_name": "Kokoro 82M (English, Hindi; runs on the CPU)",
+      "repo": "hexgrad/Kokoro-82M",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "Hindi uses the espeak-ng phonemizer (installed with the misaki package). Hinglish: Devanagari and Latin words are phonemized separately and read with one Hindi voice.",
+      "license_url": "https://huggingface.co/hexgrad/Kokoro-82M",
+      "license_acknowledged": false,
+      "min_vram_gb": 0,
+      "offload_min_vram_gb": 0,
+      "recommended_vram_gb": 0,
+      "precision": "fp32",
+      "storage_gb": 0.4,
+      "capabilities": ["tts", "voices", "speed", "english", "hindi", "hinglish"],
+      "enabled": true,
+      "default": true,
+      "params": {
+        "lang_code": "a",
+        "default_voice": "af_heart",
+        "voices": {
+          "female": "af_heart",
+          "male": "am_michael",
+          "neutral": "af_sky"
+        },
+        "languages": {
+          "en": {
+            "lang_code": "a",
+            "voices": {
+              "female": "af_heart",
+              "male": "am_michael",
+              "neutral": "af_sky"
+            }
+          },
+          "en-gb": {
+            "lang_code": "b",
+            "voices": {
+              "female": "bf_emma",
+              "male": "bm_george",
+              "neutral": "bf_emma"
+            }
+          },
+          "hi": {
+            "lang_code": "h",
+            "voices": {
+              "female": "hf_alpha",
+              "male": "hm_omega",
+              "neutral": "hf_beta"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "chatterbox",
+      "kind": "tts",
+      "adapter": "chatterbox_tts",
+      "display_name": "Chatterbox (emotion; voice cloning only with recorded consent)",
+      "repo": "ResembleAI/chatterbox",
+      "revision": "main",
+      "license": "MIT",
+      "commercial_use": "allowed",
+      "license_notes": "English model; the multilingual model (ChatterboxMultilingualTTS, incl. Hindi) is used when the installed package provides it.",
+      "license_url": "https://huggingface.co/ResembleAI/chatterbox",
+      "license_acknowledged": false,
+      "min_vram_gb": 6,
+      "offload_min_vram_gb": 0,
+      "recommended_vram_gb": 8,
+      "precision": "fp32",
+      "storage_gb": 3,
+      "capabilities": ["tts", "emotion", "voice_reference_with_consent", "seed"],
+      "enabled": false,
+      "default": false,
+      "params": {}
+    },
+    {
+      "id": "stable-audio-open-music",
+      "kind": "music",
+      "adapter": "stable_audio",
+      "display_name": "Stable Audio Open 1.0 (music beds)",
+      "repo": "stabilityai/stable-audio-open-1.0",
+      "revision": "",
+      "license": "Stability AI Community License",
+      "commercial_use": "conditional",
+      "license_notes": "Free commercial use under US$1M annual revenue; the licence is revocable and has conditions. The repository is gated: accept its terms on Hugging Face and log in (huggingface-cli login) before installing.",
+      "license_url": "https://huggingface.co/stabilityai/stable-audio-open-1.0",
+      "license_acknowledged": false,
+      "min_vram_gb": 12,
+      "offload_min_vram_gb": 6,
+      "recommended_vram_gb": 16,
+      "precision": "fp16",
+      "storage_gb": 6,
+      "capabilities": ["music", "seed"],
+      "enabled": true,
+      "default": true,
+      "params": {
+        "dtype": "float16",
+        "num_inference_steps": 100,
+        "guidance_scale": 7.0,
+        "max_section_sec": 47,
+        "max_sections": 3,
+        "crossfade_sec": 1.0,
+        "music_style": "cinematic, warm, well mixed, no vocals"
+      },
+      "presets": {
+        "fast_preview": {
+          "num_inference_steps": 50
+        },
+        "optimized": {
+          "num_inference_steps": 100
+        },
+        "high_quality": {
+          "num_inference_steps": 150
+        }
+      },
+      "download": {
+        "ignore_patterns": ["model.ckpt", "*.ckpt"]
+      }
+    },
+    {
+      "id": "stable-audio-open",
+      "kind": "sfx",
+      "adapter": "stable_audio",
+      "display_name": "Stable Audio Open 1.0 (SFX / ambience)",
+      "repo": "stabilityai/stable-audio-open-1.0",
+      "revision": "",
+      "license": "Stability AI Community License",
+      "commercial_use": "conditional",
+      "license_notes": "Same files as the music entry (installed once). Gated repository: accept its terms on Hugging Face first.",
+      "license_url": "https://huggingface.co/stabilityai/stable-audio-open-1.0",
+      "license_acknowledged": false,
+      "min_vram_gb": 12,
+      "offload_min_vram_gb": 6,
+      "recommended_vram_gb": 16,
+      "precision": "fp16",
+      "storage_gb": 6,
+      "capabilities": ["sfx", "ambience", "loopable", "seed"],
+      "enabled": true,
+      "default": true,
+      "params": {
+        "dtype": "float16",
+        "num_inference_steps": 100,
+        "guidance_scale": 7.0,
+        "crossfade_sec": 1.0
+      },
+      "download": {
+        "ignore_patterns": ["model.ckpt", "*.ckpt"]
+      }
+    },
+    {
+      "id": "ffmpeg-lanczos",
+      "kind": "upscale",
+      "adapter": "ffmpeg_upscale",
+      "display_name": "FFmpeg Lanczos resize (non-AI baseline)",
+      "repo": "",
+      "revision": "",
+      "license": "FFmpeg (LGPL/GPL build dependent)",
+      "commercial_use": "allowed",
+      "license_notes": "Deterministic resampling, no model weights.",
+      "license_url": "https://ffmpeg.org/legal.html",
+      "license_acknowledged": false,
+      "min_vram_gb": 0,
+      "offload_min_vram_gb": 0,
+      "recommended_vram_gb": 0,
+      "precision": "n/a",
+      "storage_gb": 0,
+      "capabilities": ["upscale_image", "upscale_video"],
+      "enabled": true,
+      "default": true,
+      "params": {
+        "flags": "lanczos"
+      }
+    },
+    {
+      "id": "real-esrgan",
+      "kind": "upscale",
+      "adapter": "spandrel_upscale",
+      "display_name": "Real-ESRGAN x4 (AI upscaler, via spandrel)",
+      "repo": "ai-forever/Real-ESRGAN",
+      "revision": "main",
+      "license": "BSD-3-Clause",
+      "commercial_use": "allowed",
+      "license_notes": "Real-ESRGAN is BSD-3-Clause; verify the licence stated for this weights repository before publishing. The x4 result is resized to the exact target with Lanczos.",
+      "license_url": "https://github.com/xinntao/Real-ESRGAN",
+      "license_acknowledged": false,
+      "min_vram_gb": 2,
+      "offload_min_vram_gb": 0,
+      "recommended_vram_gb": 6,
+      "precision": "fp16",
+      "storage_gb": 0.1,
+      "capabilities": ["upscale_image", "upscale_video"],
+      "enabled": false,
+      "default": false,
+      "params": {
+        "hf_filename": "RealESRGAN_x4.pth",
+        "tile": 512,
+        "tile_pad": 16,
+        "half": true
+      },
+      "download": {
+        "allow_patterns": ["RealESRGAN_x4.pth"]
+      }
+    }
+  ]
+}

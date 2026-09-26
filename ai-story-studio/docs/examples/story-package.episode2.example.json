@@ -1,0 +1,141 @@
+{
+  "format": "ai-story-studio/story-package",
+  "version": 1,
+  "characters": [
+    {
+      "key": "pip",
+      "name": "Pip",
+      "variants": [
+        {
+          "key": "raincoat",
+          "name": "Rain coat"
+        }
+      ]
+    },
+    {
+      "key": "luma",
+      "name": "Luma"
+    }
+  ],
+  "locations": [
+    {
+      "key": "grove",
+      "name": "Whispering Willow Grove"
+    }
+  ],
+  "story": {
+    "title": "The Puddle Parade",
+    "episodeNumber": 2,
+    "synopsis": "A rainy morning turns the grove into puddles. Pip builds tiny boats so the ants can cross the stream.",
+    "storyText": "Rain has filled the grove with puddles and the ant family cannot reach the berry bushes. Pip wants to help and designs leaf boats. The first boat sinks, but Pip tries again with Luma lighting the way, and soon a parade of boats carries everyone across.",
+    "moral": "Trying again is part of inventing.",
+    "language": "en",
+    "targetDurationSec": 20
+  },
+  "scenes": [
+    {
+      "key": "r1",
+      "title": "Rainy morning",
+      "summary": "Rain falls on the grove and the ants are stuck behind a big puddle.",
+      "location": "grove",
+      "music": {
+        "mood": "playful rain",
+        "genre": "pizzicato strings",
+        "energy": "medium"
+      },
+      "ambience": "rain",
+      "narration": [
+        {
+          "text": "As the sun slipped behind the willow, Pip reached for the little brass lantern.",
+          "emotion": "calm"
+        }
+      ],
+      "shots": [
+        {
+          "key": "r1a",
+          "title": "Puddles everywhere",
+          "action": "rain drips from willow leaves into wide puddles",
+          "camera": {
+            "framing": "wide shot",
+            "angle": "high angle",
+            "movement": "crane down"
+          },
+          "durationSec": 5,
+          "sfx": [
+            {
+              "tag": "rain"
+            }
+          ]
+        },
+        {
+          "key": "r1b",
+          "title": "Pip has an idea",
+          "action": "Pip in a raincoat holds up a big leaf, eyes bright with an idea",
+          "emotion": "excited",
+          "characters": [
+            {
+              "character": "pip",
+              "variant": "raincoat"
+            }
+          ],
+          "camera": {
+            "framing": "medium close-up",
+            "angle": "low angle",
+            "movement": "static"
+          },
+          "durationSec": 4,
+          "mouthVisible": true,
+          "dialogue": [
+            {
+              "character": "pip",
+              "text": "Leaf boats! We can build leaf boats!",
+              "emotion": "excited"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "r2",
+      "title": "The parade",
+      "summary": "After one boat sinks, Pip tries again and a parade of leaf boats crosses the stream.",
+      "location": "grove",
+      "music": {
+        "mood": "celebration",
+        "genre": "pizzicato strings",
+        "energy": "high"
+      },
+      "ambience": "water",
+      "shots": [
+        {
+          "key": "r2a",
+          "title": "Boats across the stream",
+          "action": "a line of leaf boats carrying ants floats across the stream while Luma lights the way",
+          "emotion": "joyful",
+          "characters": [
+            {
+              "character": "luma"
+            }
+          ],
+          "camera": {
+            "framing": "wide shot",
+            "angle": "eye level",
+            "movement": "tracking"
+          },
+          "durationSec": 6,
+          "sfx": [
+            {
+              "tag": "water"
+            }
+          ],
+          "narration": [
+            {
+              "text": "One by one, the little boats sailed across, and the ants cheered.",
+              "emotion": "happy"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

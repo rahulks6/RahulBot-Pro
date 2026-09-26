@@ -1,0 +1,18 @@
+# Cloud worker image (worker/Dockerfile.cuda). PyTorch 2.7.1 + CUDA 12.6 comes from the base
+# image and is NOT reinstalled here. Versions are pinned so every build is reproducible; they were
+# chosen in September 2026 and are verified when the image is built (a wrong pin fails the build,
+# it never costs GPU money). Only the libraries our adapters use are installed — no giant AI stack.
+diffusers==0.35.1
+transformers==4.56.1
+accelerate==1.10.1
+huggingface_hub==0.34.4
+sentencepiece==0.2.0
+protobuf==5.29.5
+pillow==11.3.0
+# Text-to-speech (Kokoro, Apache-2.0)
+kokoro==0.9.4
+soundfile==0.13.1
+# Music / SFX / ambience (Stable Audio Open via diffusers)
+torchsde==0.2.6
+# AI upscaling (Real-ESRGAN weights loaded with spandrel)
+spandrel==0.4.1

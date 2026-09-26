@@ -1,0 +1,401 @@
+{
+  "x-source": "Runpod REST API 2.0.0 (OpenAPI 3.1), GET /v2/catalog/gpus, from https://docs.runpod.io/api-reference-v2/catalog/list-gpu-types.md, fetched 2026-09-26 by .github/workflows/runpod-api-snapshot.yml. Response error/header components omitted.",
+  "paths": {
+    "/v2/catalog/gpus": {
+      "get": {
+        "tags": ["Catalog"],
+        "summary": "List GPU types",
+        "description": "Returns available GPU types with pricing. Availability is included only when requested with include=AVAILABILITY, which requires `product` — stock differs by product context. With countryCodes, the list is narrowed to GPU types deployable in those countries, so \"this geography + this chip\" resolves in one read.",
+        "operationId": "listGpuTypes",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CatalogIncludeParam"
+          },
+          {
+            "$ref": "#/components/parameters/GpuProductFilter"
+          },
+          {
+            "$ref": "#/components/parameters/GpuCountFilter"
+          },
+          {
+            "$ref": "#/components/parameters/GpuCloudFilter"
+          },
+          {
+            "$ref": "#/components/parameters/CountryCodesFilter"
+          },
+          {
+            "$ref": "#/components/parameters/CudaVersionsFilter"
+          },
+          {
+            "$ref": "#/components/parameters/MinCudaVersionFilter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListGpuTypesResponse"
+                },
+                "examples": {
+                  "gpus": {
+                    "summary": "Successful response",
+                    "value": {
+                      "gpus": [
+                        {
+                          "id": "NVIDIA GeForce RTX 4090",
+                          "name": "RTX 4090",
+                          "pool": "ADA_24",
+                          "manufacturer": "NVIDIA",
+                          "memory": 24,
+                          "secure": true,
+                          "community": true,
+                          "price": {
+                            "secure": 0.44,
+                            "community": 0.31,
+                            "serverless": 1.1
+                          },
+                          "maxCount": {
+                            "secure": 8,
+                            "community": 4
+                          },
+                          "availability": "HIGH",
+                          "dataCenters": [
+                            {
+                              "id": "US-KS-2",
+                              "name": "US Kansas 2",
+                              "availability": "HIGH"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "CatalogIncludeParam": {
+        "name": "include",
+        "in": "query",
+        "required": false,
+        "description": "Comma-separated optional expansions. Supported value today: AVAILABILITY. This may expand with more include values in the future.",
+        "style": "form",
+        "explode": false,
+        "schema": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/components/schemas/CatalogInclude"
+          }
+        },
+        "example": ["AVAILABILITY"]
+      },
+      "GpuProductFilter": {
+        "name": "product",
+        "in": "query",
+        "required": false,
+        "description": "Comma-separated availability product contexts. Supported values: POD, CLUSTER, SERVERLESS. Required with include=AVAILABILITY, and valid only with it (400 either way). There is no default: the same GPU type can be scarce for pods and plentiful for serverless, so the context has to be stated rather than assumed.",
+        "style": "form",
+        "explode": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/Product"
+          }
+        },
+        "example": ["POD", "SERVERLESS"]
+      },
+      "GpuCountFilter": {
+        "name": "count",
+        "in": "query",
+        "required": false,
+        "description": "GPU count for availability and lowest-price calculations. Valid only with include=AVAILABILITY. Defaults to 1.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "example": 2
+      },
+      "GpuCloudFilter": {
+        "name": "cloud",
+        "in": "query",
+        "required": false,
+        "description": "Cloud type for availability and lowest-price calculations. Valid only with include=AVAILABILITY. Supported values: SECURE, COMMUNITY. Upstream default when omitted: SECURE.",
+        "schema": {
+          "$ref": "#/components/schemas/GpuCloudFilter"
+        }
+      },
+      "CountryCodesFilter": {
+        "name": "countryCodes",
+        "in": "query",
+        "required": false,
+        "description": "Comma-separated ISO 3166-1 alpha-2 country codes, uppercase, to constrain availability to — e.g. FR or FR,DE. Values within this filter use OR semantics. Valid only with include=AVAILABILITY (400 otherwise); a malformed entry is a 422. Scopes availability, lowest-price calculations and the dataCenters array to those countries, so a listed data center outside them is omitted rather than returned with availability NONE. On the list endpoint a GPU type with no data center in those countries drops out entirely; the single-GPU endpoint still returns the requested type, with availability NONE and dataCenters omitted, so a 404 keeps meaning the GPU type does not exist. Read the NONE on availability rather than the absence of dataCenters, which is also absent when availability was not requested.",
+        "style": "form",
+        "explode": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$"
+          }
+        },
+        "example": ["FR", "DE"]
+      },
+      "CudaVersionsFilter": {
+        "name": "cudaVersions",
+        "in": "query",
+        "required": false,
+        "description": "Comma-separated CUDA versions to scope availability and lowest-price calculations to, matched exactly. Format: major.minor, e.g. 12.8 — a bare major is rejected here because it identifies no version. Valid only with include=AVAILABILITY (400 otherwise) and mutually exclusive with minCudaVersion (400 if both are sent); a malformed entry is a 422. Also narrows the returned cudaVersions array; omit it to enumerate every version offered.",
+        "style": "form",
+        "explode": false,
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+$"
+          }
+        },
+        "example": ["12.8", "12.6"]
+      },
+      "MinCudaVersionFilter": {
+        "name": "minCudaVersion",
+        "in": "query",
+        "required": false,
+        "description": "Lowest acceptable CUDA version to scope availability and lowest-price calculations to, compared numerically. Format: integer major or major.minor, e.g. 12 or 12.1 — unlike the `gpu.minCudaVersion` body field on pod and endpoint create, a bare major is accepted here and means any release of that major, because this filter only widens a read. Valid only with include=AVAILABILITY (400 otherwise) and mutually exclusive with cudaVersions (400 if both are sent); a malformed value is a 422. Use this for an open-ended floor and cudaVersions for an exact set.",
+        "schema": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d+)?$"
+        },
+        "example": "12.1"
+      }
+    },
+    "schemas": {
+      "ListGpuTypesResponse": {
+        "type": "object",
+        "required": ["gpus"],
+        "properties": {
+          "gpus": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpuType"
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["title", "status", "detail"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable summary",
+            "examples": ["Not Found"]
+          },
+          "status": {
+            "type": "integer",
+            "description": "HTTP status code",
+            "examples": [404]
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation",
+            "examples": ["pod not found"]
+          },
+          "errors": {
+            "type": "array",
+            "description": "Individual request-validation failures.",
+            "items": {
+              "type": "string"
+            },
+            "examples": [["$: additional properties 'bogus' not allowed"]]
+          }
+        }
+      },
+      "CatalogInclude": {
+        "type": "string",
+        "description": "Catalog include expansion. Only AVAILABILITY is supported today; additional include values may be added in the future.",
+        "enum": ["AVAILABILITY"]
+      },
+      "Product": {
+        "type": "string",
+        "description": "Catalog product availability context. Availability is product-specific, so this is required whenever availability is requested.",
+        "enum": ["POD", "CLUSTER", "SERVERLESS"]
+      },
+      "GpuCloudFilter": {
+        "type": "string",
+        "description": "GPU availability cloud filter.",
+        "enum": ["SECURE", "COMMUNITY"]
+      },
+      "GpuType": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "pool",
+          "manufacturer",
+          "memory",
+          "secure",
+          "community",
+          "price",
+          "maxCount"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Individual GPU type identifier (use for pod creation)",
+            "examples": ["NVIDIA GeForce RTX 4090"]
+          },
+          "name": {
+            "type": "string",
+            "examples": ["RTX 4090"]
+          },
+          "pool": {
+            "type": ["string", "null"],
+            "description": "Serverless GPU pool ID (use for serverless endpoint creation). Null if GPU is not in a serverless pool.",
+            "examples": ["ADA_24"]
+          },
+          "manufacturer": {
+            "$ref": "#/components/schemas/GpuManufacturer"
+          },
+          "memory": {
+            "type": "integer",
+            "description": "VRAM in GB",
+            "examples": [24]
+          },
+          "secure": {
+            "type": "boolean",
+            "description": "Available on secure cloud",
+            "examples": [true]
+          },
+          "community": {
+            "type": "boolean",
+            "description": "Available on community cloud",
+            "examples": [true]
+          },
+          "price": {
+            "type": "object",
+            "description": "List price in USD per hour for a **single** GPU of this type. Pod\nrates are quoted separately per cloud (`secure`, `community`);\n`serverless` is the rate for this GPU's pool. In every case the\nrate for a unit is the figure times `gpu.count`; the rate actually\nbilled for a pod is reported as `cost` on the pod itself.\n",
+            "required": ["secure", "community"],
+            "properties": {
+              "secure": {
+                "type": "number",
+                "format": "float",
+                "examples": [0.44]
+              },
+              "community": {
+                "type": "number",
+                "format": "float",
+                "examples": [0.31]
+              },
+              "serverless": {
+                "type": "number",
+                "format": "float",
+                "description": "Serverless list price per GPU per hour, from the `pool` this GPU\nbelongs to. Multiply by `gpu.count` for the per-worker rate.\nAbsent when the GPU is not in a serverless pool available to the\ncaller. Negotiated account discounts are not reflected.\n",
+                "examples": [1.1]
+              }
+            }
+          },
+          "maxCount": {
+            "type": "object",
+            "description": "The largest number of GPUs you can request on a single pod of this\ntype, quoted separately per cloud. A pod runs on one machine, so\nthis is the GPU count of the largest machine of this type Runpod\noperates in that cloud.\n\nThis is a ceiling, not a stock level — it does not mean that many\nGPUs are free right now. For current availability, request\n`include=AVAILABILITY&product=POD` and read `availability`\n(overall) or `dataCenters` (per data center).\n",
+            "required": ["secure", "community"],
+            "properties": {
+              "secure": {
+                "type": "integer",
+                "examples": [8]
+              },
+              "community": {
+                "type": "integer",
+                "examples": [4]
+              }
+            }
+          },
+          "availability": {
+            "$ref": "#/components/schemas/AvailabilityLevel",
+            "description": "Overall GPU availability for the requested `product` contexts. Present only when requested with include=AVAILABILITY, which also requires `product`."
+          },
+          "dataCenters": {
+            "type": "array",
+            "description": "Per-datacenter GPU availability for the requested `product`\ncontexts, listing only the datacenters that offer this GPU in the\nrequested configuration. Present only when requested with\ninclude=AVAILABILITY, which also requires `product`, and omitted\nentirely when the configuration is unavailable everywhere.\n",
+            "items": {
+              "$ref": "#/components/schemas/DataCenterAvailability"
+            }
+          },
+          "cudaVersions": {
+            "type": "array",
+            "description": "CUDA versions offered by machines with this GPU type, each tagged\nwith current capacity. Present only when requested with\ninclude=AVAILABILITY, and scoped by the same filters as\n`availability` (`count`, `cloud`, `product`, and whichever of\n`cudaVersions` / `minCudaVersion` was supplied).\n\nMachines that report no CUDA version are skipped, so this property\nis absent entirely for a GPU type with none — AMD, for instance.\nTreat a missing `cudaVersions` the same as an empty one. A version\nabsent from a populated list is not offered for this GPU type.\n",
+            "items": {
+              "$ref": "#/components/schemas/CudaVersionAvailability"
+            }
+          }
+        }
+      },
+      "GpuManufacturer": {
+        "type": "string",
+        "description": "Canonical GPU hardware manufacturer.",
+        "x-enum-varnames": ["GpuManufacturerNVIDIA", "GpuManufacturerAMD", "GpuManufacturerUNKNOWN"],
+        "enum": ["NVIDIA", "AMD", "UNKNOWN"]
+      },
+      "AvailabilityLevel": {
+        "type": "string",
+        "description": "Catalog stock availability level.",
+        "enum": ["NONE", "LOW", "MEDIUM", "HIGH"]
+      },
+      "DataCenterAvailability": {
+        "type": "object",
+        "required": ["id", "name", "availability"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Data center identifier.",
+            "examples": ["US-CA-2"]
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable data center name.",
+            "examples": ["US California 2"]
+          },
+          "availability": {
+            "$ref": "#/components/schemas/AvailabilityLevel"
+          }
+        }
+      },
+      "CudaVersionAvailability": {
+        "type": "object",
+        "required": ["version", "available"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+$",
+            "description": "CUDA version as `major.minor`, suitable for `gpu.allowedCudaVersions` on pod create.",
+            "examples": ["12.8"]
+          },
+          "available": {
+            "type": "boolean",
+            "description": "True when at least one machine on this CUDA version has free capacity now. False means the version is offered for this GPU type but is currently full, so a pod constrained to it will fail on capacity.",
+            "examples": [true]
+          }
+        }
+      }
+    }
+  }
+}
