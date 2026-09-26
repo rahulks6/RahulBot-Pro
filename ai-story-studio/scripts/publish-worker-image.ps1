@@ -18,12 +18,12 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & (Join-Path $PSScriptRoot 'push-worker-image.ps1') -Image $img.Name
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$settings = 'https://github.com/users/{0}/packages/container/package/{1}/settings' -f $img.Owner, $img.Repo
+$settings = 'https://github.com/users/{0}/packages/container/package/{1}' -f $img.Owner, $img.Repo
 Write-Step 'Waiting for you to make the package public'
 Write-Host "Opening $settings"
 try { Start-Process $settings } catch { }
 while ($true) {
-  $answer = Read-Host 'After you clicked Change visibility -> Public, press Enter to check (or type Q to stop)'
+  $answer = Read-Host 'On that page: Package settings -> Danger Zone -> Change visibility -> Public. Then press Enter to check (Q to stop)'
   if ($answer -match '^[Qq]') { exit 1 }
   $code = Invoke-ImageCheck $img.Name
   if ($code -eq 0) {

@@ -60,10 +60,10 @@ try {
   }
 }
 
-$settings = 'https://github.com/users/{0}/packages/container/package/{1}/settings' -f $img.Owner, $img.Repo
+$settings = 'https://github.com/users/{0}/packages/container/package/{1}' -f $img.Owner, $img.Repo
 Write-Step 'Make the image public (once)'
 Write-Host "  1. Open $settings"
-Write-Host '  2. Scroll to "Danger Zone" -> "Change visibility" -> Public -> type the name -> confirm.'
+Write-Host '  2. Click "Package settings" (right side), scroll to "Danger Zone" -> "Change visibility" -> Public -> type the name -> confirm.'
 Write-Host '  3. Then run scripts\Verify-Worker-Image.bat. It must say IMAGE EXISTS AND PUBLICLY PULLABLE.'
 Write-Host ''
 Write-Step 'Anonymous check right now (expected: REQUIRES AUTHENTICATION until you make it public)'

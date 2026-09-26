@@ -12,6 +12,69 @@
 | Full real episode generated                    | **No**                                                                                                                                                                                                                 |
 | Windows installer run on Windows               | **On a GitHub Windows runner:** the setup `.exe` installed the app, started it in MOCK mode and upgraded it. It has not been run on your PC yet. The new `scripts\*-Worker-Image` scripts are statically checked only. |
 
+## 0b. Update: second real dry run (GPU discovery against the published contract)
+
+The second real dry run reported:
+
+> RunPod rejected the GPU catalog request (HTTP 400): product is required with include=AVAILABILITY; availability differs by product context … 49 GPU type(s) listed; 0 with a secure price … no GPU type with at least 24 GB VRAM.
+
+**How the correct contract was established.** A new read-only workflow, **RunPod API schema snapshot**, downloaded Runpod's **published** `https://api.runpod.io/v2/openapi.json` (REST API 2.0.0) and the "List GPU types" reference. It used no key. The relevant parts are kept as test fixtures:
+
+- `test/fixtures/runpod-catalog-openapi.json`
+- `test/fixtures/runpod-pods-openapi.json`
+
+**Root cause of the HTTP 400.**
+
+- Availability in `GET /v2/catalog/gpus` is **product-specific**: `product` (`POD` | `CLUSTER` | `SERVERLESS`) is **required** with `include=AVAILABILITY`, and there is no default.
+- The previous build did read the declared parameters, but it only knew `include`/`cloud`/`cloudType`/`gpuCount`. It therefore sent `include=AVAILABILITY&cloud=SECURE` **without `product`**, and never sent `count` (the published name), because it only recognised `gpuCount`.
+
+**Root cause of "0 GB / no price".** The published `GpuType` uses these fields, which the parser did not read:
+
+- `memory` (VRAM in GB);
+- `price.secure` / `price.community`;
+- `secure` / `community` (offered per cloud);
+- `availability` (a level string, `NONE`/`LOW`/`MEDIUM`/`HIGH`) and `dataCenters`.
+
+The parser read `memoryInGb` and `securePrice` instead.
+
+**Corrected sequence.**
+
+1. `GET /v2/openapi.json` reads the declared catalog parameters and the `product` enum.
+2. `GET /v2/catalog/gpus?include=AVAILABILITY&product=POD&count=1&cloud=<cloud>&minCudaVersion=12.6` asks for pod stock for one GPU on the chosen cloud, on hosts with CUDA 12.6 or newer (the worker image's CUDA).
+3. Each GPU is kept only if it has `memory` ≥ the models' VRAM, is offered on the cloud, has `price.<cloud>` ≤ the maximum ₹/h, and has `availability` of LOW, MEDIUM or HIGH.
+
+A price alone is never treated as availability. If stock cannot be read, prices are shown but nothing is rentable. The next GPU step is pod creation, only after the image preflight, and it now uses the published fields `disk`, `registry` and `gpu.minCudaVersion`. Its body is validated against the published schema in tests.
+
+**Also fixed from the published pod schema:**
+
+- `status: ERROR` now fails fast instead of waiting out the timeout;
+- `cost` is read as a number.
+
+**Worker image.**
+
+- **Build:** the Docker build of `worker/Dockerfile.cuda` **passes** on GitHub (build-check workflow).
+- **Container check:** the container was started on a CPU runner:
+  - it runs `python -m ais_worker` on `0.0.0.0:8765`;
+  - `/health` returns `{"status": "ok", "version": "1.1.0", "ready": true}`;
+  - `/models` returns **401** without the token;
+  - it has PyTorch `2.7.1+cu126`;
+  - the real models (`flux1-schnell`, `wan2.2-ti2v-5b`, `kokoro-82m`, `ffmpeg-lanczos`) are listed.
+- **Push:** the image is **not pushed** yet. Only the owner can push to their registry and make the package public.
+- **Anonymous check:** it still reports REQUIRES AUTHENTICATION, as expected.
+- **Windows scripts:** the scripts are now parsed and exercised on a Windows runner by the Windows setup workflow.
+
+**Tests:** the mock RunPod now serves and enforces the published catalog and pod-create schemas. There are new tests for:
+
+- the exact HTTP 400;
+- the corrected request sequence;
+- published-shape parsing;
+- "price ≠ availability";
+- the CUDA filter;
+- pod-create body conformance;
+- the pod status enum.
+
+**Still not tested:** no live RunPod catalog call with the corrected request (it needs your key: run the dry run), no GPU and no push.
+
 ## 0. Update: fixes after the first real dry run (Sept 2026)
 
 The owner ran **Run dry-run diagnostics (free)** against a real RunPod account. It passed:

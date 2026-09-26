@@ -22,68 +22,139 @@ You need about 30 minutes the first time.
 
 ## Step 3: Publish the AI worker image (once)
 
-The rented GPU runs a small program, the "AI worker", from a **container image**. RunPod downloads that image when the GPU starts, so it must be published somewhere RunPod can read it **without a password**: your GitHub account's container registry (`ghcr.io`), with the image set to **public**. The image holds program code only. It has **no model weights** (those download on the GPU the first time) and **no secrets**.
+The rented GPU runs the "AI worker" from a **container image**. RunPod downloads that image when the GPU starts, so it must be published where RunPod can read it **without a password**: GitHub Container Registry (`ghcr.io`), with the package set to **public**. The image holds program code only: **no model weights** (they download on the GPU the first time) and **no secrets**.
 
-Your image name is `ghcr.io/<your-github-name>/ai-story-studio-worker:1.1.0`, in lower case. The app is preset to `ghcr.io/rahulks6/ai-story-studio-worker:1.1.0`. If your GitHub name is different, change it in **Cloud GPU → Advanced → Worker image**.
+The image name must be exactly:
 
-Choose **one** of the two ways to build and publish it.
+```
+ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+```
 
-### Option A (recommended): let GitHub build it
+This is the app's default (**Cloud GPU → Advanced → Worker image**). If your GitHub user name is not `rahulks6`, replace it everywhere below, in lower case, and change the setting too.
 
-This needs no Docker and uses none of your PC's disk space. It is free for a public repository.
+Until this step is done, the dry run shows **Worker image: IMAGE REQUIRES AUTHENTICATION**, and the app refuses to rent any GPU. That is intended.
 
-1. Open your repository on **github.com**.
-2. Click **Releases** (right side), then **Draft a new release**.
-3. Click **Choose a tag** and type exactly `ai-story-studio-worker-v1.1.0`, then click **Create new tag: ai-story-studio-worker-v1.1.0 on publish**.
-4. Set **Target** to the branch that contains AI Story Studio (for example `claude/story-studio-audio-pipeline-w7vu3o`, or `main` once it is merged).
-5. Enter any title (for example `Worker image 1.1.0`) and click **Publish release**.
-6. Open the **Actions** tab. The run **AI Story Studio worker image** starts by itself. Wait until it shows a green tick (about 20–40 minutes).
+Choose **one** way to build and push the image: **A** or **B**. Then do **Make it public** and **Verify**.
 
-   Once the app is merged into your default branch, you can instead use **Actions → AI Story Studio worker image → Run workflow**.
+### Option A: let GitHub build it (no Docker needed)
 
-Then go to **Make it public** below.
+1. On **github.com**, open your repository → **Releases** → **Draft a new release**.
+2. Click **Choose a tag**, type `ai-story-studio-worker-v1.1.0`, and click **Create new tag … on publish**.
+3. Set **Target** to the branch with AI Story Studio (`claude/story-studio-audio-pipeline-w7vu3o`, or `main` after merging).
+4. Enter a title, e.g. `Worker image 1.1.0`, and click **Publish release**.
+5. **Actions** tab: wait for **AI Story Studio worker image** to show a green tick (20–40 minutes).
 
-### Option B: build it on this PC with Docker Desktop
+It pushes `ghcr.io/rahulks6/ai-story-studio-worker:1.1.0` using GitHub's own short-lived token. You create no token.
 
-This needs about 25 GB of free disk space. It downloads about 6 GB and uploads about 6 GB, so it can take hours on a slow connection. Your PC needs no NVIDIA GPU to build it.
+### Option B: build and push it on this PC with Docker Desktop
 
-1. **Install Docker Desktop**, if you do not have it: https://www.docker.com/products/docker-desktop/. Keep the default options (WSL 2) and restart Windows if it asks. Start **Docker Desktop** and wait until it shows **Engine running**.
-2. **Build:** in the AI Story Studio folder, double-click `scripts\Build-Worker-Image.bat` and type your GitHub user name when asked. It builds `ghcr.io/<you>/ai-story-studio-worker:1.1.0`. The same command in PowerShell:
-   ```
-   powershell -ExecutionPolicy Bypass -File scripts\build-worker-image.ps1 -Owner <your-github-name>
-   ```
-3. **Create a GitHub token for uploading:**
-   - On github.com, open your picture → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**.
-   - Tick **only** `write:packages`, choose a short expiration (7 days), then click **Generate token** and copy it.
-   - Never put the token in a file, in `.env`, or in a chat.
-4. **Upload:** double-click `scripts\Push-Worker-Image.bat`, type your GitHub user name, and paste the token when asked (it is not shown). The script:
-   - signs in with `docker login --password-stdin`, so the token never appears on a command line;
-   - uploads the image;
-   - **signs out again**, so Docker no longer keeps the token.
+It needs about 30 GB of free disk space, and downloads and uploads about 6 GB each way. Your PC needs no NVIDIA GPU.
 
-   The same command in PowerShell:
+**The easy way:** double-click `scripts\Publish-Worker-Image.bat` in the AI Story Studio folder. It runs B1–B6 below and pauses for **Make it public**. To run the steps yourself, open **PowerShell** and continue with B1.
 
-   ```
-   powershell -ExecutionPolicy Bypass -File scripts\push-worker-image.ps1 -Owner <your-github-name>
-   ```
+**B1. Docker Desktop**
 
-### Make it public (once, for either option)
+- Install it (or download it from https://www.docker.com/products/docker-desktop/):
+  ```powershell
+  winget install -e --id Docker.DockerDesktop
+  ```
+- Restart Windows if it asks.
+- Start **Docker Desktop** and wait for **Engine running**.
+- Check it:
+  ```powershell
+  docker version
+  docker info --format "{{.OSType}}"
+  ```
+  The second command must print `linux`. If it prints `windows`, right-click the Docker icon near the clock → **Switch to Linux containers…**
 
-1. Open `https://github.com/users/<your-github-name>/packages/container/package/ai-story-studio-worker`. You can also get there from your GitHub profile → **Packages** → **ai-story-studio-worker**.
-2. Click **Package settings** (right side). Under **Danger Zone**, click **Change visibility** → **Public**, type the name to confirm, and click the button.
+**B2. Create a GitHub token for uploading.** It is only needed for pushing, and is never stored in AI Story Studio.
 
-A public image can be downloaded by anyone. It contains only the open-source worker code, which is also in your repository: no keys, no tokens, no model weights and no stories.
+- Open https://github.com/settings/tokens/new?scopes=write:packages&description=AI%20Story%20Studio%20worker%20image (**Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**).
+- Keep **only** `write:packages` ticked, choose **7 days** as the expiration, then click **Generate token** and copy it.
+- Fine-grained tokens do not work for container packages.
+- Never paste the token into a file, `.env`, a script or a chat.
 
-### Check it without a password
+**B3. Sign in to GitHub Container Registry**
 
-Double-click `scripts\Verify-Worker-Image.bat`, or run `npm run check:image` in the AI Story Studio folder. This is the same check as the app's diagnostics. The result is one of four answers:
+```powershell
+docker login ghcr.io -u rahulks6
+```
 
-| Result                                 | Meaning and what to do                                                                                                                                             |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **IMAGE EXISTS AND PUBLICLY PULLABLE** | Done. RunPod can download it.                                                                                                                                      |
-| **IMAGE REQUIRES AUTHENTICATION**      | The package is still private, **or it was never pushed**: GitHub answers both the same way to anonymous users. Finish option A or B, then **Make it public**.      |
-| **IMAGE DOES NOT EXIST**               | The name or tag is wrong (for example `1.1.0` was not pushed), or the image has no `linux/amd64` build. Check the name in **Cloud GPU → Advanced → Worker image**. |
-| **REGISTRY UNREACHABLE**               | This PC could not reach `ghcr.io` (internet, proxy, firewall or antivirus). This says nothing about the image. Try again later or on another network.              |
+At `Password:`, paste the token and press Enter. Nothing is shown while you paste. You should see `Login Succeeded`.
+
+**B4. Build the image**
+
+```powershell
+cd "$env:USERPROFILE\AI-Story-Studio"
+docker build --platform linux/amd64 -f worker\Dockerfile.cuda -t ghcr.io/rahulks6/ai-story-studio-worker:1.1.0 worker
+```
+
+It takes 20–60 minutes the first time and must end without `ERROR`. The build checks itself: every AI library must install and import, and PyTorch must stay at the CUDA 12.6 build.
+
+**B5. Check the image before pushing** (optional, about a minute, CPU only)
+
+```powershell
+docker image inspect --format "{{json .Config.Cmd}} {{json .Config.ExposedPorts}} {{.Architecture}}" ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+docker run --rm -d --name ais-worker-test -p 8765:8765 -e WORKER_AUTH_TOKEN=aisw_local_test_only_0123456789abcdef ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+curl.exe http://127.0.0.1:8765/health
+curl.exe -s -o NUL -w "%{http_code}\n" http://127.0.0.1:8765/models
+docker rm -f ais-worker-test
+```
+
+The expected output, line by line:
+
+- the `inspect` line shows `["python","-m","ais_worker"] {"8765/tcp":{}} amd64`;
+- `/health` returns `{"status": "ok", "version": "1.1.0", "ready": true}`;
+- `/models` returns `401`, because the worker refuses requests without the session token.
+
+**B6. Push the image, then sign out again**
+
+```powershell
+docker push ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+docker logout ghcr.io
+```
+
+If the upload stops half-way, run `docker push` again: finished parts are not sent twice.
+
+`scripts\Build-Worker-Image.bat` and `scripts\Push-Worker-Image.bat` do B1–B6 with checks and plain-language errors. The push script asks for the token with hidden input, passes it through `--password-stdin`, and signs out afterwards.
+
+### Make it public (once, after option A or B)
+
+1. Open https://github.com/users/rahulks6/packages/container/package/ai-story-studio-worker. You can also get there from your GitHub profile → **Packages** → **ai-story-studio-worker**.
+2. Click **Package settings** (right side).
+3. Scroll to **Danger Zone** → **Change visibility** → **Public**. Type `ai-story-studio-worker` to confirm, and click the button.
+
+Anyone can download a public image. This one contains only the open-source worker code that is already in your public repository: no keys, tokens, model weights or stories.
+
+### Verify the anonymous pull
+
+This check uses **no password**, exactly like RunPod. Any one of these:
+
+```powershell
+scripts\Verify-Worker-Image.bat
+```
+
+```powershell
+npm run check:image
+```
+
+```powershell
+docker logout ghcr.io
+docker manifest inspect ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+```
+
+The first two must print **IMAGE EXISTS AND PUBLICLY PULLABLE**. The Docker command must print a JSON manifest that contains `"architecture": "amd64"`.
+
+| Result                                 | Meaning and what to do                                                                                                                  |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **IMAGE EXISTS AND PUBLICLY PULLABLE** | Done. RunPod can download it.                                                                                                           |
+| **IMAGE REQUIRES AUTHENTICATION**      | Still private, **or never pushed**: GitHub answers both the same way to anonymous users. Finish option A or B, then **Make it public**. |
+| **IMAGE DOES NOT EXIST**               | Wrong name or tag (for example `1.1.0` was not pushed), or no `linux/amd64` build.                                                      |
+| **REGISTRY UNREACHABLE**               | This PC could not reach `ghcr.io` (internet, proxy, firewall or antivirus). This says nothing about the image; try again.               |
+
+### Run the free dry run again
+
+In AI Story Studio, open **Cloud GPU → Run dry-run diagnostics (free)**. **Worker image** should now be **OK**.
 
 ## Step 4: Unlock cloud mode in the `.env` file
 
@@ -118,7 +189,7 @@ The banner at the top now says **MODE: MOCK PROVIDERS**: cloud is unlocked but n
    OK   Provider implemented
    OK   API key saved
    OK   API credentials and connectivity
-   OK   Compatible GPUs and price      (e.g. "3 GPU type(s) with ≥ 24 GB VRAM within your ₹60/h limit; cheapest: …")
+   OK   Compatible GPUs and price      (e.g. "3 GPU type(s) with ≥ 24 GB VRAM in stock for pods in secure cloud (CUDA ≥ 12.6) at or below your ₹60/h limit; cheapest: …")
    OK   Worker image                   (IMAGE EXISTS AND PUBLICLY PULLABLE)
    OK   Model: image / video / tts
    OK   Cost limits
@@ -130,7 +201,20 @@ The banner at the top now says **MODE: MOCK PROVIDERS**: cloud is unlocked but n
    - **Real generation enabled** is switched on in step 7.
 
    You can run the diagnostics before any of that. Nothing is rented either way.
-   - If **Compatible GPUs and price** fails, the message now includes RunPod's own reason, or explains the problem: no GPU with enough VRAM, none in stock, or none below your price limit (it then shows the cheapest one).
+   - **Compatible GPUs and price** asks RunPod for pod stock in your cloud type:
+
+     ```
+     GET /v2/catalog/gpus?include=AVAILABILITY&product=POD&count=1&cloud=SECURE&minCudaVersion=12.6
+     ```
+
+     A GPU counts only if all of these hold:
+     - it has at least the VRAM your models need (24 GB by default);
+     - RunPod reports it in stock for pods (LOW, MEDIUM or HIGH);
+     - its hosts offer CUDA 12.6 or newer (the worker image's CUDA);
+     - its current price for your cloud type is at or below your limit.
+
+     If none qualifies, the message says which condition ruled the GPUs out, and shows RunPod's own reason for any refused request. A listed price alone is never treated as "available".
+
    - The app never rents a GPU while **Worker image** is not OK.
 
 ## Step 6: Switch on Cloud GPU and run the first test

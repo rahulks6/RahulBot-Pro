@@ -84,7 +84,16 @@ Termination is retried; a failure stays in `TERMINATING` for the watchdog, which
 - **Downloads** are validated for HTTP status, `Content-Length`, SHA-256 and size, real file type (magic bytes) against the declared type, minimum size, WAV decodability and, for video, ffprobe readability on a temporary `.partial` file. Up to 3 attempts; a file that stays corrupted is discarded ("Asset download failed validation… The corrupted file was discarded.").
 - **Retries** use bounded exponential backoff (1 s → 30 s, `Retry-After` honoured) for rate limits, 5xx and network errors. A pod **create** is never retried after an ambiguous failure, so a lost response cannot rent two GPUs. Invalid keys, bad requests, unsupported GPUs, budget and licence refusals are never retried.
 - **API drift:** before the first create, the app reads RunPod's published `openapi.json` and refuses to create anything if a path or required field changed.
-- **GPU list and prices** (`GET /catalog/gpus`): the query is built from the parameters that `openapi.json` declares for this endpoint. `include=AVAILABILITY` asks for stock; `cloudType` and `gpuCount` are sent only together with it, as RunPod requires, and undeclared parameters are never sent. If RunPod refuses the stock query, prices are read without it (one extra free GET), so the price ceiling still applies. Pagination is followed. RunPod's validation message is shown with credentials removed. The dry run then filters by the VRAM your enabled models need and by your price ceiling, and says which of these ruled a GPU out.
+- **GPU list, prices and stock** follow Runpod's published contract for `GET /v2/catalog/gpus` (REST API 2.0.0; the parameters are read from `openapi.json` at run time, and a snapshot is kept in `test/fixtures/runpod-catalog-openapi.json`):
+  - **Request:** `include=AVAILABILITY&product=POD&count=1&cloud=<SECURE|COMMUNITY>&minCudaVersion=12.6`.
+    - Stock is product-specific, so `product` is required with `include`. The studio rents pods, so it sends `POD`, taken from the published enum (it refuses rather than guess if `POD` is ever missing).
+    - `count`, `cloud` and `minCudaVersion` are valid only together with `include`.
+    - `minCudaVersion=12.6` matches the worker image's CUDA.
+  - **Response** `{gpus: [GpuType]}`: `memory` (VRAM, GB), `secure`/`community` (offered on that cloud), `price.secure`/`price.community` (USD per GPU-hour), `availability` (NONE/LOW/MEDIUM/HIGH) and `dataCenters`.
+  - **Which GPUs count:** a GPU counts only with enough VRAM, a price for the chosen cloud, **and** a reported availability of LOW or higher. A price alone is never "available".
+  - **If the stock query is refused:** the list is still shown with prices, but nothing is rentable. RunPod's own error text is shown (sanitized).
+- **Pod create** uses the published body: `name`, `image`, `gpu{id, count, minCudaVersion}`, `cloud`, `env`, `ports`, `disk`, `mounts{persistent{size, path}} | {network[{volumeId, path}]}`, and `registry` (only for a private image). The tests validate this body against the published schema (`test/fixtures/runpod-pods-openapi.json`). Pod status `ERROR` is treated as failed at once.
+- **Keeping it current:** the **RunPod API schema snapshot (read-only)** workflow downloads the published `openapi.json` without a key and prints these contracts, so drift is easy to spot.
 
 ## Worker start-up and readiness
 
