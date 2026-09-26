@@ -23,7 +23,7 @@ from typing import Any
 
 from ..jobs import JobContext, JobError
 from ..media import MediaTools, video_stream_info
-from ..schemas import AudioRequest, ImageRequest, LipSyncRequest, UpscaleRequest, VideoRequest, sniff
+from ..schemas import AudioRequest, ImageRequest, LipSyncRequest, TextRequest, UpscaleRequest, VideoRequest, sniff
 from .base import Model, ModelInfo
 
 SR = 22050
@@ -370,3 +370,19 @@ class MockUpscaler(Model[UpscaleRequest]):
             manifest.update({"upscaledFrom": f"{manifest.get('width')}x{manifest.get('height')}", "width": tw, "height": th})
             ctx.path("upscaled.json").write_text(json.dumps(manifest, indent=2))
             ctx.add_output("upscaled.json", MOCK_VIDEO_MIME, width=tw, height=th, native_resolution=False, mock=True)
+
+
+class MockTextModel(Model[TextRequest]):
+    """Placeholder text model: echoes a labelled, deterministic answer (never a real story)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.info = _info("mock-text", "text", "Mock text generator", 0, "cpu")
+
+    def run(self, request: TextRequest, ctx: JobContext) -> None:
+        _controls(request.settings, ctx)
+        ctx.set_status("running", "writing (mock)")
+        digest = hashlib.sha256(f"{request.seed}:{request.prompt}".encode()).hexdigest()[:12]
+        text = json.dumps({"mock": True, "note": "placeholder text, not AI", "digest": digest}) if request.json else f"MOCK TEXT {digest}"
+        ctx.path("text.json").write_text(json.dumps({"text": text, "tokens": len(text.split()), "mock": True}))
+        ctx.add_output("text.json", "application/json", mock=True)

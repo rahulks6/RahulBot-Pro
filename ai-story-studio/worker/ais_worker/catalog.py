@@ -25,7 +25,7 @@ from typing import Any
 
 from .schemas import ValidationError
 
-KINDS = ("image", "video", "tts", "music", "sfx", "lipsync", "upscale")
+KINDS = ("image", "video", "tts", "music", "sfx", "lipsync", "upscale", "text")
 COMMERCIAL = ("allowed", "conditional", "non_commercial", "unknown")
 ADAPTERS = (
     "diffusers_image",
@@ -37,6 +37,7 @@ ADAPTERS = (
     "spandrel_upscale",
     "command_lipsync",
     "ffmpeg_still_motion",
+    "transformers_llm",
     "none",
 )
 

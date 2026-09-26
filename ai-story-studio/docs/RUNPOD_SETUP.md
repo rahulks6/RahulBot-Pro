@@ -27,7 +27,7 @@ The rented GPU runs the "AI worker" from a **container image**. RunPod downloads
 The image name must be exactly:
 
 ```
-ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
 ```
 
 This is the app's default (**Cloud GPU → Advanced → Worker image**). If your GitHub user name is not `rahulks6`, replace it everywhere below, in lower case, and change the setting too.
@@ -39,12 +39,12 @@ Choose **one** way to build and push the image: **A** or **B**. Then do **Make i
 ### Option A: let GitHub build it (no Docker needed)
 
 1. On **github.com**, open your repository → **Releases** → **Draft a new release**.
-2. Click **Choose a tag**, type `ai-story-studio-worker-v1.1.0`, and click **Create new tag … on publish**.
+2. Click **Choose a tag**, type `ai-story-studio-worker-v1.2.0`, and click **Create new tag … on publish**.
 3. Set **Target** to the branch with AI Story Studio (`claude/story-studio-audio-pipeline-w7vu3o`, or `main` after merging).
 4. Enter a title, e.g. `Worker image 1.1.0`, and click **Publish release**.
 5. **Actions** tab: wait for **AI Story Studio worker image** to show a green tick (20–40 minutes).
 
-It pushes `ghcr.io/rahulks6/ai-story-studio-worker:1.1.0` using GitHub's own short-lived token. You create no token.
+It pushes `ghcr.io/rahulks6/ai-story-studio-worker:1.2.0` using GitHub's own short-lived token. You create no token.
 
 ### Option B: build and push it on this PC with Docker Desktop
 
@@ -86,7 +86,7 @@ At `Password:`, paste the token and press Enter. Nothing is shown while you past
 
 ```powershell
 cd "$env:USERPROFILE\AI-Story-Studio"
-docker build --platform linux/amd64 -f worker\Dockerfile.cuda -t ghcr.io/rahulks6/ai-story-studio-worker:1.1.0 worker
+docker build --platform linux/amd64 -f worker\Dockerfile.cuda -t ghcr.io/rahulks6/ai-story-studio-worker:1.2.0 worker
 ```
 
 It takes 20–60 minutes the first time and must end without `ERROR`. The build checks itself: every AI library must install and import, and PyTorch must stay at the CUDA 12.6 build.
@@ -94,8 +94,8 @@ It takes 20–60 minutes the first time and must end without `ERROR`. The build 
 **B5. Check the image before pushing** (optional, about a minute, CPU only)
 
 ```powershell
-docker image inspect --format "{{json .Config.Cmd}} {{json .Config.ExposedPorts}} {{.Architecture}}" ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
-docker run --rm -d --name ais-worker-test -p 8765:8765 -e WORKER_AUTH_TOKEN=aisw_local_test_only_0123456789abcdef ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+docker image inspect --format "{{json .Config.Cmd}} {{json .Config.ExposedPorts}} {{.Architecture}}" ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
+docker run --rm -d --name ais-worker-test -p 8765:8765 -e WORKER_AUTH_TOKEN=aisw_local_test_only_0123456789abcdef ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
 curl.exe http://127.0.0.1:8765/health
 curl.exe -s -o NUL -w "%{http_code}\n" http://127.0.0.1:8765/models
 docker rm -f ais-worker-test
@@ -110,7 +110,7 @@ The expected output, line by line:
 **B6. Push the image, then sign out again**
 
 ```powershell
-docker push ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+docker push ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
 docker logout ghcr.io
 ```
 
@@ -140,7 +140,7 @@ npm run check:image
 
 ```powershell
 docker logout ghcr.io
-docker manifest inspect ghcr.io/rahulks6/ai-story-studio-worker:1.1.0
+docker manifest inspect ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
 ```
 
 The first two must print **IMAGE EXISTS AND PUBLICLY PULLABLE**. The Docker command must print a JSON manifest that contains `"architecture": "amd64"`.

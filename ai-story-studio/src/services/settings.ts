@@ -256,7 +256,7 @@ export const DEFAULT_SETTINGS: AllSettings = {
     // Real AI on RunPod is the product: the only thing missing on a new install is the API key.
     cloudEnabled: true,
     realGeneration: true,
-    workerImage: 'ghcr.io/rahulks6/ai-story-studio-worker:1.1.0',
+    workerImage: 'ghcr.io/rahulks6/ai-story-studio-worker:1.2.0',
     registryAuthId: '',
     cloudType: 'SECURE',
     allowedGpuTypes: '',
@@ -317,6 +317,9 @@ const SCHEMAS = {
 
 export type SettingsKey = keyof AllSettings;
 
+/** Earlier default worker images, replaced by the current default when read. */
+const OLD_DEFAULT_IMAGES = new Set(['ghcr.io/rahulks6/ai-story-studio-worker:1.1.0']);
+
 export class SettingsService {
   private readonly db: Database;
 
@@ -327,7 +330,13 @@ export class SettingsService {
   get<K extends SettingsKey>(key: K): AllSettings[K] {
     const row = this.db.get<{ value_json: string }>('SELECT value_json FROM settings WHERE key = ?', key);
     const stored = parseJson<Partial<AllSettings[K]>>(row?.value_json, {});
-    return { ...DEFAULT_SETTINGS[key], ...stored };
+    const value = { ...DEFAULT_SETTINGS[key], ...stored };
+    // v1.2 needs the v1.2 worker (story writing): an install still on the old DEFAULT image moves up.
+    if (key === 'cloud') {
+      const c = value as CloudSettings;
+      if (OLD_DEFAULT_IMAGES.has(c.workerImage)) c.workerImage = DEFAULT_SETTINGS.cloud.workerImage;
+    }
+    return value;
   }
 
   all(): AllSettings {

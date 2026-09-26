@@ -94,7 +94,7 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     registry.repos.clear();
     registry.repos.set(WORKER_REPO, {
       visibility: 'public',
-      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64'] } },
     });
   });
   afterEach(() => {
@@ -548,7 +548,7 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
   it('never rents a GPU when RunPod could not pull the worker image', async () => {
     registry.repos.set(WORKER_REPO, {
       visibility: 'private',
-      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64'] } },
     });
     s = cloudStudio();
     const t = await s.cloudTest.prepare('tts');
@@ -589,7 +589,7 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     const image = async () => (await s!.cloud.diagnostics()).find((x) => x.step === 'Worker image')!;
     registry.repos.set(WORKER_REPO, {
       visibility: 'private',
-      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64'] } },
     });
     let step = await image();
     assert.equal(step.ok, false);

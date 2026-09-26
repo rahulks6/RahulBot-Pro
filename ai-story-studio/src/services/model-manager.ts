@@ -15,7 +15,16 @@ import { appRoot } from '../lib/paths.ts';
  * WORKER_ENABLED_MODELS / WORKER_LICENSE_ACK. Non-commercial models are not in
  * the cloud catalog, and a model with an unknown licence can never be enabled.
  */
-export const MODEL_CATEGORIES = ['image', 'video', 'tts', 'music', 'sfx', 'upscale', 'lipsync'] as const;
+export const MODEL_CATEGORIES = [
+  'text',
+  'image',
+  'video',
+  'tts',
+  'music',
+  'sfx',
+  'upscale',
+  'lipsync',
+] as const;
 export type ModelCategory = (typeof MODEL_CATEGORIES)[number];
 
 export interface CatalogModel {

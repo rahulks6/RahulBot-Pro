@@ -10,6 +10,7 @@ import {
 import { MockGPUProvider } from './mock/gpu.ts';
 import { MockImageModel, MockUpscaler, MockVideoModel } from './mock/image.ts';
 import { MockMediaProbe } from './mock/probe.ts';
+import { MockTextModel } from './mock/text.ts';
 import type {
   GPUProvider,
   ImageModel,
@@ -18,6 +19,7 @@ import type {
   MusicProvider,
   ProviderInfo,
   SoundEffectProvider,
+  TextModel,
   TextToSpeechProvider,
   Upscaler,
   VideoModel,
@@ -25,6 +27,8 @@ import type {
 
 /** The set of AI components the studio uses. Each slot is independently replaceable. */
 export interface ProviderSet {
+  /** Story writing (LLM). */
+  text: TextModel;
   image: ImageModel;
   video: VideoModel;
   upscaler: Upscaler;
@@ -39,6 +43,7 @@ export interface ProviderSet {
 export function createMockProviders(storage: StorageProvider, failureRate = 0): ProviderSet {
   const opts = { failureRate };
   return {
+    text: new MockTextModel(opts),
     image: new MockImageModel(opts),
     video: new MockVideoModel(opts),
     upscaler: new MockUpscaler(opts),
@@ -53,6 +58,7 @@ export function createMockProviders(storage: StorageProvider, failureRate = 0): 
 
 export function providerInfos(set: ProviderSet): ProviderInfo[] {
   return [
+    set.text.info,
     set.image.info,
     set.video.info,
     set.upscaler.info,

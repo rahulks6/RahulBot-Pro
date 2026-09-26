@@ -48,6 +48,13 @@ export const ERROR_CODES = [
   'INSUFFICIENT_VRAM',
   'CUDA_UNAVAILABLE',
   'DISK_FULL',
+  // v1.2: story writing and YouTube publishing
+  'STORY_GENERATION_FAILED',
+  'YOUTUBE_NOT_CONNECTED',
+  'YOUTUBE_AUTH_FAILED',
+  'YOUTUBE_QUOTA_EXCEEDED',
+  'YOUTUBE_UPLOAD_FAILED',
+  'YOUTUBE_BLOCKED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -67,6 +74,7 @@ export const RETRYABLE_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
   'UPSCALE_FAILED',
   'CLOUD_RATE_LIMITED',
   'CLOUD_UNAVAILABLE',
+  'STORY_GENERATION_FAILED',
 ]);
 
 export interface FieldError {

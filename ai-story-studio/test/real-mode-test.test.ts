@@ -65,7 +65,7 @@ describe('Real Mode Test (milestone 1) harness', { skip: !ff && 'FFmpeg not inst
     await registry.start();
     registry.repos.set('rahulks6/ai-story-studio-worker', {
       visibility: 'public',
-      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64'] } },
     });
   });
   after(async () => {

@@ -369,6 +369,37 @@ def parse_audio(body: Any, max_bytes: int) -> AudioRequest:
     return req
 
 
+@dataclass(frozen=True)
+class TextRequest:
+    """Text generation (story writing): a system instruction and a user prompt for a chat LLM."""
+
+    system: str
+    prompt: str
+    max_new_tokens: int
+    temperature: float
+    seed: int
+    model: str
+    settings: dict[str, Any]
+    # Ask for one JSON object; the app still validates (and repairs) what comes back.
+    json: bool = False
+
+
+def parse_text(body: Any, max_bytes: int) -> TextRequest:
+    v = _V(_obj(body), max_bytes)
+    req = TextRequest(
+        system=v.str_("system", max_len=20000),
+        prompt=v.str_("prompt", max_len=60000, required=True),
+        max_new_tokens=v.int_("max_new_tokens", low=16, high=16384, default=2048),
+        temperature=v.float_("temperature", low=0, high=2, default=0.7),
+        seed=v.int_("seed", low=0, high=2**31 - 1, default=0),
+        model=v.str_("model", max_len=120),
+        settings=v.dict_("settings"),
+        json=v.bool_("json", False),
+    )
+    v.done()
+    return req
+
+
 def parse_lipsync(body: Any, max_bytes: int) -> LipSyncRequest:
     v = _V(_obj(body), max_bytes)
     req = LipSyncRequest(

@@ -165,7 +165,7 @@ jobs:
           $ErrorActionPreference = 'Continue' # child processes may write to stderr; exit codes are checked explicitly
           # 2. The default image name is exactly the one the app uses.
           $name = powershell -NoProfile -Command ". '$dir\scripts\worker-image-common.ps1'; (Resolve-Image '' '' '').Name"
-          if ($name -ne 'ghcr.io/rahulks6/ai-story-studio-worker:1.1.0') { throw "unexpected default image: $name" }
+          if ($name -ne 'ghcr.io/rahulks6/ai-story-studio-worker:1.2.0') { throw "unexpected default image: $name" }
           Write-Host "default image: $name"
           # 3. The anonymous check runs and gives a definite registry answer (0 = public, 1 = not yet).
           $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\scripts\verify-worker-image.ps1" 2>&1 | Out-String

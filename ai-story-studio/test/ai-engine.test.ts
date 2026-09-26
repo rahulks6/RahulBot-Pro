@@ -27,7 +27,7 @@ describe('AI Engine (Simple Mode)', () => {
     await registry.start();
     registry.repos.set('rahulks6/ai-story-studio-worker', {
       visibility: 'public',
-      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64'] } },
     });
     s = testStudio({
       env: { mockGeneration: false, enableCloudGpu: true, logLevel: 'info' },
@@ -121,7 +121,7 @@ describe('AI Engine (Simple Mode)', () => {
   it('an unpublished AI worker is reported as the remaining step', async () => {
     registry.repos.set('rahulks6/ai-story-studio-worker', {
       visibility: 'private',
-      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64'] } },
     });
     await s.engine.connect(rp.apiKey);
     const st = s.engine.status();
@@ -129,7 +129,7 @@ describe('AI Engine (Simple Mode)', () => {
     assert.match(st.issues.map((i) => i.message).join(' '), /cannot download the AI worker/);
     registry.repos.set('rahulks6/ai-story-studio-worker', {
       visibility: 'public',
-      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64'] } },
     });
     await s.engine.retest();
     assert.equal(s.engine.status().state, 'READY');

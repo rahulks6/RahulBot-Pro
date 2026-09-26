@@ -2,6 +2,34 @@
   "_readme": "LOCAL GPU model catalog (this computer). Nothing is downloaded until you press Install in the Model Manager and confirm; generation never downloads (HF_HUB_OFFLINE=1). VRAM figures are approximate planning values: min_vram_gb = with the fastest memory settings that still fit, offload_min_vram_gb = with sequential CPU offload (much slower), recommended_vram_gb = comfortable. storage_gb = the files the Model Manager downloads (download.allow_patterns / ignore_patterns skip duplicate single-file checkpoints). Licence facts were collected from public sources in September 2026 — re-check each model card before publishing.",
   "models": [
     {
+      "id": "qwen2.5-7b-instruct",
+      "kind": "text",
+      "adapter": "transformers_llm",
+      "display_name": "Qwen2.5 7B Instruct (story writer)",
+      "repo": "Qwen/Qwen2.5-7B-Instruct",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "",
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE",
+      "min_vram_gb": 18,
+      "enabled": true,
+      "default": true,
+      "params": {
+        "dtype": "bfloat16",
+        "max_new_tokens": 8192,
+        "top_p": 0.9
+      },
+      "recommended_vram_gb": 24,
+      "precision": "bf16",
+      "storage_gb": 16,
+      "capabilities": ["text", "json", "multilingual"],
+      "license_acknowledged": false,
+      "download": {
+        "allow_patterns": ["*.json", "*.safetensors", "*.txt", "tokenizer*", "merges.txt", "vocab.json"]
+      }
+    },
+    {
       "id": "sdxl-base",
       "kind": "image",
       "adapter": "diffusers_image",
@@ -39,9 +67,18 @@
         }
       },
       "presets": {
-        "fast_preview": { "num_inference_steps": 14, "max_side": 1024 },
-        "optimized": { "num_inference_steps": 28, "max_side": 1344 },
-        "high_quality": { "num_inference_steps": 40, "max_side": 1536 }
+        "fast_preview": {
+          "num_inference_steps": 14,
+          "max_side": 1024
+        },
+        "optimized": {
+          "num_inference_steps": 28,
+          "max_side": 1344
+        },
+        "high_quality": {
+          "num_inference_steps": 40,
+          "max_side": 1536
+        }
       },
       "download": {
         "allow_patterns": [
@@ -101,9 +138,18 @@
         "reference_mode": "img2img"
       },
       "presets": {
-        "fast_preview": { "num_inference_steps": 2, "max_side": 1024 },
-        "optimized": { "num_inference_steps": 4, "max_side": 1344 },
-        "high_quality": { "num_inference_steps": 6, "max_side": 1536 }
+        "fast_preview": {
+          "num_inference_steps": 2,
+          "max_side": 1024
+        },
+        "optimized": {
+          "num_inference_steps": 4,
+          "max_side": 1344
+        },
+        "high_quality": {
+          "num_inference_steps": 6,
+          "max_side": 1536
+        }
       },
       "download": {
         "ignore_patterns": ["flux1-schnell.safetensors", "ae.safetensors"]
@@ -141,9 +187,18 @@
         "require_image_input": true
       },
       "presets": {
-        "fast_preview": { "num_inference_steps": 16, "max_side": 832 },
-        "optimized": { "num_inference_steps": 30, "max_side": 1280 },
-        "high_quality": { "num_inference_steps": 50, "max_side": 1280 }
+        "fast_preview": {
+          "num_inference_steps": 16,
+          "max_side": 832
+        },
+        "optimized": {
+          "num_inference_steps": 30,
+          "max_side": 1280
+        },
+        "high_quality": {
+          "num_inference_steps": 50,
+          "max_side": 1280
+        }
       }
     },
     {
@@ -177,9 +232,18 @@
         "pipeline_class": "LTXImageToVideoPipeline"
       },
       "presets": {
-        "fast_preview": { "num_inference_steps": 20, "max_side": 768 },
-        "optimized": { "num_inference_steps": 40, "max_side": 1216 },
-        "high_quality": { "num_inference_steps": 50, "max_side": 1216 }
+        "fast_preview": {
+          "num_inference_steps": 20,
+          "max_side": 768
+        },
+        "optimized": {
+          "num_inference_steps": 40,
+          "max_side": 1216
+        },
+        "high_quality": {
+          "num_inference_steps": 50,
+          "max_side": 1216
+        }
       },
       "download": {
         "ignore_patterns": ["*.safetensors"],
@@ -213,7 +277,9 @@
       "capabilities": ["image_to_video", "no_ai"],
       "enabled": true,
       "default": false,
-      "params": { "zoom": 0.08 }
+      "params": {
+        "zoom": 0.08
+      }
     },
     {
       "id": "kokoro-82m",
@@ -238,19 +304,35 @@
       "params": {
         "lang_code": "a",
         "default_voice": "af_heart",
-        "voices": { "female": "af_heart", "male": "am_michael", "neutral": "af_sky" },
+        "voices": {
+          "female": "af_heart",
+          "male": "am_michael",
+          "neutral": "af_sky"
+        },
         "languages": {
           "en": {
             "lang_code": "a",
-            "voices": { "female": "af_heart", "male": "am_michael", "neutral": "af_sky" }
+            "voices": {
+              "female": "af_heart",
+              "male": "am_michael",
+              "neutral": "af_sky"
+            }
           },
           "en-gb": {
             "lang_code": "b",
-            "voices": { "female": "bf_emma", "male": "bm_george", "neutral": "bf_emma" }
+            "voices": {
+              "female": "bf_emma",
+              "male": "bm_george",
+              "neutral": "bf_emma"
+            }
           },
           "hi": {
             "lang_code": "h",
-            "voices": { "female": "hf_alpha", "male": "hm_omega", "neutral": "hf_beta" }
+            "voices": {
+              "female": "hf_alpha",
+              "male": "hm_omega",
+              "neutral": "hf_beta"
+            }
           }
         }
       }
@@ -307,11 +389,19 @@
         "music_style": "cinematic, warm, well mixed, no vocals"
       },
       "presets": {
-        "fast_preview": { "num_inference_steps": 50 },
-        "optimized": { "num_inference_steps": 100 },
-        "high_quality": { "num_inference_steps": 150 }
+        "fast_preview": {
+          "num_inference_steps": 50
+        },
+        "optimized": {
+          "num_inference_steps": 100
+        },
+        "high_quality": {
+          "num_inference_steps": 150
+        }
       },
-      "download": { "ignore_patterns": ["model.ckpt", "*.ckpt"] }
+      "download": {
+        "ignore_patterns": ["model.ckpt", "*.ckpt"]
+      }
     },
     {
       "id": "stable-audio-open",
@@ -339,7 +429,9 @@
         "guidance_scale": 7.0,
         "crossfade_sec": 1.0
       },
-      "download": { "ignore_patterns": ["model.ckpt", "*.ckpt"] }
+      "download": {
+        "ignore_patterns": ["model.ckpt", "*.ckpt"]
+      }
     },
     {
       "id": "ffmpeg-lanczos",
@@ -361,7 +453,9 @@
       "capabilities": ["upscale_image", "upscale_video"],
       "enabled": true,
       "default": true,
-      "params": { "flags": "lanczos" }
+      "params": {
+        "flags": "lanczos"
+      }
     },
     {
       "id": "real-esrgan",
@@ -383,8 +477,15 @@
       "capabilities": ["upscale_image", "upscale_video"],
       "enabled": false,
       "default": false,
-      "params": { "hf_filename": "RealESRGAN_x4.pth", "tile": 512, "tile_pad": 16, "half": true },
-      "download": { "allow_patterns": ["RealESRGAN_x4.pth"] }
+      "params": {
+        "hf_filename": "RealESRGAN_x4.pth",
+        "tile": 512,
+        "tile_pad": 16,
+        "half": true
+      },
+      "download": {
+        "allow_patterns": ["RealESRGAN_x4.pth"]
+      }
     }
   ]
 }

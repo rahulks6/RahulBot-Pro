@@ -33,7 +33,7 @@ export interface WorkerJob {
 
 export interface WorkerModel {
   id: string;
-  kind: 'image' | 'video' | 'tts' | 'music' | 'sfx' | 'lipsync' | 'upscale';
+  kind: 'image' | 'video' | 'tts' | 'music' | 'sfx' | 'lipsync' | 'upscale' | 'text';
   display_name: string;
   version: string;
   license: string;

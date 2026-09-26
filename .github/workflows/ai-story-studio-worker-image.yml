@@ -1,7 +1,7 @@
 # Builds the AI Story Studio CLOUD worker image and publishes it to GitHub Container Registry.
 # It never runs on an ordinary push, so it can never surprise you with storage or compute use.
 # Start it in one of two ways (both free for a public repository; no GPU is involved):
-#   A. Create a tag named  ai-story-studio-worker-v1.1.0  (github.com → Releases → Draft a new
+#   A. Create a tag named  ai-story-studio-worker-v1.2.0  (github.com → Releases → Draft a new
 #      release → "Choose a tag" → type the name → Target: the branch with the app → Publish).
 #      This works from any branch, before anything is merged.
 #   B. Once this file is on the default branch: Actions → "AI Story Studio worker image" → Run workflow.
@@ -19,7 +19,7 @@ on:
       tag:
         description: Image tag
         required: true
-        default: '1.1.0'
+        default: '1.2.0'
 
 permissions:
   contents: read

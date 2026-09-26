@@ -24,9 +24,9 @@ describe('worker image verification (mock registry)', () => {
   it('IMAGE EXISTS AND PUBLICLY PULLABLE: anonymous token flow, no credentials sent', async () => {
     reg.repos.set('rahulks6/ai-story-studio-worker', {
       visibility: 'public',
-      tags: { '1.1.0': { platforms: ['linux/amd64', 'unknown/unknown'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64', 'unknown/unknown'] } },
     });
-    const r = await check('ghcr.io/rahulks6/ai-story-studio-worker:1.1.0');
+    const r = await check('ghcr.io/rahulks6/ai-story-studio-worker:1.2.0');
     assert.equal(r.status, 'PUBLIC', r.detail);
     assert.deepEqual(r.platforms, ['linux/amd64']);
     assert.match(r.digest ?? '', /^sha256:/);
@@ -44,9 +44,9 @@ describe('worker image verification (mock registry)', () => {
   it('IMAGE REQUIRES AUTHENTICATION: a private package (HTTP 403 DENIED)', async () => {
     reg.repos.set('rahulks6/ai-story-studio-worker', {
       visibility: 'private',
-      tags: { '1.1.0': { platforms: ['linux/amd64'] } },
+      tags: { '1.2.0': { platforms: ['linux/amd64'] } },
     });
-    const r = await check('ghcr.io/rahulks6/ai-story-studio-worker:1.1.0');
+    const r = await check('ghcr.io/rahulks6/ai-story-studio-worker:1.2.0');
     assert.equal(r.status, 'AUTH_REQUIRED');
     assert.match(r.detail, /private or not published \(HTTP 403 DENIED\)/);
     assert.match(
@@ -54,7 +54,7 @@ describe('worker image verification (mock registry)', () => {
       /GitHub Container Registry gives this same answer when the package was never pushed/,
     );
     reg.refuseAnonymousTokens = true;
-    assert.equal((await check('ghcr.io/rahulks6/ai-story-studio-worker:1.1.0')).status, 'AUTH_REQUIRED');
+    assert.equal((await check('ghcr.io/rahulks6/ai-story-studio-worker:1.2.0')).status, 'AUTH_REQUIRED');
   });
 
   it('IMAGE DOES NOT EXIST: missing tag, missing repository, or no linux/amd64 build', async () => {
@@ -62,9 +62,9 @@ describe('worker image verification (mock registry)', () => {
       visibility: 'public',
       tags: { '1.0.0': { platforms: ['linux/amd64'] } },
     });
-    const tag = await check('ghcr.io/rahulks6/ai-story-studio-worker:1.1.0');
+    const tag = await check('ghcr.io/rahulks6/ai-story-studio-worker:1.2.0');
     assert.equal(tag.status, 'NOT_FOUND');
-    assert.match(tag.detail, /there is no tag "1\.1\.0"/);
+    assert.match(tag.detail, /there is no tag "1\.2\.0"/);
     reg.deniedStyle = 'strict';
     const repo = await check('ghcr.io/someone/else:1');
     assert.equal(repo.status, 'NOT_FOUND');
@@ -103,11 +103,11 @@ describe('worker image verification (mock registry)', () => {
 
 describe('image name and challenge parsing (units)', () => {
   it('parses registries, Docker Hub defaults, tags and digests', () => {
-    assert.deepEqual(parseImage('ghcr.io/rahulks6/ai-story-studio-worker:1.1.0'), {
+    assert.deepEqual(parseImage('ghcr.io/rahulks6/ai-story-studio-worker:1.2.0'), {
       registry: 'ghcr.io',
       apiHost: 'ghcr.io',
       repository: 'rahulks6/ai-story-studio-worker',
-      reference: '1.1.0',
+      reference: '1.2.0',
     });
     assert.deepEqual(parseImage('ubuntu'), {
       registry: 'docker.io',

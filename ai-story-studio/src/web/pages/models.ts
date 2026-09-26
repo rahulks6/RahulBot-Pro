@@ -18,6 +18,7 @@ const STATUS_KIND: Record<LocalModelStatus, string> = {
 const FIT_KIND = { fits: 'good', cpu: 'good', offload: 'warn', too_big: 'bad', no_gpu: 'bad' } as const;
 
 const TASK: Record<ModelCategory, string> = {
+  text: 'Story writing',
   image: 'Image',
   video: 'Image-to-video',
   tts: 'Text-to-speech',

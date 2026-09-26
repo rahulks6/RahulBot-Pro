@@ -132,7 +132,7 @@ export async function checkImagePullable(
   if (!parsed)
     return result(
       'INVALID',
-      `"${image}" is not a valid image name (expected e.g. ghcr.io/you/ai-story-studio-worker:1.1.0).`,
+      `"${image}" is not a valid image name (expected e.g. ghcr.io/you/ai-story-studio-worker:1.2.0).`,
     );
   const base = opts.baseUrlFor?.(parsed.apiHost) ?? `https://${parsed.apiHost}`;
   const manifestUrl = `${base}/v2/${parsed.repository}/manifests/${parsed.reference}`;

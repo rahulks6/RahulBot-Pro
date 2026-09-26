@@ -12,6 +12,7 @@ Endpoints (all require ``Authorization: Bearer <token>`` except /health):
   POST /generate/image             text-to-image (or image-to-image)
   POST /generate/image-to-video    animate an approved still
   POST /generate/audio             tts | music | sfx | ambience
+  POST /generate/text              story writing with an instruction-tuned LLM
   POST /process/lipsync            dialogue audio + clip → synced clip
   POST /process/upscale            image or clip upscaling
   GET  /jobs                       recent jobs
@@ -38,9 +39,9 @@ from .diagnostics import system_report
 from .jobs import JobContext, JobError, JobManager
 from .media import MediaTools
 from .models.base import Model, ModelKind
-from .models.mock import MockAudioModel, MockImageModel, MockLipSyncModel, MockUpscaler, MockVideoModel
+from .models.mock import MockAudioModel, MockImageModel, MockLipSyncModel, MockTextModel, MockUpscaler, MockVideoModel
 from .models.registry import ModelRegistry
-from .schemas import ValidationError, parse_audio, parse_image, parse_lipsync, parse_upscale, parse_video
+from .schemas import ValidationError, parse_audio, parse_image, parse_lipsync, parse_text, parse_upscale, parse_video
 from .security import SecurityError, check_bearer, validate_output_name
 from .vram import MemoryPolicy
 
@@ -79,6 +80,7 @@ def build_registry(config: WorkerConfig, media: MediaTools) -> tuple[ModelRegist
         registry.register(MockAudioModel("sfx"))
         registry.register(MockLipSyncModel(media))
         registry.register(MockUpscaler(media))
+        registry.register(MockTextModel())
     if config.models_file is None:
         return registry, skipped
     for catalog_entry in load_catalog(config.models_file):
@@ -114,6 +116,7 @@ def make_adapter(entry: CatalogEntry, config: WorkerConfig, media: MediaTools) -
     from .adapters.audio_gen import StableAudioModel
     from .adapters.diffusers_models import DiffusersImageModel, DiffusersImageToVideoModel
     from .adapters.lipsync import CommandLipSync
+    from .adapters.llm import TransformersLlm
     from .adapters.still_motion import StillMotionVideo
     from .adapters.tts import ChatterboxTts, KokoroTts
     from .adapters.upscale import FfmpegUpscaler, SpandrelUpscaler
@@ -137,6 +140,8 @@ def make_adapter(entry: CatalogEntry, config: WorkerConfig, media: MediaTools) -
         return CommandLipSync(entry, media)
     if entry.adapter == "ffmpeg_still_motion":
         return StillMotionVideo(entry, media)
+    if entry.adapter == "transformers_llm":
+        return TransformersLlm(entry, cache)
     return None
 
 
@@ -219,6 +224,7 @@ class WorkerAPI:
             "/generate/image": lambda b: self._submit("image", parse_image(b, mb), "image"),
             "/generate/image-to-video": lambda b: self._submit("image-to-video", parse_video(b, mb), "video"),
             "/generate/audio": lambda b: self._submit_audio(parse_audio(b, mb)),
+            "/generate/text": lambda b: self._submit("text", parse_text(b, mb), "text"),
             "/process/lipsync": lambda b: self._submit("lipsync", parse_lipsync(b, mb), "lipsync"),
             "/process/upscale": lambda b: self._submit("upscale", parse_upscale(b, mb), "upscale"),
         }

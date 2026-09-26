@@ -1,7 +1,7 @@
 # Uploads the worker image to GitHub Container Registry (ghcr.io), then checks it anonymously.
 #
 #   scripts\Push-Worker-Image.bat
-#   powershell -ExecutionPolicy Bypass -File scripts\push-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.1.0] [-KeepLogin]
+#   powershell -ExecutionPolicy Bypass -File scripts\push-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.2.0] [-KeepLogin]
 #
 # You need a GitHub token (classic) with the "write:packages" scope. The script asks for it with
 # hidden input, hands it to "docker login --password-stdin" (never on the command line, never

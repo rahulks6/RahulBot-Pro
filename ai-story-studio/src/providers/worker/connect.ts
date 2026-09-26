@@ -6,6 +6,7 @@ import {
   LocalWorkerGpuProvider,
   WorkerImageModel,
   WorkerLipSync,
+  WorkerTextModel,
   WorkerMusic,
   WorkerSfx,
   WorkerTts,
@@ -57,6 +58,7 @@ export async function connectWorker(studio: Studio, target?: WorkerTarget): Prom
     models.find((m) => m.kind === kind);
   studio.gpu.useProvider(new LocalWorkerGpuProvider(client, system));
   Object.assign(studio.providers, {
+    text: new WorkerTextModel(client, pick('text')),
     image: new WorkerImageModel(client, pick('image')),
     video: new WorkerVideoModel(client, pick('video')),
     upscaler: new WorkerUpscaler(client, pick('upscale')),

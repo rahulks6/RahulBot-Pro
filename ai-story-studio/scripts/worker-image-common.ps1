@@ -7,7 +7,7 @@ $AppDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $WorkerDir = Join-Path $AppDir 'worker'
 $ImageRepoName = 'ai-story-studio-worker'
 # The image AI Story Studio uses by default (Cloud GPU -> Advanced -> Worker image).
-$DefaultImage = 'ghcr.io/rahulks6/ai-story-studio-worker:1.1.0'
+$DefaultImage = 'ghcr.io/rahulks6/ai-story-studio-worker:1.2.0'
 
 function Write-Step([string]$Text) { Write-Host ''; Write-Host "== $Text" -ForegroundColor Cyan }
 function Write-Ok([string]$Text) { Write-Host $Text -ForegroundColor Green }
@@ -54,7 +54,7 @@ function Get-AppVersion {
 }
 
 # Which image to build/push/check: -Image, else -Owner/-Tag, else CLOUD_WORKER_IMAGE in .env,
-# else the app's default (ghcr.io/rahulks6/ai-story-studio-worker:1.1.0).
+# else the app's default (ghcr.io/rahulks6/ai-story-studio-worker:1.2.0).
 function Resolve-Image([string]$Image, [string]$Owner, [string]$Tag) {
   if (-not $Image -and ($Owner -or $Tag)) {
     if (-not $Owner) { $Owner = 'rahulks6' }
@@ -71,7 +71,7 @@ function Resolve-Image([string]$Image, [string]$Owner, [string]$Tag) {
   if (-not $Image) { $Image = $DefaultImage }
   $Image = $Image.Trim().ToLowerInvariant()
   if ($Image -notmatch '^ghcr\.io/([a-z0-9](?:[a-z0-9-]{0,38}))/([a-z0-9._-]+):([a-z0-9_][a-z0-9._-]{0,127})$') {
-    Stop-WithError "'$Image' is not a GitHub Container Registry image name like ghcr.io/<github-user>/ai-story-studio-worker:1.1.0"
+    Stop-WithError "'$Image' is not a GitHub Container Registry image name like ghcr.io/<github-user>/ai-story-studio-worker:1.2.0"
   }
   return [pscustomobject]@{ Name = $Image; Owner = $Matches[1]; Repo = $Matches[2]; Tag = $Matches[3] }
 }

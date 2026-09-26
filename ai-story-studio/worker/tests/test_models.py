@@ -11,7 +11,7 @@ from .conftest import AUTH, make_config, post, wait
 def test_models_endpoint_lists_mock_models(api: WorkerAPI) -> None:
     body = api.handle("GET", "/models", AUTH, b"").body or {}
     kinds = {m["kind"] for m in body["models"]}
-    assert kinds == {"image", "video", "tts", "music", "sfx", "lipsync", "upscale"}
+    assert kinds == {"image", "video", "tts", "music", "sfx", "lipsync", "upscale", "text"}
     assert body["mock_only"] is True
 
 

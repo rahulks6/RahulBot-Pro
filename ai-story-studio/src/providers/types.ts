@@ -83,6 +83,32 @@ export interface ReferenceInput {
   label: string;
 }
 
+/** Text generation (story writing) with an instruction-tuned LLM. */
+export interface TextRequest {
+  system: string;
+  prompt: string;
+  maxTokens: number;
+  temperature: number;
+  seed: number;
+  /** Ask for one JSON object (the caller still validates it). */
+  json: boolean;
+}
+
+export interface TextResult {
+  text: string;
+  model: string;
+  modelVersion: string;
+  isMock: boolean;
+  generationSeconds: number;
+  /** The answer stopped at the token limit (probably cut off). */
+  hitLimit: boolean;
+}
+
+export interface TextModel {
+  readonly info: ProviderInfo;
+  write(req: TextRequest, ctx: RunContext): Promise<TextResult>;
+}
+
 export interface ImageRequest {
   mode: 'text_to_image' | 'image_to_image';
   prompt: string;

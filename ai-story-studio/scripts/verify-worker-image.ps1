@@ -2,7 +2,7 @@
 # app's dry-run diagnostics). Docker is not needed.
 #
 #   scripts\Verify-Worker-Image.bat
-#   powershell -ExecutionPolicy Bypass -File scripts\verify-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.1.0]
+#   powershell -ExecutionPolicy Bypass -File scripts\verify-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.2.0]
 param(
   [string]$Image,
   [string]$Owner,

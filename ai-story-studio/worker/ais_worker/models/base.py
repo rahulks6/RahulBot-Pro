@@ -13,7 +13,7 @@ from typing import Generic, Literal, TypeVar
 
 from ..jobs import JobContext
 
-ModelKind = Literal["image", "video", "tts", "music", "sfx", "lipsync", "upscale"]
+ModelKind = Literal["image", "video", "tts", "music", "sfx", "lipsync", "upscale", "text"]
 
 
 @dataclass(frozen=True)

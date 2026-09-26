@@ -15,6 +15,9 @@ import type {
   RunContext,
   SfxRequest,
   SoundEffectProvider,
+  TextModel,
+  TextRequest,
+  TextResult,
   TextToSpeechProvider,
   TtsRequest,
   Upscaler,
@@ -135,6 +138,49 @@ function requireModel(info: ProviderInfo, kind: string): void {
       'MODEL_NOT_INSTALLED',
       `No ${TASK_NAME[kind] ?? kind} model is installed for LOCAL GPU. Install one in the Model Manager (/models), or choose MOCK / CLOUD GPU in Settings.`,
     );
+}
+
+export class WorkerTextModel implements TextModel {
+  readonly info: ProviderInfo;
+  private readonly client: WorkerClient;
+  constructor(client: WorkerClient, model: WorkerModel | undefined) {
+    this.client = client;
+    this.info = infoFor(model, 'text');
+  }
+  async write(req: TextRequest, ctx: RunContext): Promise<TextResult> {
+    requireModel(this.info, 'text');
+    const { job, files } = await this.client.run(
+      '/generate/text',
+      {
+        model: this.info.id,
+        system: req.system,
+        prompt: req.prompt,
+        max_new_tokens: req.maxTokens,
+        temperature: req.temperature,
+        seed: req.seed,
+        json: req.json,
+      },
+      ctx,
+    );
+    const out = first(files, 'text');
+    let parsed: { text?: unknown };
+    try {
+      parsed = JSON.parse(out.data.toString('utf8')) as { text?: unknown };
+    } catch {
+      throw new ProviderError('STORY_GENERATION_FAILED', 'The worker returned unreadable text.');
+    }
+    if (typeof parsed.text !== 'string')
+      throw new ProviderError('STORY_GENERATION_FAILED', 'The worker returned no text.');
+    const details = (job.details ?? {}) as { text?: { hit_limit?: boolean } };
+    return {
+      text: parsed.text,
+      model: job.model.id ?? this.info.id,
+      modelVersion: job.model.version ?? this.info.modelVersion,
+      isMock: job.model.mock ?? this.info.isMock,
+      generationSeconds: Number(job.metrics['run_seconds'] ?? 0),
+      hitLimit: details.text?.hit_limit === true,
+    };
+  }
 }
 
 export class WorkerImageModel implements ImageModel {

@@ -1,9 +1,9 @@
 # Builds the AI Story Studio cloud worker image with Docker Desktop (no GPU needed on this PC).
 #
 #   scripts\Build-Worker-Image.bat
-#   powershell -ExecutionPolicy Bypass -File scripts\build-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.1.0]
+#   powershell -ExecutionPolicy Bypass -File scripts\build-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.2.0]
 #
-# Default image: ghcr.io/rahulks6/ai-story-studio-worker:1.1.0 (or CLOUD_WORKER_IMAGE from .env).
+# Default image: ghcr.io/rahulks6/ai-story-studio-worker:1.2.0 (or CLOUD_WORKER_IMAGE from .env).
 # Needs about 30 GB of free disk space and downloads about 6 GB the first time. Model weights are
 # NOT included (they download on the GPU later). No password is used; nothing is uploaded.
 param(

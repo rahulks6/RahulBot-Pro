@@ -2,6 +2,31 @@
   "_readme": "Cloud worker model catalog (baked into the worker image). The app decides per session which entries are enabled (WORKER_ENABLED_MODELS) and which conditional licences you acknowledged (WORKER_LICENSE_ACK); non-commercial models are never included. Licence facts were collected from public sources in September 2026 — re-check each model card before publishing.",
   "models": [
     {
+      "id": "qwen2.5-7b-instruct",
+      "kind": "text",
+      "adapter": "transformers_llm",
+      "display_name": "Qwen2.5 7B Instruct (story writer)",
+      "repo": "Qwen/Qwen2.5-7B-Instruct",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "",
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE",
+      "min_vram_gb": 18,
+      "enabled": true,
+      "default": true,
+      "params": {
+        "dtype": "bfloat16",
+        "max_new_tokens": 8192,
+        "top_p": 0.9
+      },
+      "recommended_vram_gb": 24,
+      "precision": "bf16",
+      "storage_gb": 16,
+      "capabilities": ["text", "json", "multilingual"],
+      "license_acknowledged": false
+    },
+    {
       "id": "flux1-schnell",
       "kind": "image",
       "adapter": "diffusers_image",
@@ -110,6 +135,32 @@
           "female": "af_heart",
           "male": "am_michael",
           "neutral": "af_sky"
+        },
+        "languages": {
+          "en": {
+            "lang_code": "a",
+            "voices": {
+              "female": "af_heart",
+              "male": "am_michael",
+              "neutral": "af_sky"
+            }
+          },
+          "en-gb": {
+            "lang_code": "b",
+            "voices": {
+              "female": "bf_emma",
+              "male": "bm_george",
+              "neutral": "bf_emma"
+            }
+          },
+          "hi": {
+            "lang_code": "h",
+            "voices": {
+              "female": "hf_alpha",
+              "male": "hm_omega",
+              "neutral": "hf_beta"
+            }
+          }
         }
       },
       "recommended_vram_gb": 0,

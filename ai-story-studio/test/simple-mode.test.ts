@@ -103,4 +103,18 @@ describe('Simple Mode pages', () => {
     assert.equal(s.settings.get('cloud').sessionBudgetInr, 99);
     assert.equal(s.settings.get('budget').dailyInr, 300);
   });
+
+  it('an install still on the old default worker image moves to the current one', () => {
+    s.settings.set('cloud', {
+      ...s.settings.get('cloud'),
+      workerImage: 'ghcr.io/rahulks6/ai-story-studio-worker:1.1.0',
+    });
+    assert.equal(s.settings.get('cloud').workerImage, 'ghcr.io/rahulks6/ai-story-studio-worker:1.2.0');
+    s.settings.set('cloud', { ...s.settings.get('cloud'), workerImage: 'ghcr.io/someone/custom-worker:7' });
+    assert.equal(
+      s.settings.get('cloud').workerImage,
+      'ghcr.io/someone/custom-worker:7',
+      'a custom image is kept',
+    );
+  });
 });

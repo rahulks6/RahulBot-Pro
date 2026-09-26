@@ -1,7 +1,7 @@
 # One-click: build, upload and verify the worker image, with a pause for making it public.
 #
 #   scripts\Publish-Worker-Image.bat
-#   powershell -ExecutionPolicy Bypass -File scripts\publish-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.1.0]
+#   powershell -ExecutionPolicy Bypass -File scripts\publish-worker-image.ps1 [-Image ghcr.io/<user>/ai-story-studio-worker:1.2.0]
 param(
   [string]$Image,
   [string]$Owner,

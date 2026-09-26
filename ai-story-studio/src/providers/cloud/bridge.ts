@@ -12,6 +12,9 @@ import type {
   RunContext,
   SfxRequest,
   SoundEffectProvider,
+  TextModel,
+  TextRequest,
+  TextResult,
   TextToSpeechProvider,
   TtsRequest,
   Upscaler,
@@ -25,12 +28,14 @@ import {
   WorkerLipSync,
   WorkerMusic,
   WorkerSfx,
+  WorkerTextModel,
   WorkerTts,
   WorkerUpscaler,
   WorkerVideoModel,
 } from '../worker/providers.ts';
 
 type Bound = {
+  text: WorkerTextModel;
   image: WorkerImageModel;
   video: WorkerVideoModel;
   upscaler: WorkerUpscaler;
@@ -41,6 +46,7 @@ type Bound = {
 };
 
 const KIND: Record<keyof Bound, ModelCategory> = {
+  text: 'text',
   image: 'image',
   video: 'video',
   upscaler: 'upscale',
@@ -85,6 +91,7 @@ export class CloudWorkerBridge {
       );
     };
     this.bound = {
+      text: new WorkerTextModel(client, pick('text')),
       image: new WorkerImageModel(client, pick('image')),
       video: new WorkerVideoModel(client, pick('video')),
       upscaler: new WorkerUpscaler(client, pick('upscale')),
@@ -151,6 +158,7 @@ export class CloudWorkerBridge {
   }
 
   providers(): {
+    text: TextModel;
     image: ImageModel;
     video: VideoModel;
     upscaler: Upscaler;
@@ -161,6 +169,12 @@ export class CloudWorkerBridge {
   } {
     const b = this;
     return {
+      text: {
+        get info() {
+          return b.info('text');
+        },
+        write: (req: TextRequest, ctx: RunContext): Promise<TextResult> => b.use('text').write(req, ctx),
+      },
       image: {
         get info() {
           return b.info('image');
