@@ -81,6 +81,10 @@ try {
 } catch (err) {
   studio.logger.error('start-up recovery failed', { error: (err as Error).message });
 }
+// Videos that were being made when the app closed wait for the person to press CONTINUE.
+const paused = studio.orchestrator.recoverAfterRestart();
+if (paused)
+  console.log(`${paused} video(s) were being made when the app closed: open My Videos and press CONTINUE.`);
 
 const interval = studio.settings.get('gpu').watchdogIntervalSeconds * 1000;
 const watchdog = setInterval(() => {

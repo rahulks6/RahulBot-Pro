@@ -25,6 +25,7 @@ import { ExportService } from '../services/export.ts';
 import { GenerationService } from '../services/generation.ts';
 import { GpuSupervisor } from '../services/gpu-supervisor.ts';
 import { EngineService } from '../services/engine.ts';
+import { Orchestrator } from '../services/orchestrator.ts';
 import { RealModeTest } from '../services/real-mode-test.ts';
 import { VideoRepository } from '../repositories/videos.ts';
 import { ExecutionRouter } from '../services/execution-router.ts';
@@ -99,6 +100,8 @@ export interface Studio {
   videos: VideoRepository;
   /** Milestone 1: the one-click real RunPod test (image → animation → narration → MP4). */
   realTest: RealModeTest;
+  /** Idea → finished video (Simple Mode's CREATE). */
+  orchestrator: Orchestrator;
   close(): void;
 }
 
@@ -273,6 +276,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
     hardware: opts.hardware ?? new HardwareService(),
     router: null as unknown as ExecutionRouter,
     engine: null as unknown as EngineService,
+    orchestrator: null as unknown as Orchestrator,
     videos,
     realTest: new RealModeTest({
       db,
@@ -298,6 +302,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
   studio.router = new ExecutionRouter(studio, { localWorker, localCatalog, baseProviders });
   routerRef = studio.router;
   studio.engine = new EngineService(studio, opts.envFile ? { envFile: opts.envFile } : {});
+  studio.orchestrator = new Orchestrator(studio, storagePaths(env).tempRender);
   // After the runtime install: forget the old PyTorch result and restart an idle local worker.
   studio.runtime.onComplete = () => {
     studio.hardware.torch = null;

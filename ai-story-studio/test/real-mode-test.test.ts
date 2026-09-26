@@ -187,7 +187,7 @@ describe('Real Mode Test (milestone 1) harness', { skip: !ff && 'FFmpeg not inst
       await s.realTest.running;
       const done = await web.get(`/settings/ai-engine/real-test/${id}`);
       assert.match(done.text, /PASS — milestone 1 reached/);
-      assert.match(done.html, /<video class="player" controls src="\/media\/real-tests\//);
+      assert.match(done.html, /<video\s+class="player"\s+controls\s+src="\/media\/real-tests\//);
       assert.equal(rp.livePods().length, 0);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));

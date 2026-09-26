@@ -849,3 +849,32 @@ video.player {
     grid-template-columns: 1fr;
   }
 }
+.shot-edit {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.shot-edit img,
+.shot-edit .nothumb {
+  width: 240px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.shot-edit .actions {
+  grid-column: 2;
+}
+details.card > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+@media (max-width: 800px) {
+  .shot-edit {
+    grid-template-columns: 1fr;
+  }
+  .shot-edit .actions {
+    grid-column: 1;
+  }
+}

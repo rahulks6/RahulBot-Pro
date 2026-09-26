@@ -421,15 +421,20 @@ export class GenerationService {
   }
 
   /** GPU memory policy for real models (Settings → Execution & GPU). */
-  memoryPolicy(): Record<string, unknown> {
+  /**
+   * GPU memory policy sent with each job. `safe` (the automatic second attempt after a failure)
+   * uses the lowest-VRAM configuration: sequential CPU offload, VAE tiling and attention slicing,
+   * and allows a recorded reduction of resolution / frames when nothing else fits.
+   */
+  memoryPolicy(safe = false): Record<string, unknown> {
     const ex = this.s.settings.get('execution');
     return {
       max_vram_percent: ex.maxVramPercent,
-      cpu_offload: ex.cpuOffload,
-      vae_tiling: ex.vaeTiling,
-      attention: ex.attentionOptimization,
+      cpu_offload: safe ? 'sequential' : ex.cpuOffload,
+      vae_tiling: safe ? 'on' : ex.vaeTiling,
+      attention: safe ? 'slicing' : ex.attentionOptimization,
       auto_unload: ex.autoUnloadModels,
-      allow_quality_reduction: ex.allowQualityReduction,
+      allow_quality_reduction: safe || ex.allowQualityReduction,
     };
   }
 
@@ -763,7 +768,7 @@ export class GenerationService {
         : {}),
     };
     const params = parseJson<Record<string, unknown>>(job.params_json, {});
-    const settings = { ...params, memory: this.memoryPolicy() };
+    const settings = { ...params, memory: this.memoryPolicy(params['safeMode'] === true) };
     const project = this.s.projects.get(job.project_id);
 
     switch (job.kind) {
@@ -1061,7 +1066,8 @@ export class GenerationService {
         if (ownerType === 'character') {
           const c = this.s.characters.get(ownerId);
           const variant = variantId ? this.s.characters.getVariant(variantId) : null;
-          prompt = `character reference sheet, ${slot.replace('_', ' ')} ${slotType}, plain background. ${c.name}: ${c.prompt} ${variant?.prompt_additions ?? ''}`;
+          const look = typeof params['stylePrompt'] === 'string' ? ` Style: ${params['stylePrompt']}.` : '';
+          prompt = `character reference sheet, ${slot.replace('_', ' ')} ${slotType}, plain background. ${c.name}: ${c.prompt} ${variant?.prompt_additions ?? ''}${look}`;
           negative = c.negative_prompt;
         } else {
           const l = this.s.characters.getLocation(ownerId);
