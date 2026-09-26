@@ -22,7 +22,7 @@ export interface CheckResult {
 
 export class TechnicalCheck {
   private readonly ff: FfmpegTools | null;
-  private readonly tempDir: string;
+  readonly tempDir: string;
 
   constructor(ff: FfmpegTools | null, tempDir: string) {
     this.ff = ff;

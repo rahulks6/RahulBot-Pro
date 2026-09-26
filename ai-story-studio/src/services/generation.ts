@@ -691,6 +691,20 @@ export class GenerationService {
     return seedFrom(`${job.id}:${attemptNumber}`) % 2 ** 31;
   }
 
+  /** Picture size for a job: the project's, turned to 9:16 for a vertical (Shorts) story. */
+  private frameFor(
+    job: GenerationJob,
+    project: { width: number; height: number },
+  ): { width: number; height: number; vertical: boolean } {
+    const vertical = job.story_id ? this.s.stories.get(job.story_id).format === 'vertical' : false;
+    if (!vertical) return { width: project.width, height: project.height, vertical };
+    return {
+      width: Math.min(project.width, project.height),
+      height: Math.max(project.width, project.height),
+      vertical,
+    };
+  }
+
   /** The largest RECOMMENDED VRAM of the cloud models a batch uses (the GPU choice prefers it). */
   private recommendedVramGb(jobs: GenerationJob[]): number {
     const category: Partial<Record<JobKind, ModelCategory>> = {
@@ -770,6 +784,7 @@ export class GenerationService {
     const params = parseJson<Record<string, unknown>>(job.params_json, {});
     const settings = { ...params, memory: this.memoryPolicy(params['safeMode'] === true) };
     const project = this.s.projects.get(job.project_id);
+    const frame = this.frameFor(job, project);
 
     switch (job.kind) {
       case 'image': {
@@ -784,11 +799,13 @@ export class GenerationService {
             mode: reference ? 'image_to_image' : 'text_to_image',
             ...(reference ? { initImage: reference.data, strength: reference.strength } : {}),
             ...(refs.images.length ? { referenceImages: refs.images } : {}),
-            prompt: prompt.final.image,
+            prompt: frame.vertical
+              ? `${prompt.final.image}, vertical 9:16 composition, subjects centred and fully in frame`
+              : prompt.final.image,
             negativePrompt: prompt.final.negative,
             seed,
-            width: project.width,
-            height: project.height,
+            width: frame.width,
+            height: frame.height,
             quality: job.mode,
             references: prompt.references,
             settings,
@@ -838,8 +855,8 @@ export class GenerationService {
             seed,
             durationSec: shot.duration_sec,
             fps: shot.fps,
-            width: project.width,
-            height: project.height,
+            width: frame.width,
+            height: frame.height,
             quality: job.mode,
             references: prompt.references,
             motionStrength: typeof params['motionStrength'] === 'number' ? params['motionStrength'] : 0.5,
@@ -868,15 +885,11 @@ export class GenerationService {
         const gen = this.s.settings.get('generation');
         if (
           gen.upscaleOptimizedOutput &&
-          shouldUpscale(gen.upscaleMode, clip, { width: project.width, height: project.height })
+          shouldUpscale(gen.upscaleMode, clip, { width: frame.width, height: frame.height })
         ) {
           // OPTIMIZED: generate at an efficient resolution, then upscale. The
           // original clip is kept; the upscaled copy is flagged non-native.
-          this.setStatus(
-            job,
-            'upscaling',
-            `${clip.width}x${clip.height} → ${project.width}x${project.height}`,
-          );
+          this.setStatus(job, 'upscaling', `${clip.width}x${clip.height} → ${frame.width}x${frame.height}`);
           const up = await this.s.providers.upscaler.upscale(
             {
               kind: 'video',
@@ -884,8 +897,8 @@ export class GenerationService {
               sourceMime: clip.mime,
               sourceWidth: clip.width ?? 0,
               sourceHeight: clip.height ?? 0,
-              targetWidth: project.width,
-              targetHeight: project.height,
+              targetWidth: frame.width,
+              targetHeight: frame.height,
             },
             ctx,
           );
@@ -939,8 +952,11 @@ export class GenerationService {
             sourceMime: src.mime,
             sourceWidth: src.width ?? 0,
             sourceHeight: src.height ?? 0,
-            targetWidth: project.width,
-            targetHeight: project.height,
+            // A vertical (Shorts) picture is upscaled to 1080×1920, a landscape one to the project size.
+            targetWidth:
+              (src.height ?? 0) > (src.width ?? 0) ? Math.min(project.width, project.height) : project.width,
+            targetHeight:
+              (src.height ?? 0) > (src.width ?? 0) ? Math.max(project.width, project.height) : project.height,
           },
           ctx,
         );

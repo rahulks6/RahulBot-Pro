@@ -32,7 +32,19 @@ export interface StorageProvider {
 // Keys: relative, lowercase-ish path segments; no traversal, no absolute paths,
 // no hidden files, limited extension set.
 const KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*(\/[a-zA-Z0-9][a-zA-Z0-9_.-]*)*$/;
-export const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'wav', 'mp3', 'mp4', 'json', 'txt']);
+export const ALLOWED_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'wav',
+  'mp3',
+  'mp4',
+  'json',
+  'txt',
+  'srt',
+  'vtt',
+]);
 export const MAX_OBJECT_BYTES = 512 * 1024 * 1024;
 
 export function validateStorageKey(key: string): void {
@@ -161,6 +173,10 @@ export function mimeForKey(key: string): string {
       return 'audio/mpeg';
     case 'mp4':
       return 'video/mp4';
+    case 'srt':
+      return 'application/x-subrip; charset=utf-8';
+    case 'vtt':
+      return 'text/vtt; charset=utf-8';
     case 'json':
       return 'application/json';
     default:

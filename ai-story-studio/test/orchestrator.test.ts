@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { after, describe, it } from 'node:test';
 import { findFfmpeg } from '../src/media/ffmpeg.ts';
 import { testStudio, type TestStudio } from './helpers.ts';
@@ -22,10 +23,10 @@ describe(
       const v = s.orchestrator.create({
         idea: 'Milo the fox cub helps a lost baby turtle find its way home to the river.',
         length: 'custom',
-        customMinutes: 0.5,
+        customMinutes: 0.8,
         styleId: '3d_kids',
         makeEpisode: true,
-        makeShorts: false,
+        makeShorts: true,
         shortsCount: 1,
         language: 'en',
         narrator: 'female',
@@ -54,6 +55,40 @@ describe(
         shots.length >= 3 && shots.every((sh) => sh.approved_image_asset_id && sh.approved_video_asset_id),
       );
       assert.ok(s.gpuRepo.active().length === 0, 'no GPU left running');
+      // Captions, Shorts (drawn in 9:16), thumbnails and metadata.
+      assert.ok(done.captions_srt_key && done.captions_vtt_key);
+      assert.match((await s.storage.get(done.captions_srt_key)).toString(), /^1\n00:00:\d\d,\d{3} --> /);
+      const shorts = s.videos.shorts(v.id);
+      assert.equal(shorts.length, 1);
+      const short = shorts[0]!;
+      assert.equal(short.status, 'ready', short.error_message ?? '');
+      assert.equal(short.framing, 'native');
+      assert.equal(s.stories.get(short.story_id!).format, 'vertical');
+      const size = (key: string) =>
+        execFileSync(ff!.ffprobe, [
+          '-v',
+          'error',
+          '-select_streams',
+          'v:0',
+          '-show_entries',
+          'stream=width,height',
+          '-of',
+          'csv=p=0',
+          s.storage.localPath(key),
+        ])
+          .toString()
+          .trim();
+      assert.equal(size(short.video_key!), '1080,1920');
+      const thumbs = JSON.parse(done.thumbnails_json) as string[];
+      assert.ok(thumbs.length >= 1 && done.thumbnail_key === thumbs[0]);
+      assert.equal(size(done.thumbnail_key!), '1280,720');
+      const meta = JSON.parse(done.metadata_json) as {
+        madeForKids: unknown;
+        containsSyntheticMedia: boolean;
+      };
+      assert.equal(meta.madeForKids, null, 'the audience is left for the person to choose');
+      assert.equal(meta.containsSyntheticMedia, true);
+      assert.match((JSON.parse(short.metadata_json) as { title: string }).title, /#Shorts$/);
     });
 
     it('a shot that keeps failing: 3 attempts, then "needs attention" with Skip, then CONTINUE finishes', async () => {

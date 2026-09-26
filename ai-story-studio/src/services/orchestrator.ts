@@ -7,7 +7,11 @@ import type { AttentionItem, StageStatus, Video } from '../repositories/videos.t
 import { studioProject } from './simple-studio.ts';
 import { importStoryPackage } from './story-package.ts';
 import { languageCode, scriptToPackage, targetShots, writeScript } from './story-writer.ts';
+import { cuesFor, toSrt, toVtt } from './captions.ts';
+import { episodeMetadata, shortMetadata } from './metadata.ts';
+import { createShortStory, planShorts } from './shorts.ts';
 import { TechnicalCheck } from './technical-check.ts';
+import { burnCaptions, renderThumbnail } from './thumbnails.ts';
 
 /**
  * The Auto Production Orchestrator: one idea → a finished video, READY FOR REVIEW.
@@ -62,6 +66,7 @@ export interface NewVideoInput {
 }
 
 const ROUNDS = 3;
+const NO_EPISODE = { status: 'skipped' as const, detail: 'no full episode was requested' };
 
 export class Orchestrator {
   readonly s: Studio;
@@ -84,6 +89,10 @@ export class Orchestrator {
       { stage: 'images', label: 'Drawing the scenes', run: (o, v, sig) => o.pictures(v, sig) },
       { stage: 'animation', label: 'Animating', run: (o, v, sig) => o.animate(v, sig) },
       { stage: 'final', label: 'Voices, music and the final video', run: (o, v) => o.buildEpisode(v) },
+      { stage: 'captions', label: 'Captions', run: (o, v) => o.captions(v) },
+      { stage: 'shorts', label: 'Shorts (9:16)', run: (o, v, sig) => o.shorts(v, sig) },
+      { stage: 'thumbnail', label: 'Thumbnails', run: (o, v) => o.thumbnails(v) },
+      { stage: 'metadata', label: 'Titles, descriptions and tags', run: (o, v) => o.metadata(v) },
       { stage: 'quality', label: 'Quality check', run: (o, v) => o.qualityCheck(v) },
     ];
   }
@@ -491,10 +500,12 @@ export class Orchestrator {
   // --- stages: images and animation -------------------------------------------------------------------
 
   async pictures(v: Video, signal: AbortSignal) {
+    if (!v.make_episode) return NO_EPISODE;
     return this.shotRounds(v, 'image', signal);
   }
 
   async animate(v: Video, signal: AbortSignal) {
+    if (!v.make_episode) return NO_EPISODE;
     return this.shotRounds(v, 'video', signal);
   }
 
@@ -505,7 +516,37 @@ export class Orchestrator {
   ): Promise<{ status: 'done'; detail: string }> {
     const storyId = this.storyOf(v);
     const stage = kind === 'image' ? 'images' : 'animation';
+    const { left, problems, total } = await this.rounds(v.id, storyId, kind, stage, signal);
+    if (left.length) {
+      throw new NeedsAttention(
+        left.map((sh) => {
+          const scene = this.s.stories.getScene(sh.scene_id);
+          return {
+            scene_id: scene.id,
+            shot_id: sh.id,
+            kind,
+            message: `Scene ${scene.position + 1}, shot ${sh.position + 1} needs attention: ${problems.get(sh.id) ?? 'no usable result'} (tried ${ROUNDS} times).`,
+          };
+        }),
+      );
+    }
+    return { status: 'done', detail: `${total} ${kind === 'image' ? 'pictures' : 'clips'} made and checked` };
+  }
+
+  /** The retry rounds for every shot of a story that has no approved picture (or clip) yet. */
+  private async rounds(
+    videoId: string,
+    storyId: string,
+    kind: 'image' | 'video',
+    stage: string,
+    signal: AbortSignal,
+  ): Promise<{
+    left: Array<{ id: string; scene_id: string; position: number }>;
+    problems: Map<string, string>;
+    total: number;
+  }> {
     const noun = kind === 'image' ? 'pictures' : 'clips';
+    const v = { id: videoId };
     const pending = () =>
       this.s.stories
         .listStoryShots(storyId)
@@ -562,21 +603,7 @@ export class Orchestrator {
       }
       this.detail(v.id, stage, `${total - pending().length} of ${total} ${noun} done`);
     }
-    const left = pending();
-    if (left.length) {
-      throw new NeedsAttention(
-        left.map((sh) => {
-          const scene = this.s.stories.getScene(sh.scene_id);
-          return {
-            scene_id: scene.id,
-            shot_id: sh.id,
-            kind,
-            message: `Scene ${scene.position + 1}, shot ${sh.position + 1} needs attention: ${problems.get(sh.id) ?? 'no usable result'} (tried ${ROUNDS} times).`,
-          };
-        }),
-      );
-    }
-    return { status: 'done', detail: `${total} ${noun} made and checked` };
+    return { left: pending(), problems, total };
   }
 
   /** Round 3 starts on a fresh GPU session (a new worker, possibly another GPU type). */
@@ -588,7 +615,8 @@ export class Orchestrator {
 
   // --- stage: final episode ------------------------------------------------------------------------
 
-  async buildEpisode(v: Video): Promise<{ status: 'done' | 'warn'; detail: string }> {
+  async buildEpisode(v: Video): Promise<{ status: 'done' | 'warn' | 'skipped'; detail: string }> {
+    if (!v.make_episode) return NO_EPISODE;
     const storyId = this.storyOf(v);
     const rec = await this.s.exports.buildFinal(storyId, 'landscape');
     if (rec.status !== 'complete') {
@@ -606,6 +634,252 @@ export class Orchestrator {
     return {
       status: warns.length ? 'warn' : 'done',
       detail: `${rec.width}×${rec.height}, ${rec.fps} fps, ${rec.duration_sec?.toFixed(1) ?? '?'} s${rec.is_mock ? ' (contains placeholders: developer test mode)' : ''}${warns.length ? ` · ${warns.map((w) => w.detail).join('; ')}` : ''}`,
+    };
+  }
+
+  // --- stage: captions -------------------------------------------------------------------------
+
+  async captions(v: Video): Promise<{ status: 'done' | 'warn' | 'skipped'; detail: string }> {
+    if (!v.make_episode) return NO_EPISODE;
+    const storyId = this.storyOf(v);
+    const keys = await this.writeCaptions(storyId, `videos/${v.id}/episode`);
+    this.s.videos.update(v.id, { captions_srt_key: keys?.srt ?? null, captions_vtt_key: keys?.vtt ?? null });
+    return keys
+      ? { status: 'done', detail: `${keys.count} captions (SRT and WebVTT)` }
+      : { status: 'warn', detail: 'no narration or dialogue, so there are no captions' };
+  }
+
+  private async writeCaptions(
+    storyId: string,
+    prefix: string,
+  ): Promise<{ srt: string; vtt: string; count: number } | null> {
+    const cues = cuesFor(this.s, this.s.timeline, storyId);
+    if (!cues.length) return null;
+    const srt = `${prefix}.srt`;
+    const vtt = `${prefix}.vtt`;
+    await this.s.storage.put(srt, toSrt(cues));
+    await this.s.storage.put(vtt, toVtt(cues));
+    return { srt, vtt, count: cues.length };
+  }
+
+  // --- stage: Shorts ---------------------------------------------------------------------------------
+
+  async shorts(
+    v: Video,
+    signal: AbortSignal,
+  ): Promise<{ status: 'done' | 'warn' | 'skipped'; detail: string }> {
+    if (!v.make_shorts) return { status: 'skipped', detail: 'no Shorts were requested' };
+    const storyId = this.storyOf(v);
+    let list = this.s.videos.shorts(v.id);
+    if (!list.length) {
+      const plans = planShorts(this.s.stories.tree(storyId), v.shorts_count);
+      if (!plans.length)
+        return { status: 'warn', detail: 'the story has no part that fits a Short (15–58 s)' };
+      list = this.s.videos.replaceShorts(
+        v.id,
+        plans.map((p) => ({
+          title: p.title,
+          hook: p.hook,
+          scene_ids_json: JSON.stringify({ scenes: p.sceneIds, shots: p.shotIds }),
+          duration_sec: p.seconds,
+        })),
+      );
+    }
+    const failed: string[] = [];
+    let reframed = 0;
+    for (const short of list) {
+      if (short.status === 'ready') continue;
+      const label = `Short ${short.idx + 1} of ${list.length}`;
+      try {
+        const plan = parseJson<{ scenes: string[]; shots: string[] }>(short.scene_ids_json, {
+          scenes: [],
+          shots: [],
+        });
+        let storyForShort = short.story_id;
+        if (!storyForShort) {
+          storyForShort = createShortStory(
+            this.s,
+            storyId,
+            {
+              title: short.title,
+              hook: short.hook,
+              sceneIds: plan.scenes,
+              shotIds: plan.shots,
+              seconds: short.duration_sec ?? 0,
+              score: 0,
+            },
+            `${this.s.videos.get(v.id).title} — Short ${short.idx + 1}`,
+          );
+          this.s.videos.updateShort(short.id, { story_id: storyForShort, status: 'generating' });
+        }
+        let framing: 'native' | 'reframed' = 'native';
+        for (const kind of ['image', 'video'] as const) {
+          this.detail(v.id, 'shorts', `${label}: ${kind === 'image' ? 'drawing in 9:16' : 'animating'}`);
+          const { left } = await this.rounds(v.id, storyForShort, kind, 'shorts', signal);
+          if (!left.length) continue;
+          // Last resort, recorded on the Short: the episode's own shot, reframed to 9:16.
+          const shortShots = this.s.stories.listStoryShots(storyForShort);
+          for (const sh of left) {
+            const src = plan.shots[shortShots.findIndex((x) => x.id === sh.id)];
+            const original = src ? this.s.stories.getShot(src) : null;
+            if (!original?.approved_image_asset_id || !original.approved_video_asset_id)
+              throw new AppError(
+                'VIDEO_GENERATION_FAILED',
+                `${label}: shot ${sh.position + 1} could not be made in 9:16.`,
+              );
+            this.s.stories.setShotState(sh.id, {
+              approved_image_asset_id: original.approved_image_asset_id,
+              approved_video_asset_id: original.approved_video_asset_id,
+              approval_state: 'approved',
+            });
+            framing = 'reframed';
+            reframed++;
+          }
+        }
+        this.detail(v.id, 'shorts', `${label}: voices, music and the 9:16 video`);
+        const rec = await this.s.exports.buildFinal(storyForShort, 'vertical');
+        if (rec.status !== 'complete' || !rec.master_asset_id)
+          throw new AppError(
+            'FFMPEG_FAILED',
+            `${label} could not be built: ${rec.error_message ?? 'unknown error'}`,
+          );
+        const master = this.s.assets.get(rec.master_asset_id);
+        const caps = await this.writeCaptions(storyForShort, `videos/${v.id}/short-${short.idx + 1}`);
+        let videoKey = master.storage_key;
+        if (caps && this.s.settings.get('app').burnShortsCaptions && this.s.ffmpeg && !rec.is_mock) {
+          const burned = await burnCaptions(
+            this.s.ffmpeg,
+            this.check.tempDir,
+            await this.s.storage.get(master.storage_key),
+            toSrt(cuesFor(this.s, this.s.timeline, storyForShort)),
+          );
+          if (burned) {
+            videoKey = `videos/${v.id}/short-${short.idx + 1}-captioned.mp4`;
+            await this.s.storage.put(videoKey, burned);
+          }
+        }
+        this.s.videos.updateShort(short.id, {
+          status: 'ready',
+          framing,
+          video_key: videoKey,
+          duration_sec: rec.duration_sec,
+          captions_srt_key: caps?.srt ?? null,
+          captions_vtt_key: caps?.vtt ?? null,
+          error_message: null,
+        });
+      } catch (err) {
+        const e = toAppError(err);
+        if (e.code === 'CANCELLED' || e.code === 'SESSION_BUDGET_REACHED' || e.code === 'BUDGET_EXCEEDED')
+          throw e;
+        this.s.videos.updateShort(short.id, { status: 'failed', error_message: e.message });
+        failed.push(`${label}: ${e.message}`);
+      }
+    }
+    const ready = this.s.videos.shorts(v.id).filter((x) => x.status === 'ready').length;
+    return failed.length || reframed
+      ? {
+          status: 'warn',
+          detail: `${ready} Short(s) ready${reframed ? `; ${reframed} shot(s) reframed from the episode instead of drawn in 9:16` : ''}${failed.length ? `; ${failed.join(' ')}` : ''}`,
+        }
+      : { status: 'done', detail: `${ready} Short(s) drawn natively in 9:16, with captions` };
+  }
+
+  // --- stage: thumbnails ----------------------------------------------------------------------------
+
+  async thumbnails(v: Video): Promise<{ status: 'done' | 'warn'; detail: string }> {
+    const storyId = this.storyOf(v);
+    const title = this.s.videos.get(v.id).title;
+    const made: string[] = [];
+    if (v.make_episode) {
+      const shots = this.s.stories.listStoryShots(storyId).filter((x) => x.approved_image_asset_id);
+      const cast = (id: string) => this.s.stories.shotCharacters(id).length;
+      const picks = [
+        [...shots].sort((a, b) => cast(b.id) - cast(a.id))[0],
+        shots[Math.floor(shots.length / 2)],
+        shots[shots.length - 1],
+      ].filter((x, i, arr) => x && arr.findIndex((y) => y?.id === x.id) === i);
+      for (const [i, sh] of picks.entries()) {
+        const asset = this.s.assets.get(sh!.approved_image_asset_id!);
+        const out = await renderThumbnail(this.s.ffmpeg, this.check.tempDir, {
+          image: await this.s.storage.get(asset.storage_key),
+          ext: asset.storage_key.split('.').pop() ?? 'png',
+          title,
+          vertical: false,
+        });
+        const key = `videos/${v.id}/thumbnail-${i + 1}.${out.ext}`;
+        await this.s.storage.put(key, out.data);
+        made.push(key);
+      }
+      this.s.videos.update(v.id, { thumbnails_json: JSON.stringify(made), thumbnail_key: made[0] ?? null });
+    }
+    let shortsDone = 0;
+    for (const short of this.s.videos.shorts(v.id).filter((x) => x.status === 'ready' && x.story_id)) {
+      const first = this.s.stories.listStoryShots(short.story_id!).find((x) => x.approved_image_asset_id);
+      if (!first) continue;
+      const asset = this.s.assets.get(first.approved_image_asset_id!);
+      const out = await renderThumbnail(this.s.ffmpeg, this.check.tempDir, {
+        image: await this.s.storage.get(asset.storage_key),
+        ext: asset.storage_key.split('.').pop() ?? 'png',
+        title: short.hook || title,
+        vertical: true,
+      });
+      const key = `videos/${v.id}/short-${short.idx + 1}-thumbnail.${out.ext}`;
+      await this.s.storage.put(key, out.data);
+      this.s.videos.updateShort(short.id, { thumbnail_key: key, thumbnails_json: JSON.stringify([key]) });
+      shortsDone++;
+    }
+    const detail = `${made.length} episode thumbnail choice(s)${shortsDone ? `, ${shortsDone} Short thumbnail(s)` : ''}${this.s.ffmpeg ? '' : ' (without the title: FFmpeg is not installed)'}`;
+    return { status: made.length || shortsDone ? 'done' : 'warn', detail };
+  }
+
+  // --- stage: metadata ------------------------------------------------------------------------------
+
+  async metadata(v: Video): Promise<{ status: 'done'; detail: string }> {
+    const now = this.s.videos.get(v.id);
+    const storyId = this.storyOf(now);
+    const tree = this.s.stories.tree(storyId);
+    const plan = parseJson<{ logline?: string; moral?: string; characters?: string[] }>(now.plan_json, {});
+    const characters = plan.characters ?? [];
+    if (now.make_episode) {
+      const view = this.s.timeline.view(storyId);
+      const firstStart = new Map<string, number>();
+      for (const item of view?.items.filter((i) => i.track === 'video' && i.source_type === 'shot') ?? []) {
+        const sceneId = this.s.stories.getShot(item.source_id).scene_id;
+        firstStart.set(sceneId, Math.min(firstStart.get(sceneId) ?? Infinity, item.start_sec));
+      }
+      const chapters = tree.scenes
+        .filter((sc) => firstStart.has(sc.scene.id))
+        .map((sc) => ({ startSec: Math.round(firstStart.get(sc.scene.id)!), title: sc.scene.title }));
+      const exp = now.episode_export_id ? this.s.reports.getExport(now.episode_export_id) : null;
+      const meta = episodeMetadata({
+        title: now.title,
+        logline: plan.logline ?? tree.story.synopsis,
+        moral: plan.moral ?? tree.story.moral,
+        characters,
+        style: videoStyle(now.style_id).label,
+        language: tree.story.language,
+        chapters,
+        totalSec: exp?.duration_sec ?? 0,
+      });
+      this.s.videos.update(v.id, { metadata_json: JSON.stringify(meta) });
+    }
+    const shorts = this.s.videos.shorts(v.id);
+    for (const short of shorts)
+      this.s.videos.updateShort(short.id, {
+        metadata_json: JSON.stringify(
+          shortMetadata({
+            episodeTitle: now.title,
+            hook: short.hook,
+            characters,
+            language: tree.story.language,
+            index: short.idx,
+            count: shorts.length,
+          }),
+        ),
+      });
+    return {
+      status: 'done',
+      detail: `drafted for the episode${shorts.length ? ` and ${shorts.length} Short(s)` : ''}; you review them before publishing`,
     };
   }
 

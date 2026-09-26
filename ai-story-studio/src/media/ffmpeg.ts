@@ -48,7 +48,7 @@ export interface RunResult {
 export function runTool(
   bin: string,
   args: string[],
-  opts: { timeoutMs?: number; signal?: AbortSignal } = {},
+  opts: { timeoutMs?: number; signal?: AbortSignal; cwd?: string } = {},
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -58,6 +58,7 @@ export function runTool(
         timeout: opts.timeoutMs ?? 30 * 60_000,
         maxBuffer: 64 * 1024 * 1024,
         ...(opts.signal ? { signal: opts.signal } : {}),
+        ...(opts.cwd ? { cwd: opts.cwd } : {}),
       },
       (err, stdout, stderr) => {
         if (err) {

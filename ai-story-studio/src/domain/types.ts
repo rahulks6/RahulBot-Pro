@@ -178,6 +178,8 @@ export interface Story extends Timestamps {
   target_duration_sec: number;
   status: StoryStatus;
   production_notes: string;
+  /** 'vertical' = a Short made natively in 9:16 (pictures and clips drawn vertically). */
+  format: 'landscape' | 'vertical';
 }
 
 export interface Scene extends Timestamps {

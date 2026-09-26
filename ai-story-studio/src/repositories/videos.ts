@@ -74,6 +74,8 @@ export interface Video {
 export interface VideoShort {
   id: string;
   video_id: string;
+  /** The vertical story this Short is drawn from. */
+  story_id: string | null;
   idx: number;
   title: string;
   hook: string;
@@ -85,6 +87,7 @@ export interface VideoShort {
   captions_srt_key: string | null;
   captions_vtt_key: string | null;
   thumbnail_key: string | null;
+  thumbnails_json: string;
   metadata_json: string;
   qc_json: string;
   error_message: string | null;
@@ -244,7 +247,7 @@ export class VideoRepository {
 
   replaceShorts(
     videoId: string,
-    shorts: Array<Pick<VideoShort, 'title' | 'hook' | 'scene_ids_json'>>,
+    shorts: Array<Pick<VideoShort, 'title' | 'hook' | 'scene_ids_json' | 'duration_sec'>>,
   ): VideoShort[] {
     this.db.transaction(() => {
       this.db.run('DELETE FROM video_shorts WHERE video_id = ?', videoId);

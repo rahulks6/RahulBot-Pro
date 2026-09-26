@@ -3,6 +3,7 @@ import { AppError, toAppError } from '../../lib/errors.ts';
 import { parseJson } from '../../lib/json.ts';
 import type { AttentionItem, Video } from '../../repositories/videos.ts';
 import type { Web } from '../app.ts';
+import { decodeImageUpload } from '../../services/simple-studio.ts';
 import { yes } from '../forms.ts';
 import { raw } from '../html.ts';
 import { button, card, html, inr, kv, mediaUrl, postForm, type SafeHtml } from '../ui.ts';
@@ -297,6 +298,32 @@ export function registerCreatePages(web: Web): void {
     );
   });
 
+  r.post('/videos/:id/thumbnail', (req) => {
+    const v = s.videos.get(req.params['id']!);
+    const key = req.form['key'] ?? '';
+    if (!parseJson<string[]>(v.thumbnails_json, []).includes(key))
+      throw new AppError('NOT_FOUND', 'That thumbnail is not one of this video’s.');
+    s.videos.update(v.id, { thumbnail_key: key });
+    return web.redirect(`/videos/${v.id}`, 'Thumbnail chosen.');
+  });
+  r.post(
+    '/videos/:id/thumbnail/upload',
+    async (req) => {
+      const v = s.videos.get(req.params['id']!);
+      const img = decodeImageUpload(req.form['image'] ?? '');
+      if (img.mime === 'image/webp')
+        throw new AppError('VALIDATION_FAILED', 'YouTube thumbnails must be JPEG or PNG.');
+      if (img.data.length > 2 * 1024 * 1024)
+        throw new AppError('VALIDATION_FAILED', 'YouTube thumbnails must be under 2 MB.');
+      const list = parseJson<string[]>(v.thumbnails_json, []);
+      const key = `videos/${v.id}/thumbnail-custom-${list.length + 1}.${img.ext}`;
+      await s.storage.put(key, img.data);
+      s.videos.update(v.id, { thumbnails_json: JSON.stringify([...list, key]), thumbnail_key: key });
+      return web.redirect(`/videos/${v.id}`, 'Your thumbnail is uploaded and chosen.');
+    },
+    8 * 1024 * 1024,
+  );
+
   // --- simple scene editor ------------------------------------------------------------------------------
 
   r.get('/videos/:id/edit', (req) => {
@@ -571,5 +598,80 @@ function videoReady(web: Web, v: Video): SafeHtml {
           )}
         </ul>`
       : html`<p>No problems found. (Technical checks only; watch the video before publishing.)</p>`,
-  )}`;
+  )}
+  ${extrasCards(web, v)}`;
+}
+
+/** Shorts, thumbnails and captions of a finished video. */
+function extrasCards(web: Web, v: Video): SafeHtml {
+  const s = web.studio;
+  const shorts = s.videos.shorts(v.id);
+  const thumbs = parseJson<string[]>(v.thumbnails_json, []);
+  return html`${shorts.length
+    ? card(
+        'Shorts',
+        html`<div class="shorts-row">
+          ${shorts.map(
+            (sh) =>
+              html`<figure>
+                ${sh.video_key
+                  ? html`<video
+                      controls
+                      preload="metadata"
+                      src="${mediaUrl(sh.video_key)}"
+                      ${sh.thumbnail_key ? raw(`poster="${mediaUrl(sh.thumbnail_key)}"`) : ''}
+                    ></video>`
+                  : html`<div class="nothumb">${sh.status}</div>`}
+                <figcaption>
+                  <strong>${sh.title}</strong><br />
+                  ${sh.duration_sec ? `${Math.round(sh.duration_sec)} s` : ''} ·
+                  ${sh.framing === 'native' ? 'drawn in 9:16' : 'some shots reframed from the episode'}
+                  ${sh.error_message ? html`<br /><span class="bad">${sh.error_message}</span>` : ''}
+                  ${sh.video_key ? html`<br /><a href="${mediaUrl(sh.video_key)}" download>Download</a>` : ''}
+                  ${sh.captions_srt_key
+                    ? html` · <a href="${mediaUrl(sh.captions_srt_key)}" download>Captions (SRT)</a>`
+                    : ''}
+                </figcaption>
+              </figure>`,
+          )}
+        </div>`,
+      )
+    : ''}
+  ${thumbs.length || v.thumbnail_key
+    ? card(
+        'Thumbnail',
+        html`<div class="ref-grid">
+            ${thumbs.map(
+              (k) =>
+                html`<figure>
+                  <img src="${mediaUrl(k)}" alt="" loading="lazy" />
+                  <figcaption>
+                    ${k === v.thumbnail_key
+                      ? html`<span class="badge good">chosen</span>`
+                      : button(`/videos/${v.id}/thumbnail`, 'Use this one', { key: k })}
+                  </figcaption>
+                </figure>`,
+            )}
+          </div>
+          ${postForm(
+            `/videos/${v.id}/thumbnail/upload`,
+            html`<label class="field"
+                ><span>Or upload your own (JPEG or PNG, 1280×720 recommended, under 2 MB)</span
+                ><input type="file" accept="image/png,image/jpeg" data-read-into="image" data-as="dataurl"
+              /></label>
+              <textarea name="image" hidden></textarea>
+              <button>Upload thumbnail</button>`,
+          )}`,
+      )
+    : ''}
+  ${v.captions_srt_key
+    ? card(
+        'Captions',
+        html`<p>
+          <a href="${mediaUrl(v.captions_srt_key)}" download>SRT</a> ·
+          ${v.captions_vtt_key ? html`<a href="${mediaUrl(v.captions_vtt_key)}" download>WebVTT</a>` : ''}
+          <span class="muted">(uploaded with the video to YouTube as the caption track)</span>
+        </p>`,
+      )
+    : ''}`;
 }
