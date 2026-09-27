@@ -42,6 +42,8 @@ export interface CloudPodSpec {
   registryAuthId?: string;
   /** Lowest host CUDA version the worker image needs (major.minor). */
   minCudaVersion?: string;
+  /** Container ENTRYPOINT override (exec form), e.g. the bootstrap for stock images. */
+  entrypoint?: string[];
 }
 
 export type CloudPodState = 'starting' | 'running' | 'stopped' | 'terminated' | 'unknown';

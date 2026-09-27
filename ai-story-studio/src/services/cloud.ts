@@ -7,7 +7,15 @@ import { AppError, toAppError } from '../lib/errors.ts';
 import type { Logger } from '../lib/logger.ts';
 import { runTool, type FfmpegTools } from '../media/ffmpeg.ts';
 import { CloudWorkerBridge } from '../providers/cloud/bridge.ts';
-import { CloudGpuProvider, ownedPodPrefix, WORKER_MIN_CUDA } from '../providers/cloud/gpu-provider.ts';
+import {
+  CloudGpuProvider,
+  effectiveWorkerImage,
+  ownedPodPrefix,
+  usesBootstrap,
+  WORKER_MIN_CUDA,
+} from '../providers/cloud/gpu-provider.ts';
+import { join } from 'node:path';
+import { appRoot } from '../lib/paths.ts';
 import type { FetchFn, SleepFn } from '../providers/cloud/http.ts';
 import { RunPodApi } from '../providers/cloud/runpod.ts';
 import type { CloudGpuApi, CloudPod, ContractReport } from '../providers/cloud/types.ts';
@@ -134,6 +142,7 @@ export class CloudService {
       logger: deps.logger,
       cloud: () => deps.settings.get('cloud'),
       gpu: () => deps.settings.get('gpu'),
+      workerDir: join(appRoot(), 'worker'),
       limits: () => {
         const l = effectiveLimits(deps.settings, deps.env, true);
         return { idleMinutes: l.idleMinutes, maxLifetimeMinutes: l.maxLifetimeMinutes };
@@ -440,8 +449,14 @@ export class CloudService {
     return result;
   }
 
+  /** The image pods run: the public PyTorch base image (bootstrap, default) or a prebuilt worker image. */
   workerImage(): string {
-    return this.d.env.cloudWorkerImage || this.d.settings.get('cloud').workerImage;
+    return effectiveWorkerImage(this.d.env, this.d.settings.get('cloud'));
+  }
+
+  /** True when pods receive the worker code from this app (no image to build or publish). */
+  bootstrapMode(): boolean {
+    return usesBootstrap(this.d.env, this.d.settings.get('cloud'));
   }
 
   /** The dry-run GPU step: VRAM filter, price ceiling and stock, with a useful reason when nothing fits. */

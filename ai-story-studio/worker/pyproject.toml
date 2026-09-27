@@ -28,7 +28,7 @@ ignore = ["S603", "S607", "S101", "RUF001", "RUF002"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["ais_worker", "tests"]
+files = ["ais_worker", "tests", "bootstrap"]
 exclude = ["ais_worker/fastapi_app.py"]
 
 [[tool.mypy.overrides]]

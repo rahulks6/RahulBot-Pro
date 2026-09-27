@@ -656,6 +656,17 @@ export class RunPodApi implements CloudGpuApi {
       body['mounts'] = { persistent: { size: spec.volume.sizeGb, path: spec.volume.path } };
     if (spec.volume?.kind === 'network')
       body['mounts'] = { network: [{ volumeId: spec.volume.volumeId, path: spec.volume.path }] };
+    if (spec.entrypoint) {
+      const t = this.createFieldTypes.get('entrypoint');
+      if (t === 'array' || this.createFieldTypes.size === 0) body['entrypoint'] = spec.entrypoint;
+      else if (this.createFieldTypes.get('args') === 'string')
+        body['args'] = JSON.stringify({ entrypoint: spec.entrypoint });
+      else
+        throw new AppError(
+          'CLOUD_BAD_REQUEST',
+          "RunPod's API no longer accepts a container start command, which the automatic worker setup needs. Nothing was created. Update AI Story Studio, or use a prebuilt worker image (Cloud GPU → Advanced → Worker source).",
+        );
+    }
     const diskField = this.optionalField(CONTAINER_DISK_FIELDS, 'number');
     if (diskField) body[diskField] = spec.containerDiskGb;
     const registryField = this.optionalField(REGISTRY_AUTH_FIELDS, 'string');

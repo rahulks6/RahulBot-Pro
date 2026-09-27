@@ -121,14 +121,14 @@ describe('Cloud GPU pages', () => {
 
   it('runs dry-run diagnostics without renting anything', async () => {
     rp.requests = [];
-    registry.repos.get('rahulks6/ai-story-studio-worker')!.visibility = 'private';
+    registry.repos.get('pytorch/pytorch')!.visibility = 'private'; // the image pods run (bootstrap default)
     const res = await post(cloudWeb.base, '/cloud/diagnostics', {});
     assert.equal(res.status, 303);
     const page = await (await fetch(cloudWeb.base + '/cloud')).text();
     assert.match(page, /Dry-run diagnostics/);
     assert.match(page, /cheapest: RTX A5000/);
     assert.match(page, /IMAGE REQUIRES AUTHENTICATION/);
-    registry.repos.get('rahulks6/ai-story-studio-worker')!.visibility = 'public';
+    registry.repos.get('pytorch/pytorch')!.visibility = 'public';
     assert.ok(!page.includes(KEY), 'the key never reaches the page');
     assert.equal(rp.requests.filter((r) => r.method === 'POST').length, 0);
   });

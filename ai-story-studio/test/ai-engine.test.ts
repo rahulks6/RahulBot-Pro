@@ -118,7 +118,15 @@ describe('AI Engine (Simple Mode)', () => {
     assert.equal(s.engine.status().state, 'NEEDS_ATTENTION');
   });
 
-  it('an unpublished AI worker is reported as the remaining step', async () => {
+  it('by default nothing has to be published: pods get the worker code from the app', async () => {
+    registry.repos.delete('rahulks6/ai-story-studio-worker');
+    await s.engine.connect(rp.apiKey);
+    assert.equal(s.engine.status().state, 'READY', JSON.stringify(s.engine.status().issues));
+    assert.equal(s.cloud.workerImage(), 'pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime');
+  });
+
+  it('with a prebuilt worker image (Advanced), an unpublished image is reported as the remaining step', async () => {
+    s.settings.set('cloud', { ...s.settings.get('cloud'), workerSource: 'image' });
     registry.repos.set('rahulks6/ai-story-studio-worker', {
       visibility: 'private',
       tags: { '1.2.0': { platforms: ['linux/amd64'] } },
@@ -133,6 +141,7 @@ describe('AI Engine (Simple Mode)', () => {
     });
     await s.engine.retest();
     assert.equal(s.engine.status().state, 'READY');
+    s.settings.set('cloud', { ...s.settings.get('cloud'), workerSource: 'bootstrap' });
   });
 
   it('SWITCH TO REAL AI leaves developer test mode: .env updated (backup kept), applied without restart', async () => {

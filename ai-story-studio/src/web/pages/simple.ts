@@ -93,12 +93,14 @@ export function registerSimplePages(web: Web): void {
           ],
           ['Last test', last ? `${last.ok ? 'OK' : 'FAILED'} · ${when(last.at)} · ${last.detail}` : 'never'],
           [
-            'AI worker download',
-            last
-              ? last.imageOk
-                ? 'OK — RunPod can download it'
-                : last.imageDetail
-              : 'checked by TEST CONNECTION',
+            'AI worker',
+            s.cloud.bootstrapMode()
+              ? `installed automatically on each GPU from this app (base image ${image}${last ? (last.imageOk ? ': OK' : `: ${last.imageDetail}`) : ''})`
+              : last
+                ? last.imageOk
+                  ? 'OK — RunPod can download it'
+                  : last.imageDetail
+                : 'checked by TEST CONNECTION',
           ],
           [
             'Key protection',
@@ -160,11 +162,17 @@ export function registerSimplePages(web: Web): void {
       ${realTestCard(web)}
       <section class="card" id="worker">
         <header><h2>The AI worker</h2></header>
-        <p>
-          RunPod downloads the AI worker (<code>${image}</code>) the first time a GPU starts. It must be
-          published once from GitHub. See <a href="/docs/runpod-setup">RunPod setup</a> for the one-time
-          steps.
-        </p>
+        ${s.cloud.bootstrapMode()
+          ? html`<p>
+              Nothing to build or publish: each GPU starts from the public PyTorch image
+              (<code>${image}</code>) and AI Story Studio sends it the AI worker code itself (checked with a
+              checksum). The first start on a new GPU volume installs the AI libraries, which takes a few
+              extra minutes.
+            </p>`
+          : html`<p>
+              RunPod downloads the prebuilt AI worker (<code>${image}</code>) the first time a GPU starts. It
+              must be public. See <a href="/docs/runpod-setup">RunPod setup</a>.
+            </p>`}
       </section>
       <p class="muted">
         Advanced: <a href="/cloud">Cloud GPU details</a> · <a href="/gpu">GPU & Costs</a> ·

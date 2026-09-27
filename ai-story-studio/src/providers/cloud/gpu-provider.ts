@@ -8,6 +8,7 @@ import { WorkerClient, type WorkerSystem } from '../worker/client.ts';
 import type { GPUProvider, GpuOffer, ProviderInstance, WorkerEndpoint } from '../types.ts';
 import { realSleep, type SleepFn } from './http.ts';
 import type { CloudGpuApi, CloudPodSpec, CloudProviderId } from './types.ts';
+import { BOOTSTRAP_ENTRYPOINT, bootstrapScript, workerBundle } from './worker-bundle.ts';
 
 /** Every pod this installation creates is named `ais-<installId>-<random>`; only those are ever touched. */
 export const POD_NAME_PREFIX = 'ais-';
@@ -40,7 +41,23 @@ export interface CloudGpuProviderDeps {
   extraEnv?: () => Record<string, string>;
   /** Refuses (throws) when the worker image cannot be pulled; runs before anything is rented. */
   preflightImage?: (image: string) => Promise<void>;
+  /** The app's worker folder (bootstrap pods receive their code from here). */
+  workerDir?: string;
 }
+
+/** The image a pod runs: the public base image (bootstrap) or a prebuilt worker image. */
+export function effectiveWorkerImage(env: AppEnv, cloud: CloudSettings): string {
+  if (usesBootstrap(env, cloud)) return cloud.bootstrapImage;
+  return env.cloudWorkerImage || cloud.workerImage;
+}
+
+/** Bootstrap unless the person chose a prebuilt image (setting, or CLOUD_WORKER_IMAGE in .env). */
+export function usesBootstrap(env: AppEnv, cloud: CloudSettings): boolean {
+  return cloud.workerSource === 'bootstrap' && !env.cloudWorkerImage;
+}
+
+/** Minutes a bootstrap pod may take to install its libraries on first use. */
+const BOOTSTRAP_MIN_TIMEOUT_MS = 25 * 60_000;
 
 export function ownedPodPrefix(installId: string): string {
   return `${POD_NAME_PREFIX}${installId}-`;
@@ -105,7 +122,11 @@ export class CloudGpuProvider implements GPUProvider {
   }
 
   private image(): string {
-    return this.d.env.cloudWorkerImage || this.d.cloud().workerImage;
+    return effectiveWorkerImage(this.d.env, this.d.cloud());
+  }
+
+  private bootstrap(): boolean {
+    return usesBootstrap(this.d.env, this.d.cloud());
   }
 
   async provision(
@@ -136,6 +157,22 @@ export class CloudGpuProvider implements GPUProvider {
     Object.assign(env, { WORKER_MODELS_FILE: '/app/models.cloud.json' }, this.d.extraEnv?.() ?? {});
     const hf = this.d.secrets.get('hfToken');
     if (hf) env['HF_TOKEN'] = hf;
+    const bootstrap = this.bootstrap();
+    if (bootstrap) {
+      if (!this.d.workerDir)
+        throw new AppError('PRECONDITION_FAILED', 'The AI worker code location is not configured.');
+      const bundle = workerBundle(this.d.workerDir);
+      Object.assign(env, {
+        AIS_BOOTSTRAP: bootstrapScript(this.d.workerDir),
+        AIS_CODE_SHA256: bundle.sha256,
+        AIS_APP_DIR: '/app',
+        AIS_PYENV_ROOT: '/workspace/ais-pyenv',
+        AIS_BOOTSTRAP_WAIT_MIN: String(Math.ceil(limits.maxLifetimeMinutes / 2) || 20),
+        WORKER_DATA_DIR: '/workspace/worker-data',
+        WORKER_MAX_UPLOAD_MB: '128',
+        PYTHONUNBUFFERED: '1',
+      });
+    }
     const spec: CloudPodSpec = {
       name: `${ownedPodPrefix(this.d.installId)}${suffix}`,
       image: this.image(),
@@ -151,7 +188,8 @@ export class CloudGpuProvider implements GPUProvider {
         : cloud.volumeGb > 0
           ? { volume: { kind: 'persistent' as const, sizeGb: cloud.volumeGb, path: '/workspace' } }
           : {}),
-      ...(cloud.registryAuthId ? { registryAuthId: cloud.registryAuthId } : {}),
+      ...(cloud.registryAuthId && !bootstrap ? { registryAuthId: cloud.registryAuthId } : {}),
+      ...(bootstrap ? { entrypoint: BOOTSTRAP_ENTRYPOINT } : {}),
     };
     const pod = await this.d.api().createPod(spec);
     this.d.secrets.saveWorkerToken(pod.id, token);
@@ -160,6 +198,7 @@ export class CloudGpuProvider implements GPUProvider {
       pod: pod.id,
       gpu: offer.gpuModel,
       image: spec.image,
+      workerSource: bootstrap ? 'bootstrap' : 'image',
     });
     return { providerInstanceId: pod.id, startupSeconds: 0 };
   }
@@ -195,6 +234,52 @@ export class CloudGpuProvider implements GPUProvider {
   }
 
   /**
+   * A bootstrap pod answers /health with `bootstrapping` until the worker runs. Sends the worker
+   * code when the pod asks for it, reports setup progress, and fails fast when setup failed.
+   * Returns 'worker' when the real worker answers (or the pod is not a bootstrap pod).
+   */
+  private async bootstrapStep(
+    endpoint: WorkerEndpoint,
+    onState?: (s: CloudLifecycleState, detail: string) => void,
+  ): Promise<'bootstrapping' | 'worker'> {
+    const health = await fetch(`${endpoint.url}/health`, { signal: AbortSignal.timeout(10_000) });
+    const body = (await health.json().catch(() => ({}))) as { status?: string };
+    if (body.status !== 'bootstrapping') return 'worker';
+    const auth = { Authorization: `Bearer ${endpoint.token}` };
+    const res = await fetch(`${endpoint.url}/bootstrap/status`, {
+      headers: auth,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.status === 401)
+      throw new AppError('WORKER_UNAVAILABLE', 'The GPU setup rejected its session token.');
+    const st = (await res.json()) as { stage: string; detail: string; error: string | null };
+    if (st.stage === 'failed')
+      throw new AppError(
+        'PROVISION_FAILED',
+        `The AI worker could not be set up on the GPU: ${(st.error ?? st.detail).slice(-400)}`,
+      );
+    if (st.stage === 'waiting_for_code') {
+      const bundle = workerBundle(this.d.workerDir!);
+      onState?.(
+        'WORKER_STARTING',
+        `sending the AI worker code (${Math.round(bundle.data.length / 1024)} KB)`,
+      );
+      const up = await fetch(`${endpoint.url}/bootstrap/code`, {
+        method: 'POST',
+        headers: { ...auth, 'Content-Type': 'application/gzip' },
+        body: new Uint8Array(bundle.data),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (up.status !== 202 && up.status !== 409) {
+        const msg = ((await up.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${up.status}`;
+        throw new AppError('PROVISION_FAILED', `The GPU refused the AI worker code: ${msg}`);
+      }
+      this.d.logger.info('worker code sent to bootstrap pod', { bytes: bundle.data.length });
+    } else onState?.('WORKER_STARTING', `setting up the AI worker: ${st.detail}`);
+    return 'bootstrapping';
+  }
+
+  /**
    * Wait until the pod runs AND the worker answers an authenticated request.
    * Throws WORKER_START_TIMEOUT after `timeoutMs`; the supervisor then terminates the pod.
    */
@@ -212,7 +297,8 @@ export class CloudGpuProvider implements GPUProvider {
         'WORKER_UNAVAILABLE',
         'The worker token for this GPU is missing; it cannot be used.',
       );
-    const deadline = this.now() + opts.timeoutMs;
+    const started = this.now();
+    let deadline = started + opts.timeoutMs;
     const poll = this.d.pollMs ?? 5000;
     let state: CloudLifecycleState = 'BOOTING';
     opts.onState?.('BOOTING', 'waiting for the GPU machine to start');
@@ -237,6 +323,19 @@ export class CloudGpuProvider implements GPUProvider {
           opts.onState?.('WORKER_STARTING', 'GPU is running; waiting for the AI worker');
         }
         let system: WorkerSystem | null = null;
+        const setup = await this.bootstrapStep(endpoint, opts.onState).catch((err: unknown) => {
+          const e = toAppError(err);
+          if (e.code === 'PROVISION_FAILED' || e.code === 'WORKER_UNAVAILABLE') throw e;
+          lastError = e.message;
+          return 'unknown' as const;
+        });
+        if (setup === 'bootstrapping') {
+          // First-time library installation takes longer than a prebuilt image: allow for it.
+          deadline = Math.max(deadline, started + BOOTSTRAP_MIN_TIMEOUT_MS);
+          await this.sleep(delay);
+          delay = Math.min(delay * 1.5, poll * 3);
+          continue;
+        }
         try {
           const client = new WorkerClient({ baseUrl: endpoint.url, token: endpoint.token, timeoutSec: 60 });
           await client.health();
@@ -274,7 +373,7 @@ export class CloudGpuProvider implements GPUProvider {
       await this.sleep(delay);
       delay = Math.min(delay * 1.5, poll * 3);
     }
-    const minutes = Math.round(opts.timeoutMs / 60_000);
+    const minutes = Math.round((deadline - started) / 60_000);
     throw new AppError(
       'WORKER_START_TIMEOUT',
       `Cloud worker did not become healthy within ${minutes} minute${minutes === 1 ? '' : 's'}${lastError ? ` (last error: ${lastError.slice(0, 160)})` : ''}.`,

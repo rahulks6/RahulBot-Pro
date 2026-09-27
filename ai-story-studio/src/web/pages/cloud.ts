@@ -301,7 +301,19 @@ export function registerCloudPages(web: Web): void {
           'Advanced',
           postForm(
             '/cloud/advanced',
-            html`<div class="row">
+            html`${select(
+                'Worker source',
+                'workerSource',
+                [
+                  ['bootstrap', 'Automatic (default): public PyTorch image + the worker code from this app'],
+                  ['image', 'Prebuilt worker image (below)'],
+                ],
+                cloud.workerSource,
+                {
+                  help: 'Automatic needs nothing built or published; the first start on a new volume installs the AI libraries (a few minutes).',
+                },
+              )}
+              <div class="row">
                 ${field('Worker image', 'workerImage', cloud.workerImage, {
                   help: s.env.cloudWorkerImage
                     ? `Overridden by CLOUD_WORKER_IMAGE in .env: ${s.env.cloudWorkerImage}`
@@ -420,6 +432,7 @@ export function registerCloudPages(web: Web): void {
     const f = req.form;
     s.settings.set('cloud', {
       ...s.settings.get('cloud'),
+      workerSource: f['workerSource'] ?? 'bootstrap',
       workerImage: f['workerImage'],
       registryAuthId: f['registryAuthId'] ?? '',
       cloudType: f['cloudType'],

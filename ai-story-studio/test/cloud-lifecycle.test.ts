@@ -5,6 +5,7 @@ import { encodePng } from '../src/media/png.ts';
 import { seedSmall, testStudio, type TestStudio } from './helpers.ts';
 import { FakeCloudWorker } from './fixtures/fake-worker.ts';
 import { MockRegistry } from './fixtures/mock-registry.ts';
+import { BOOTSTRAP_ENTRYPOINT } from '../src/providers/cloud/worker-bundle.ts';
 import { MockRunPod } from './fixtures/mock-runpod.ts';
 
 /**
@@ -47,6 +48,8 @@ function cloudStudio(
     cloudEnabled: true,
     realGeneration: true,
     workerStartTimeoutMinutes: 2,
+    // These tests cover the prebuilt-image path; the bootstrap default has its own test below.
+    workerSource: 'image',
     ...(opts.cloud ?? {}),
   });
   s.cloud.refresh();
@@ -176,6 +179,27 @@ describe('cloud GPU lifecycle (mock RunPod + fake worker, ₹0)', () => {
     assert.equal(s.secrets.workerToken(pod.id), undefined, 'session token forgotten');
     assert.equal(s.cloud.bridge.instanceId, null, 'providers unbound');
     assert.equal(worker.submitted[0]!.body['kind'], 'tts');
+  });
+
+  it('default (no image to publish): the pod runs the public PyTorch image with the bootstrap', async () => {
+    registry.repos.clear(); // nothing published anywhere; only Docker Hub's public PyTorch image
+    registry.repos.set('pytorch/pytorch', {
+      visibility: 'public',
+      tags: { '2.7.1-cuda12.6-cudnn9-runtime': { platforms: ['linux/amd64'] } },
+    });
+    s = cloudStudio({ cloud: { workerSource: 'bootstrap' } });
+    const jobId = queueNarration(s);
+    const r = await s.generation.processQueue();
+    assert.equal(r.completed, 1, r.messages.join(' '));
+    assert.equal(s.jobs.get(jobId).status, 'complete');
+    const pod = [...rp.pods.values()][0]!;
+    // The create request passed the mock's validation against RunPod's published create-pod schema.
+    assert.equal(pod.image, 'pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime');
+    assert.match(pod.env['AIS_CODE_SHA256']!, /^[0-9a-f]{64}$/);
+    assert.ok(pod.env['AIS_BOOTSTRAP']!.length > 1000, 'bootstrap script passed in the environment');
+    assert.deepEqual(pod.body['entrypoint'], BOOTSTRAP_ENTRYPOINT);
+    assert.equal(pod.body['registry'], undefined, 'no registry credential');
+    assert.equal(pod.status, 'TERMINATED');
   });
 
   it('starts shot images from the approved character reference (image-to-image)', async () => {

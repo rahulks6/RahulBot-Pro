@@ -17,7 +17,13 @@ export interface FakeRepo {
 export class MockRegistry {
   server!: Server;
   base = '';
-  repos = new Map<string, FakeRepo>();
+  /** The public PyTorch base image bootstrap pods run is on Docker Hub, like in reality. */
+  repos = new Map<string, FakeRepo>([
+    [
+      'pytorch/pytorch',
+      { visibility: 'public', tags: { '2.7.1-cuda12.6-cudnn9-runtime': { platforms: ['linux/amd64'] } } },
+    ],
+  ]);
   /** How the registry answers anonymous requests for private or unknown repositories. */
   deniedStyle: 'ghcr' | 'strict' = 'ghcr';
   /** Refuse to issue anonymous tokens at all (some registries do). */

@@ -60,6 +60,13 @@ export const cloudSchema = object({
   provider: enumOf(['runpod', 'vast', 'tensordock'] as const),
   cloudEnabled: boolean(),
   realGeneration: boolean(),
+  /**
+   * bootstrap (default): pods start from a public PyTorch/CUDA image and receive the worker code
+   * from this app (nothing to build or publish). image: a prebuilt worker image (`workerImage`).
+   */
+  workerSource: enumOf(['bootstrap', 'image'] as const),
+  /** Public base image for bootstrap pods (must match the worker's pinned PyTorch/CUDA). */
+  bootstrapImage: string({ min: 3, max: 300 }),
   workerImage: string({ min: 3, max: 300 }),
   registryAuthId: string({ max: 120 }),
   cloudType: enumOf(['SECURE', 'COMMUNITY'] as const),
@@ -283,6 +290,8 @@ export const DEFAULT_SETTINGS: AllSettings = {
     // Real AI on RunPod is the product: the only thing missing on a new install is the API key.
     cloudEnabled: true,
     realGeneration: true,
+    workerSource: 'bootstrap',
+    bootstrapImage: 'pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime',
     workerImage: 'ghcr.io/rahulks6/ai-story-studio-worker:1.2.0',
     registryAuthId: '',
     cloudType: 'SECURE',

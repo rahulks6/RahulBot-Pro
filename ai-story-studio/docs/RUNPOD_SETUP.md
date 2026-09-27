@@ -20,7 +20,20 @@ You need about 30 minutes the first time.
 3. Give it permission to **read and write** (the studio must be able to create and delete GPUs).
 4. **Copy the key** (it starts with `rpa_`). Keep it private, like a password. You paste it into the app in step 5; you never need to put it in a file.
 
-## Step 3: Publish the AI worker image (once)
+## Step 3: Nothing to publish (skip to step 4)
+
+Since version 1.2 a GPU starts from Docker Hub's public PyTorch image
+(`pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime`) and AI Story Studio sends it the AI worker code itself,
+over the GPU's HTTPS address, protected by the per-session token and a checksum fixed when the GPU was
+created. There is **no Docker, GitHub or GHCR step**. The first start on a new GPU volume installs the AI
+libraries (pinned versions, a few minutes; with a RunPod network volume they are kept for next time).
+
+> Status: this path is tested locally against the real bootstrap script and the real worker (without a
+> GPU); the first run on a real RunPod GPU is **NOT TESTED** yet — the Real Mode Test is that run.
+
+The rest of this step is only for **Advanced → Cloud GPU → Worker source: Prebuilt worker image**.
+
+### Optional: publish a prebuilt AI worker image
 
 The rented GPU runs the "AI worker" from a **container image**. RunPod downloads that image when the GPU starts, so it must be published where RunPod can read it **without a password**: GitHub Container Registry (`ghcr.io`), with the package set to **public**. The image holds program code only: **no model weights** (they download on the GPU the first time) and **no secrets**.
 
@@ -168,8 +181,7 @@ Real AI on RunPod is the default in version 1.2: there is nothing to unlock in `
    - "Not saved: RunPod authentication failed" means the key was mistyped or has no write permission.
      Create a new one.
 3. The page shows **RUNPOD CONNECTED ✓**, and Home shows **AI Engine: RUNPOD READY ✓**. If it says
-   **Needs attention**, each problem is listed with its one fix (for example the worker image of step 3
-   is not public yet).
+   **Needs attention**, each problem is listed with its one fix.
 
 Test and save never rent a GPU.
 
