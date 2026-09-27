@@ -1,0 +1,457 @@
+{
+  "_readme": "Candidate open-source models to BENCHMARK (Phase 3–4). Everything is disabled. Before enabling an entry: open its model card, confirm the repo id, revision and licence, then set enabled=true. Licence data was collected from public sources in September 2026 (see each entry's sources) and may change. Being listed here is not a recommendation; the choice is made from your benchmark results.",
+  "models": [
+    {
+      "id": "qwen-image",
+      "kind": "image",
+      "adapter": "diffusers_image",
+      "display_name": "Qwen-Image (1.0)",
+      "repo": "Qwen/Qwen-Image",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "Qwen-Image 1.0 / Edit / 2512 are Apache-2.0. Qwen-Image 2.1 moved to a non-commercial research licence, so do not switch to 2.1 without re-checking.",
+      "license_url": "https://huggingface.co/Qwen/Qwen-Image",
+      "min_vram_gb": 24,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "bfloat16",
+        "cpu_offload": true,
+        "num_inference_steps": 30,
+        "guidance_scale": 4.0
+      },
+      "sources": [
+        "https://www.simplismart.ai/comparisons/qwen-image-vs-flux-2-which-open-weight-image-model-should-you-deploy",
+        "https://cellcog.ai/blog/qwen-image-2-1/"
+      ]
+    },
+    {
+      "id": "flux2-klein-4b",
+      "kind": "image",
+      "adapter": "diffusers_image",
+      "display_name": "FLUX.2 [klein] 4B",
+      "repo": "black-forest-labs/FLUX.2-klein-4B",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "Verify the exact repo id on Hugging Face. Only the [klein] variant is Apache-2.0.",
+      "license_url": "https://huggingface.co/black-forest-labs",
+      "min_vram_gb": 12,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "bfloat16",
+        "cpu_offload": true,
+        "num_inference_steps": 28,
+        "guidance_scale": 3.5
+      },
+      "sources": [
+        "https://www.simplismart.ai/comparisons/qwen-image-vs-flux-2-which-open-weight-image-model-should-you-deploy"
+      ]
+    },
+    {
+      "id": "flux2-dev",
+      "kind": "image",
+      "adapter": "diffusers_image",
+      "display_name": "FLUX.2 [dev]",
+      "repo": "black-forest-labs/FLUX.2-dev",
+      "revision": "main",
+      "license": "FLUX [dev] Non-Commercial License",
+      "commercial_use": "non_commercial",
+      "license_notes": "Commercial deployment requires a separate licence from Black Forest Labs. Listed only to show the licence gate.",
+      "license_url": "https://huggingface.co/black-forest-labs",
+      "min_vram_gb": 24,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "bfloat16",
+        "cpu_offload": true
+      },
+      "sources": [
+        "https://www.simplismart.ai/comparisons/qwen-image-vs-flux-2-which-open-weight-image-model-should-you-deploy"
+      ]
+    },
+    {
+      "id": "sdxl-base",
+      "kind": "image",
+      "adapter": "diffusers_image",
+      "display_name": "Stable Diffusion XL base 1.0",
+      "repo": "stabilityai/stable-diffusion-xl-base-1.0",
+      "revision": "main",
+      "license": "CreativeML Open RAIL++-M",
+      "commercial_use": "conditional",
+      "license_notes": "Commercial use permitted subject to the licence's use-based restrictions.",
+      "license_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+      "license_acknowledged": false,
+      "min_vram_gb": 10,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "float16",
+        "num_inference_steps": 30,
+        "guidance_scale": 6.0,
+        "max_side": 1344
+      },
+      "sources": ["https://localaimaster.com/blog/best-local-image-models-compared"]
+    },
+    {
+      "id": "wan2.2-ti2v-5b",
+      "kind": "video",
+      "adapter": "diffusers_i2v",
+      "display_name": "Wan 2.2 TI2V 5B",
+      "repo": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "",
+      "license_url": "https://huggingface.co/Wan-AI",
+      "min_vram_gb": 24,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "bfloat16",
+        "cpu_offload": true,
+        "native_fps": 24,
+        "frame_multiple": 4,
+        "dim_multiple": 32,
+        "max_side": 1280,
+        "num_inference_steps": 40,
+        "guidance_scale": 5.0
+      },
+      "sources": [
+        "https://www.linkmodel.ai/blog/ltx-2-vs-wan-2-2",
+        "https://www.thundercompute.com/blog/best-open-source-ai-video-generation-models"
+      ]
+    },
+    {
+      "id": "wan2.1-i2v-14b-480p",
+      "kind": "video",
+      "adapter": "diffusers_i2v",
+      "display_name": "Wan 2.1 I2V 14B 480p",
+      "repo": "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "",
+      "license_url": "https://huggingface.co/Wan-AI",
+      "min_vram_gb": 40,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "bfloat16",
+        "cpu_offload": true,
+        "native_fps": 16,
+        "frame_multiple": 4,
+        "dim_multiple": 16,
+        "max_side": 832,
+        "num_inference_steps": 40,
+        "guidance_scale": 5.0
+      },
+      "sources": ["https://www.thundercompute.com/blog/best-open-source-ai-video-generation-models"]
+    },
+    {
+      "id": "ltx-video",
+      "kind": "video",
+      "adapter": "diffusers_i2v",
+      "display_name": "LTX-Video (check for newer LTX-2.x releases)",
+      "repo": "Lightricks/LTX-Video",
+      "revision": "main",
+      "license": "LTX community licence",
+      "commercial_use": "conditional",
+      "license_notes": "Free for companies under about US$10M annual revenue; a commercial tier applies above that. Read the current terms before acknowledging.",
+      "license_url": "https://huggingface.co/Lightricks",
+      "license_acknowledged": false,
+      "min_vram_gb": 16,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "bfloat16",
+        "native_fps": 24,
+        "frame_multiple": 8,
+        "dim_multiple": 32,
+        "max_side": 1216,
+        "num_inference_steps": 40,
+        "guidance_scale": 3.0
+      },
+      "sources": [
+        "https://www.linkmodel.ai/blog/ltx-2-vs-wan-2-2",
+        "https://insiderllm.com/guides/local-ai-video-generation/"
+      ]
+    },
+    {
+      "id": "kokoro-82m",
+      "kind": "tts",
+      "adapter": "kokoro_tts",
+      "display_name": "Kokoro 82M",
+      "repo": "hexgrad/Kokoro-82M",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "",
+      "license_url": "https://huggingface.co/hexgrad/Kokoro-82M",
+      "min_vram_gb": 0,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "lang_code": "a",
+        "default_voice": "af_heart",
+        "voices": {
+          "female": "af_heart",
+          "male": "am_michael",
+          "neutral": "af_sky"
+        }
+      },
+      "sources": [
+        "https://www.bentoml.com/blog/exploring-the-world-of-open-source-text-to-speech-models",
+        "https://www.tryspeakeasy.io/blog/open-source-text-to-speech-2026"
+      ]
+    },
+    {
+      "id": "chatterbox",
+      "kind": "tts",
+      "adapter": "chatterbox_tts",
+      "display_name": "Chatterbox (Resemble AI)",
+      "repo": "ResembleAI/chatterbox",
+      "revision": "main",
+      "license": "MIT",
+      "commercial_use": "allowed",
+      "license_notes": "Supports voice reference audio and emotion exaggeration.",
+      "license_url": "https://huggingface.co/ResembleAI/chatterbox",
+      "min_vram_gb": 6,
+      "enabled": false,
+      "default": false,
+      "params": {},
+      "sources": [
+        "https://findskill.ai/blog/best-open-source-tts-2026/",
+        "https://www.tryspeakeasy.io/blog/open-source-text-to-speech-2026"
+      ]
+    },
+    {
+      "id": "f5-tts",
+      "kind": "tts",
+      "adapter": "none",
+      "display_name": "F5-TTS",
+      "repo": "SWivid/F5-TTS",
+      "revision": "main",
+      "license": "CC-BY-NC-4.0 (weights)",
+      "commercial_use": "non_commercial",
+      "license_notes": "Non-commercial only. Listed so it is not picked by mistake.",
+      "license_url": "https://huggingface.co/SWivid/F5-TTS",
+      "min_vram_gb": 6,
+      "enabled": false,
+      "default": false,
+      "params": {},
+      "sources": ["https://www.bentoml.com/blog/exploring-the-world-of-open-source-text-to-speech-models"]
+    },
+    {
+      "id": "ffmpeg-lanczos",
+      "kind": "upscale",
+      "adapter": "ffmpeg_upscale",
+      "display_name": "FFmpeg Lanczos resize (non-AI baseline)",
+      "repo": "",
+      "revision": "",
+      "license": "FFmpeg (LGPL/GPL build dependent)",
+      "commercial_use": "allowed",
+      "license_notes": "Deterministic resampling, no model weights. Baseline to compare AI upscalers against.",
+      "license_url": "https://ffmpeg.org/legal.html",
+      "min_vram_gb": 0,
+      "enabled": true,
+      "default": false,
+      "params": {
+        "flags": "lanczos"
+      },
+      "sources": ["https://ffmpeg.org/legal.html"]
+    },
+    {
+      "id": "real-esrgan",
+      "kind": "upscale",
+      "adapter": "spandrel_upscale",
+      "display_name": "Real-ESRGAN x4plus (via spandrel)",
+      "repo": "xinntao/Real-ESRGAN",
+      "revision": "",
+      "license": "BSD-3-Clause",
+      "commercial_use": "allowed",
+      "license_notes": "Download RealESRGAN_x4plus.pth from the official GitHub release and verify the licence of that weights file. The x4 result is resized to the exact target with Lanczos.",
+      "license_url": "https://github.com/xinntao/Real-ESRGAN",
+      "min_vram_gb": 4,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "weights_file": "~/models/RealESRGAN_x4plus.pth",
+        "tile": 512,
+        "tile_pad": 16,
+        "half": true
+      },
+      "sources": ["https://github.com/xinntao/Real-ESRGAN", "https://github.com/chaiNNer-org/spandrel"]
+    },
+    {
+      "id": "ace-step-1.5",
+      "kind": "music",
+      "adapter": "none",
+      "display_name": "ACE-Step 1.5 (no adapter yet)",
+      "repo": "ace-step/ACE-Step-1.5",
+      "revision": "",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "",
+      "license_url": "https://github.com/ace-step/ACE-Step-1.5",
+      "min_vram_gb": 12,
+      "enabled": false,
+      "default": false,
+      "params": {},
+      "sources": [
+        "https://github.com/ace-step/ACE-Step-1.5",
+        "https://www.spheron.network/blog/deploy-open-source-ai-music-generation-gpu-cloud-2026/"
+      ]
+    },
+    {
+      "id": "musicgen",
+      "kind": "music",
+      "adapter": "none",
+      "display_name": "MusicGen",
+      "repo": "facebook/musicgen-medium",
+      "revision": "",
+      "license": "CC-BY-NC-4.0 (weights)",
+      "commercial_use": "non_commercial",
+      "license_notes": "Outputs cannot be used commercially. Listed so it is not picked by mistake.",
+      "license_url": "https://huggingface.co/facebook/musicgen-medium",
+      "min_vram_gb": 12,
+      "enabled": false,
+      "default": false,
+      "params": {},
+      "sources": ["https://www.spheron.network/blog/deploy-open-source-ai-music-generation-gpu-cloud-2026/"]
+    },
+    {
+      "id": "stable-audio-open",
+      "kind": "sfx",
+      "adapter": "stable_audio",
+      "display_name": "Stable Audio Open 1.0 (SFX / ambience)",
+      "repo": "stabilityai/stable-audio-open-1.0",
+      "revision": "",
+      "license": "Stability AI Community License",
+      "commercial_use": "conditional",
+      "license_notes": "Free commercial use under US$1M annual revenue; the licence is revocable and has conditions.",
+      "license_url": "https://huggingface.co/stabilityai/stable-audio-open-1.0",
+      "license_acknowledged": false,
+      "min_vram_gb": 12,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "float16",
+        "num_inference_steps": 100,
+        "guidance_scale": 7.0,
+        "crossfade_sec": 1.0
+      },
+      "sources": [
+        "https://stability.ai/news-updates/introducing-stable-audio-open",
+        "https://www.therundown.ai/tools/stable-audio-3-0"
+      ]
+    },
+    {
+      "id": "stable-audio-open-music",
+      "kind": "music",
+      "adapter": "stable_audio",
+      "display_name": "Stable Audio Open 1.0 (music beds)",
+      "repo": "stabilityai/stable-audio-open-1.0",
+      "revision": "",
+      "license": "Stability AI Community License",
+      "commercial_use": "conditional",
+      "license_notes": "Free commercial use under US$1M annual revenue; the licence is revocable and has conditions. Generates up to ~47 s per call; longer beds are tiled with crossfades. Community reports say it is stronger at SFX/ambience than at music, so benchmark it against ACE-Step.",
+      "license_url": "https://huggingface.co/stabilityai/stable-audio-open-1.0",
+      "license_acknowledged": false,
+      "min_vram_gb": 12,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "dtype": "float16",
+        "num_inference_steps": 100,
+        "guidance_scale": 7.0,
+        "max_section_sec": 47,
+        "max_sections": 3,
+        "crossfade_sec": 1.0,
+        "music_style": "cinematic, warm, well mixed, no vocals"
+      },
+      "sources": [
+        "https://stability.ai/news-updates/introducing-stable-audio-open",
+        "https://www.therundown.ai/tools/stable-audio-3-0"
+      ]
+    },
+    {
+      "id": "latentsync",
+      "kind": "lipsync",
+      "adapter": "command_lipsync",
+      "display_name": "LatentSync (local checkout, command adapter)",
+      "repo": "bytedance/LatentSync",
+      "revision": "",
+      "license": "Apache-2.0",
+      "commercial_use": "allowed",
+      "license_notes": "Runs your local LatentSync checkout. Check the argv against the version you installed; the example follows the project README (September 2026).",
+      "license_url": "https://github.com/bytedance/LatentSync",
+      "min_vram_gb": 18,
+      "enabled": false,
+      "default": false,
+      "params": {
+        "cwd": "/opt/LatentSync",
+        "argv": [
+          "/opt/LatentSync/.venv/bin/python",
+          "-m",
+          "scripts.inference",
+          "--unet_config_path",
+          "configs/unet/stage2.yaml",
+          "--inference_ckpt_path",
+          "checkpoints/latentsync_unet.pt",
+          "--inference_steps",
+          "20",
+          "--guidance_scale",
+          "1.5",
+          "--video_path",
+          "{video}",
+          "--audio_path",
+          "{audio}",
+          "--video_out_path",
+          "{output}"
+        ],
+        "timeout_sec": 1800
+      },
+      "sources": [
+        "https://github.com/bytedance/LatentSync",
+        "https://tomodahinata.com/en/blog/ai-lip-sync-talking-head-model-selection-guide-2026"
+      ]
+    },
+    {
+      "id": "musetalk",
+      "kind": "lipsync",
+      "adapter": "none",
+      "display_name": "MuseTalk (no adapter yet: MuseTalk inference is config-file driven; use command_lipsync with a wrapper script)",
+      "repo": "TMElyralab/MuseTalk",
+      "revision": "",
+      "license": "MIT (code); model weights usable commercially per the README",
+      "commercial_use": "allowed",
+      "license_notes": "",
+      "license_url": "https://github.com/TMElyralab/MuseTalk",
+      "min_vram_gb": 8,
+      "enabled": false,
+      "default": false,
+      "params": {},
+      "sources": ["https://github.com/TMElyralab/MuseTalk"]
+    },
+    {
+      "id": "wav2lip",
+      "kind": "lipsync",
+      "adapter": "none",
+      "display_name": "Wav2Lip (open-source release)",
+      "repo": "Rudrabha/Wav2Lip",
+      "revision": "",
+      "license": "Non-commercial (trained on LRS2)",
+      "commercial_use": "non_commercial",
+      "license_notes": "The open-source release cannot be used commercially. Listed so it is not picked by mistake.",
+      "license_url": "https://github.com/Rudrabha/Wav2Lip",
+      "min_vram_gb": 4,
+      "enabled": false,
+      "default": false,
+      "params": {},
+      "sources": ["https://lipsync.com/blog/open-source-lip-sync"]
+    }
+  ]
+}

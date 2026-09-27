@@ -1,0 +1,21 @@
+# LOCAL GPU runtime for the worker (installed by System Health → "Install GPU runtime", or by hand).
+# PyTorch is installed FIRST from the CUDA wheel index that matches your NVIDIA driver
+# (the app picks cu128 / cu126 / cu118), e.g.:
+#   python -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126
+# These pins match the cloud worker image (requirements-cloud.txt), which is build-tested.
+diffusers==0.35.1
+transformers==4.56.1
+accelerate==1.10.1
+huggingface_hub==0.34.4
+sentencepiece==0.2.0
+protobuf==5.29.5
+pillow==11.3.0
+# Text-to-speech (Kokoro, Apache-2.0; Hindi uses espeak-ng via misaki)
+kokoro==0.9.4
+soundfile==0.13.1
+# Music / SFX / ambience (Stable Audio Open via diffusers)
+torchsde==0.2.6
+# AI upscaling (Real-ESRGAN weights loaded with spandrel)
+spandrel==0.4.1
+# Not included: chatterbox-tts (its package pins an older PyTorch; install it in a separate
+# environment if you need it).
