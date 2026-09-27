@@ -135,4 +135,39 @@ def system_report(
         "mock_models": mock_models,
         "models": models,
         "jobs": job_counts,
+        "installed_packages": installed_packages(),
+        "model_revisions": model_revisions(),
     }
+
+
+def model_revisions() -> dict[str, str]:
+    """The exact Hugging Face commits in the model cache ("org/name@main" → commit), for the test report."""
+    root = os.environ.get("HF_HUB_CACHE") or (
+        os.path.join(os.environ["HF_HOME"], "hub") if os.environ.get("HF_HOME") else os.path.expanduser("~/.cache/huggingface/hub")
+    )
+    out: dict[str, str] = {}
+    base = Path(root)
+    if not base.is_dir():
+        return out
+    for repo in sorted(base.glob("models--*")):
+        name = repo.name[len("models--") :].replace("--", "/", 1)
+        for ref in sorted((repo / "refs").glob("*")) if (repo / "refs").is_dir() else []:
+            try:
+                sha = ref.read_text().strip()
+            except OSError:
+                continue
+            if sha:
+                out[f"{name}@{ref.name}"] = sha[:40]
+    return out
+
+
+def installed_packages() -> list[str]:
+    """The exact library versions the GPU bootstrap installed (name==version), for the test report."""
+    path = os.environ.get("AIS_INSTALLED_FILE", "")
+    if not path:
+        return []
+    try:
+        lines = Path(path).read_text().splitlines()
+    except OSError:
+        return []
+    return [x.strip() for x in lines if "==" in x][:400]

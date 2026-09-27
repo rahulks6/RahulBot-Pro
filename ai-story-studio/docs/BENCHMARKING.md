@@ -1,5 +1,7 @@
 # Benchmarking real models on your GPU (Phases 3–4)
 
+> Written for Phase 3–4 (the phase notes below are historical). Current models and licences: [MODEL_SETUP.md](MODEL_SETUP.md).
+
 The build environment has no GPU and no access to the model hub, so **real benchmarks must be run on your own GPU machine**. Everything below runs locally and **rents nothing**.
 
 ## 1. Prepare the worker machine

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..catalog import CatalogEntry
@@ -25,6 +26,10 @@ EXAGGERATION = {
     "excited": 0.85,
     "angry": 0.9,
 }
+
+
+# Kokoro voice names: language letter + f/m + "_" + name, e.g. af_heart, bm_george, hf_alpha, hm_psi.
+KOKORO_VOICE = re.compile(r"[abefhijpz][fm]_[a-z]+")
 
 
 def normalize_language(code: str) -> str:
@@ -112,9 +117,11 @@ class KokoroTts(Model[AudioRequest]):
 
     def voice_for(self, request: AudioRequest, lang: dict[str, Any] | None = None) -> str:
         voices: dict[str, str] = (lang or {}).get("voices") or self.entry.params.get("voices", {})
-        # A locked voice profile may pin an explicit Kokoro voice id ("kokoro:af_bella").
+        # A voice profile may pin an explicit Kokoro voice ("kokoro:af_bella", "kokoro:hm_omega"). Anything
+        # else (e.g. the app's own profile id "vox_k3j2…") is NOT a Kokoro voice and must not be sent to
+        # Kokoro, which would fail to load it: the presentation's default voice is used instead.
         explicit = request.voice_identity.split(":", 1)[-1]
-        if explicit and explicit.replace("_", "").isalnum() and "_" in explicit:
+        if KOKORO_VOICE.fullmatch(explicit):
             return explicit
         return voices.get(request.presentation) or str(self.entry.params.get("default_voice", "af_heart"))
 

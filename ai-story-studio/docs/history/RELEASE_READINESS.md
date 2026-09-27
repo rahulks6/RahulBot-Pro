@@ -1,3 +1,8 @@
+> **HISTORICAL DOCUMENTATION — NOT CURRENT SETUP INSTRUCTIONS.** This file records an earlier
+> release (v1.0–v1.2). Versions, test counts, the worker image on GHCR and other details in it are
+> out of date. Current setup: [README](../../README.md) → [RUNPOD_SETUP.md](../RUNPOD_SETUP.md);
+> current status: [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
+
 # AI Story Studio v1.1.1 — release readiness
 
 **Overall: READY for mock-mode production work on Windows. NOT READY for real cloud generation** until the three steps at the end are done by you. Nothing in this release enables paid generation. The defaults stay `MOCK_GENERATION=true` and `ENABLE_CLOUD_GPU=false`.

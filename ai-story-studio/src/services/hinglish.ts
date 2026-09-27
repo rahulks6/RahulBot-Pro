@@ -109,6 +109,10 @@ export const FORMAL_HINDI: Record<string, string> = {
 /** Frequent Hindi words in Roman → Devanagari (speech text). Unknown words stay Latin (English phonemizer). */
 export const HINDI_WORDS: Record<string, string> = {
   naam: 'नाम',
+  doosri: 'दूसरी',
+  doosra: 'दूसरा',
+  doosre: 'दूसरे',
+  dusri: 'दूसरी',
   chaloge: 'चलोगे',
   chalenge: 'चलेंगे',
   magar: 'मगर',

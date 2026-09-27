@@ -1,4 +1,4 @@
-# AI Story Studio - uninstaller (v1.3.0)
+# AI Story Studio - uninstaller (v1.3.1)
 #
 # Started from Settings > Apps > AI Story Studio > Uninstall, or the Start Menu entry
 # "Uninstall AI Story Studio". It removes the app files, the shortcuts and the Apps entry.

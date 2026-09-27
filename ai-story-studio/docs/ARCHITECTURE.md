@@ -50,7 +50,7 @@ Runtime dependencies: **none**. Dev dependencies are TypeScript, ESLint, Prettie
 ```
 ai-story-studio/
 ├── migrations/                 numbered SQL migrations (schema_migrations table)
-├── docs/                       ARCHITECTURE, STORY_PACKAGE, PHASE1_REPORT, examples/
+├── docs/                       current guides; docs/history/ = earlier reports (not current)
 ├── src/
 │   ├── app/studio.ts           composition root (DB, storage, providers, repositories, services)
 │   ├── cli/                    migrate, seed-demo
@@ -290,7 +290,7 @@ Studio (TypeScript)                                   Worker (Python, worker/ais
   - `generation_jobs.remote_job_id`, `gpu_instance_id` and `remote_submitted_at`;
   - the `app_meta` and `cloud_tests` tables.
 
-See [CLOUD_GPU_SETUP.md](CLOUD_GPU_SETUP.md).
+See [RUNPOD_SETUP.md](RUNPOD_SETUP.md) (the Phase 5 design note is kept in [history/CLOUD_GPU_SETUP.md](history/CLOUD_GPU_SETUP.md)).
 
 ## 20. Version 1.2: idea → video → YouTube
 
@@ -380,3 +380,27 @@ SERIES pages (src/web/pages/series.ts)          PUBLISH pages (src/web/pages/pub
 `publications.channel_profile_id`, `publications.localization_id`. Additive only; existing videos
 and publications keep working (English, the original YouTube connection). See SERIES_SYSTEM.md,
 LOCALIZATION.md and HINGLISH_STYLE_GUIDE.md.
+
+## 22. Version 1.3.1: hardening and real validation
+
+No new product features; the release proves (or honestly blocks) the real engine.
+
+- **Real Mode Test** (`services/real-mode-test.ts`, Advanced → Real Mode Test): 18 automated stages +
+  4 review stages decided by a person (picture, motion, English voice, Hinglish voice). Image validation
+  (decode, size, luma range: not blank/black) and motion validation (frames, duration, freezedetect,
+  mid-frame luma) run locally with FFmpeg; `test_english.mp4` and `test_hinglish.mp4` are built from the
+  SAME clip; `verified()` = all automated PASS + all reviews PASS. Clean-up is reported for success,
+  failure, cancel and timeout, including GPUs the supervisor rented and terminated during a failed
+  start.
+- **Character consistency test** (same service, `kind = 'consistency'`): canonical reference + 12 shots
+  through the generation service's reference mechanism (image-to-image at the configured strength +
+  reference images), validation, a 5 × 3 contact sheet (FFmpeg `tile`), a PASS / NEEDS IMPROVEMENT / FAIL
+  verdict with per-criterion notes.
+- **Bilingual scene test**: the normal orchestrator (`projectId` = "Technical tests (not series canon)",
+  `localizations = ['hi-Latn']`), so the pictures and clips are made once and shared.
+- **Reproducibility records**: the bootstrap writes `installed-packages.txt` (pip `--format=freeze` of
+  the pyenv + the image's torch pins); the worker's `/system` returns it and `model_revisions` (the
+  Hugging Face cache refs → commits). The Real Mode Test stores both with its results.
+- **Fixes**: Kokoro accepts only real voice names (`[abefhijpz][fm]_name`), never app profile ids;
+  BUILD FINAL fails without FFmpeg outside developer test mode; the installer checks all migrations and
+  the v1.3 files; a cancelled job is reported NOT TESTED, not FAIL.

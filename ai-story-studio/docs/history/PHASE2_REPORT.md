@@ -1,3 +1,8 @@
+> **HISTORICAL DOCUMENTATION — NOT CURRENT SETUP INSTRUCTIONS.** This file records an earlier
+> release (v1.0–v1.2). Versions, test counts, the worker image on GHCR and other details in it are
+> out of date. Current setup: [README](../../README.md) → [RUNPOD_SETUP.md](../RUNPOD_SETUP.md);
+> current status: [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
+
 # Phase 2 completion report: local Python AI worker
 
 **Status: Phase 2 implemented. Waiting for human approval before Phase 3.** No paid cloud infrastructure was started and no paid API was called. The cost was ₹0.

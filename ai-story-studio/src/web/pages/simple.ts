@@ -1,8 +1,12 @@
+import { existsSync } from 'node:fs';
 import { VIDEO_LENGTHS, VIDEO_STYLES } from '../../domain/video-styles.ts';
 import { AppError, toAppError } from '../../lib/errors.ts';
 import type { Video } from '../../repositories/videos.ts';
 import type { EngineStatus } from '../../services/engine.ts';
+import { HINGLISH } from '../../services/localization.ts';
+import type { MilestoneRecord } from '../../services/real-mode-test.ts';
 import type { Web } from '../app.ts';
+import { startInBackground } from './create.ts';
 import { continueSeriesCard } from './series.ts';
 import { yes } from '../forms.ts';
 import { raw } from '../html.ts';
@@ -25,6 +29,12 @@ import {
  * Simple Mode: Home, the AI Engine page and Simple Settings. Plain words only: no model names,
  * CUDA versions, VRAM or pod ids (those stay in Advanced Mode).
  */
+/** The technical bilingual scene (spec §27): original characters, not series canon. */
+export const SCENE_TEST_IDEA =
+  'Two young explorers, Aira (a curious girl with dark wavy hair and a teal jacket) and Kabir (a brave boy with a red scarf and goggles), enter an abandoned future laboratory. Their small floating robot detects a mysterious signal. A dormant portal suddenly activates and glows. Short lively dialogue, a surprised ending.';
+
+type RunRow = { id: string; status: string; started_at: string; gpu_model: string | null; test_kind: string };
+
 export function registerSimplePages(web: Web): void {
   const s = web.studio;
   const r = web.router;
@@ -233,16 +243,258 @@ export function registerSimplePages(web: Web): void {
     const { record } = await s.realTest.prepare();
     return web.redirect(`/settings/ai-engine/real-test/${record.id}`);
   });
+  /** The files the test produced, straight from storage (only what exists is shown). */
+  const outputs = (id: string): SafeHtml => {
+    const has = (name: string) => {
+      const key = `real-tests/${id}/${name}`;
+      try {
+        return existsSync(s.storage.localPath(key)) ? key : null;
+      } catch {
+        return null;
+      }
+    };
+    const img = has('test_image.png') ?? has('test_image.jpg');
+    const clip = has('test_clip.mp4');
+    const en = has('test_english.mp4');
+    const hi = has('test_hinglish.mp4');
+    const enVoice = has('test_english_voice.wav');
+    const hiVoice = has('test_hinglish_voice.wav');
+    if (!img && !clip && !en && !hi) return html``;
+    return html`<h3>What the GPU made</h3>
+      <div class="row">
+        ${img
+          ? html`<figure>
+              <img src="${mediaUrl(img)}" alt="the real test image" style="max-width:360px" />
+              <figcaption>Image</figcaption>
+            </figure>`
+          : ''}
+        ${clip
+          ? html`<figure>
+              <video controls src="${mediaUrl(clip)}" style="max-width:360px"></video>
+              <figcaption>Animated clip (the shared master)</figcaption>
+            </figure>`
+          : ''}
+      </div>
+      <div class="row">
+        ${en
+          ? html`<figure>
+              <video class="player" controls src="${mediaUrl(en)}"></video>
+              <figcaption>
+                <a href="${mediaUrl(en)}" download="test_english.mp4">test_english.mp4</a>
+              </figcaption>
+            </figure>`
+          : ''}
+        ${hi
+          ? html`<figure>
+              <video class="player" controls src="${mediaUrl(hi)}"></video>
+              <figcaption>
+                <a href="${mediaUrl(hi)}" download="test_hinglish.mp4">test_hinglish.mp4</a>
+              </figcaption>
+            </figure>`
+          : ''}
+      </div>
+      ${enVoice ? html`<p>English voice: <audio controls src="${mediaUrl(enVoice)}"></audio></p>` : ''}
+      ${hiVoice ? html`<p>Hinglish voice: <audio controls src="${mediaUrl(hiVoice)}"></audio></p>` : ''}`;
+  };
+  const REVIEW_HINT: Record<string, string> = {
+    'Your review: the picture':
+      'An original young explorer with the robot, clean 3D style, no broken faces or hands?',
+    'Your review: the motion':
+      'Does it really move (turn, robot rises, scanner glow, camera push-in), without melting?',
+    'Your review: English voice':
+      'Clear, natural, correct words: "The signal is coming from somewhere beyond the portal."',
+    'Your review: Hinglish voice':
+      'Natural Hindi rhythm and pronunciation, English tech words sound English, no broken or robotic sounds?',
+  };
+  const reviewForms = (t: MilestoneRecord): SafeHtml => {
+    const open = t.steps.filter((x) => REVIEW_HINT[x.name]);
+    return html`<h3>Your review</h3>
+      <p class="muted">
+        A file that exists is not proof that it looks or sounds right. Mark each one after watching and
+        listening; REAL-AI VERIFIED needs all four.
+      </p>
+      ${open.map((x) =>
+        postForm(
+          `/settings/ai-engine/real-test/${t.id}/review`,
+          html`<input type="hidden" name="step" value="${x.n}" />
+            <p>
+              <strong>${x.name}</strong> <span class="badge ${resultKind(x.status)}">${x.status}</span
+              ><br /><small>${REVIEW_HINT[x.name]}</small>
+            </p>
+            ${field('Note (optional)', 'note', '')}
+            <div class="actions">
+              <button name="verdict" value="PASS" class="primary">PASS</button>
+              <button name="verdict" value="FAIL" class="danger">FAIL</button>
+            </div>`,
+          { cls: 'stack' },
+        ),
+      )}`;
+  };
+  const CRITERIA = ['face', 'hair', 'eyes', 'clothing', 'colours', 'proportions', 'age', 'accessories'];
+  const consistencyOutputs = (t: MilestoneRecord): SafeHtml => {
+    const imgs = s.realTest.consistencyImages(t.id);
+    if (!imgs.length) return html``;
+    return html`<h3>Reference and shots</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
+        ${imgs.map(
+          (x) =>
+            html`<figure>
+              <img src="${mediaUrl(x.key)}" alt="${x.label}" style="width:100%" />
+              <figcaption>${x.label}</figcaption>
+            </figure>`,
+        )}
+      </div>
+      ${t.output_key
+        ? html`<p>
+            <a href="${mediaUrl(t.output_key)}" download="contact_sheet.png">Download the contact sheet</a>
+          </p>`
+        : ''}`;
+  };
+  const consistencyReview = (t: MilestoneRecord): SafeHtml => {
+    const st = t.steps.at(-1)!;
+    return html`<h3>Your verdict</h3>
+      <p class="muted">
+        Visual output is what counts, not the prompt. PASS only if the same character is recognisable in every
+        shot.
+      </p>
+      <p>
+        <strong>${st.name}</strong>
+        <span class="badge ${resultKind(st.status)}">${st.status}</span> ${st.detail}
+      </p>
+      ${postForm(
+        `/settings/ai-engine/real-test/${t.id}/review`,
+        html`<input type="hidden" name="step" value="${st.n}" />
+          <fieldset>
+            <legend>Consistent across the shots (tick what holds)</legend>
+            ${CRITERIA.map(
+              (c) =>
+                html`<label class="check"
+                  ><input type="hidden" name="ok_${c}" value="false" /><input
+                    type="checkbox"
+                    name="ok_${c}"
+                    value="true"
+                  />
+                  ${c}</label
+                >`,
+            )}
+          </fieldset>
+          ${field('Note (optional)', 'note', '')}
+          <div class="actions">
+            <button name="verdict" value="PASS" class="primary">PASS</button>
+            <button name="verdict" value="NEEDS IMPROVEMENT">NEEDS IMPROVEMENT</button>
+            <button name="verdict" value="FAIL" class="danger">FAIL</button>
+          </div>`,
+        { cls: 'stack' },
+      )}`;
+  };
+  const sceneCard = (): SafeHtml => {
+    const ready = s.engine.status().state === 'READY';
+    const last = s.db.get<{ id: string; status: string; created_at: string }>(
+      "SELECT v.id, v.status, v.created_at FROM videos v JOIN projects p ON p.id = v.project_id WHERE p.name = 'Technical tests (not series canon)' ORDER BY v.created_at DESC LIMIT 1",
+    );
+    return card(
+      'Bilingual scene test (20–30 s)',
+      html`<p>
+          Two young explorers enter an abandoned future laboratory; their robot detects a mysterious signal; a
+          dormant portal activates. Several shots, English and Hinglish dialogue, music, ambience and sound
+          effects. The pictures and clips are made ONCE; the English and Hinglish versions share them. A
+          technical test only: it is kept apart from your series canon.
+        </p>
+        ${last
+          ? html`<p>
+              Last run ${when(last.created_at)}: ${last.status.toUpperCase()} ·
+              <a href="/videos/${last.id}">open</a>
+            </p>`
+          : html`<p class="muted">Not run yet: the 20–30 SECOND BILINGUAL SCENE is NOT TESTED.</p>`}
+        ${ready
+          ? button(
+              '/real-mode-test/scene',
+              'RUN BILINGUAL SCENE TEST',
+              {},
+              {
+                kind: 'primary',
+                confirm: 'Rent a GPU and make the 20–30 s test scene in English and Hinglish?',
+              },
+            )
+          : html`<p class="muted">Connect RunPod first (Settings → AI Engine).</p>`}`,
+    );
+  };
+  const consistencyCard = (): SafeHtml => {
+    const last = s.realTest.latest('consistency');
+    const ready = s.engine.status().state === 'READY';
+    return card(
+      'Character consistency test',
+      html`<p>
+          One ORIGINAL test character (a 12-year-old explorer with a small robot): a canonical reference, then
+          12 shots (front, three-quarter and side views; happy, worried, surprised; running; using the
+          scanner; inside a spaceship; on an alien planet; warm and cool light) made with the same reference
+          mechanism as real episodes, then a contact sheet for your verdict. Draws 13 pictures on a rented GPU
+          (the price is shown first).
+        </p>
+        ${last
+          ? html`<p>
+              Last run ${when(last.started_at)}:
+              <span
+                class="badge ${last.status === 'success'
+                  ? 'good'
+                  : last.status === 'running'
+                    ? 'warn'
+                    : 'bad'}"
+                >${last.status === 'success' ? 'AUTOMATED PASS' : last.status.toUpperCase()}</span
+              >
+              · your verdict: ${last.steps.at(-1)?.status ?? 'NOT TESTED'} ·
+              <a href="/settings/ai-engine/real-test/${last.id}">details</a>
+            </p>`
+          : html`<p class="muted">Not run yet: CHARACTER CONSISTENCY is NOT TESTED.</p>`}
+        ${ready
+          ? button('/real-mode-test/consistency', 'RUN CONSISTENCY TEST', {}, { kind: 'primary' })
+          : html`<p class="muted">Connect RunPod first (Settings → AI Engine).</p>`}`,
+    );
+  };
+  const pastRuns = (): SafeHtml => {
+    const rows = s.db.all<RunRow>(
+      "SELECT id, status, started_at, gpu_model, test_kind FROM cloud_tests WHERE test_kind IN ('milestone1', 'consistency') ORDER BY started_at DESC LIMIT 20",
+    );
+    return card(
+      'Earlier runs',
+      rows.length
+        ? html`<ul class="pub-list">
+            ${rows.map(
+              (x) =>
+                html`<li>
+                  ${when(x.started_at)} · ${x.test_kind === 'consistency' ? 'Consistency' : 'Real Mode Test'}
+                  · ${x.gpu_model ?? 'no GPU'} ·
+                  <span
+                    class="badge ${x.status === 'success' ? 'good' : x.status === 'running' ? 'warn' : 'bad'}"
+                    >${x.status === 'success' ? 'AUTOMATED PASS' : x.status.toUpperCase()}</span
+                  >
+                  <a href="/settings/ai-engine/real-test/${x.id}">details</a>
+                </li>`,
+            )}
+          </ul>`
+        : html`<p class="muted">None yet: every real-AI step is NOT TESTED until the first run.</p>`,
+    );
+  };
+
   r.get('/settings/ai-engine/real-test/:id', (req) => {
     const t = s.realTest.get(req.params['id']!);
     const waiting = t.status === 'running' && t.steps.find((x) => x.n === 4)?.status === 'RUNNING';
     const running = t.status === 'running' && !waiting;
     const body = html`${running ? raw('<meta http-equiv="refresh" content="5" />') : ''}
       ${card(
-        'Milestone 1',
-        html`<p>
-            RUNPOD CONNECTED → REAL GPU → REAL IMAGE → REAL ANIMATION → REAL NARRATION → REAL PLAYABLE MP4.
-            Every step below is executed for real; a step that was not reached says NOT TESTED.
+        t.kind === 'consistency' ? 'Character consistency test' : 'Real Mode Test',
+        html`${t.kind === 'consistency'
+            ? html`<p>
+                One ORIGINAL character: a canonical reference, then 12 shots (views, expressions, actions,
+                places, lighting) made with the app's real reference mechanism. Judge the pictures yourself:
+                the same face, hair, eyes, clothes, colours, proportions, age and accessories?
+              </p>`
+            : ''}
+          <p ${t.kind === 'consistency' ? raw('hidden') : ''}>
+            RUNPOD → REAL GPU → CUDA → REAL IMAGE → REAL ANIMATION → REAL ENGLISH + HINGLISH VOICES → TWO
+            PLAYABLE MP4s FROM THE SAME CLIP → GPU TERMINATED. Every step below is executed for real; a step
+            that was not reached says NOT TESTED. The last four steps are yours: watch and listen, then mark
+            them.
           </p>
           <table class="steps">
             <tr>
@@ -288,14 +540,20 @@ export function registerSimplePages(web: Web): void {
                   { kind: 'danger' },
                 )}`
             : ''}
-          ${t.output_key
-            ? html`<h3>The real short MP4</h3>
-                <video class="player" controls src="${mediaUrl(t.output_key)}"></video>
-                <p><a href="${mediaUrl(t.output_key)}" download>Download the MP4</a></p>`
-            : ''}
+          ${t.kind === 'consistency' ? consistencyOutputs(t) : outputs(t.id)}
+          ${t.finished_at ? (t.kind === 'consistency' ? consistencyReview(t) : reviewForms(t)) : ''}
           ${t.finished_at
             ? kv([
-                ['Overall', t.status === 'success' ? 'PASS — milestone 1 reached' : t.status.toUpperCase()],
+                [
+                  'Overall',
+                  t.kind === 'consistency'
+                    ? `${t.status === 'success' ? 'AUTOMATED STEPS PASS' : t.status.toUpperCase()} · your verdict: ${t.steps.at(-1)?.status ?? 'NOT TESTED'}`
+                    : s.realTest.verified(t)
+                      ? 'REAL-AI VERIFIED (every automated step and your review passed)'
+                      : t.status === 'success'
+                        ? 'AUTOMATED STEPS PASS — your review is still open'
+                        : t.status.toUpperCase(),
+                ],
                 ['GPU', t.gpu_model ?? '—'],
                 ['GPU time', t.runtime_sec !== null ? `${t.runtime_sec} s` : '—'],
                 ['Estimated cost', t.cost_inr !== null ? inr(t.cost_inr) : '—'],
@@ -316,6 +574,65 @@ export function registerSimplePages(web: Web): void {
       `/settings/ai-engine/real-test/${id}`,
       'Started. The GPU is stopped automatically at the end.',
     );
+  });
+  r.post('/settings/ai-engine/real-test/:id/review', (req) => {
+    const id = req.params['id']!;
+    const f = req.form;
+    const verdict =
+      f['verdict'] === 'PASS' ? 'PASS' : f['verdict'] === 'NEEDS IMPROVEMENT' ? 'NEEDS IMPROVEMENT' : 'FAIL';
+    // Consistency: the criteria the person did NOT tick as consistent are part of the record.
+    const off = CRITERIA.filter((c) => f[`ok_${c}`] !== undefined && !yes(f[`ok_${c}`]));
+    const note = [f['note'] ?? '', off.length ? `not consistent: ${off.join(', ')}` : '']
+      .filter(Boolean)
+      .join(' · ');
+    s.realTest.review(id, Number(f['step']), verdict, note);
+    return web.redirect(`/settings/ai-engine/real-test/${id}`, `Recorded: ${verdict}.`);
+  });
+  r.get('/real-mode-test', (req) =>
+    web.render(
+      req,
+      'Real Mode Test',
+      '/real-mode-test',
+      html`${realTestCard(web)} ${consistencyCard()} ${sceneCard()} ${pastRuns()}`,
+    ),
+  );
+  // 20–30 s bilingual sci-fi scene: ONE visual production, then English and Hinglish versions from
+  // it. A technical test in its own project ("Technical tests"): it never becomes series canon.
+  r.post('/real-mode-test/scene', () => {
+    const engine = s.engine.status();
+    if (engine.state === 'NEEDS_ATTENTION')
+      throw new AppError(
+        'PRECONDITION_FAILED',
+        'The AI Engine needs attention first (Settings → AI Engine).',
+      );
+    const project =
+      s.projects.list().find((x) => x.name === 'Technical tests (not series canon)') ??
+      s.projects.create({ name: 'Technical tests (not series canon)', genre: 'Science fiction' });
+    const v = s.orchestrator.create({
+      idea: SCENE_TEST_IDEA,
+      length: 'custom',
+      customMinutes: 0.45,
+      styleId: '3d_kids',
+      makeEpisode: true,
+      makeShorts: false,
+      shortsCount: 1,
+      language: 'en',
+      narrator: 'female',
+      musicMood: 'auto',
+      reviewPlan: false,
+      projectId: project.id,
+      localizations: [HINGLISH],
+    });
+    startInBackground(web, v.id);
+    return web.redirect(
+      `/videos/${v.id}`,
+      'Bilingual scene test started: one visual production, English + Hinglish.',
+    );
+  });
+  r.post('/real-mode-test/consistency', async () => {
+    if (s.realTest.running) throw new AppError('CONFLICT', 'A GPU test is already running.');
+    const { record } = await s.realTest.prepare('consistency');
+    return web.redirect(`/settings/ai-engine/real-test/${record.id}`);
   });
   r.post('/settings/ai-engine/real-test/:id/cancel', (req) => {
     s.realTest.cancel(req.params['id']!);
@@ -582,11 +899,12 @@ function realTestCard(web: Web): SafeHtml {
   const last = s.realTest.latest();
   const ready = s.engine.status().state === 'READY';
   return card(
-    'Real Mode Test (milestone 1)',
+    'Real Mode Test',
     html`<p>
-        Proves the whole chain on a real RunPod GPU: one real picture, animated by AI, with real narration,
-        combined into a short MP4 that is checked and played. It rents a GPU for a few minutes (the price is
-        shown before anything is rented).
+        Proves the whole chain on a real RunPod GPU: one ORIGINAL character drawn and animated by AI, one
+        English and one Hinglish voice line, and two MP4s made from the same animated clip, each checked with
+        ffprobe and decoded. The GPU is terminated at the end, also on failure or cancel. It rents a GPU for a
+        few minutes; the price is shown before anything is rented.
       </p>
       ${last
         ? html`<p>
@@ -595,7 +913,8 @@ function realTestCard(web: Web): SafeHtml {
               class="badge ${last.status === 'success' ? 'good' : last.status === 'running' ? 'warn' : 'bad'}"
               >${last.status === 'success' ? 'PASS' : last.status.toUpperCase()}</span
             >
-            ${last.steps.filter((x) => x.status === 'PASS').length}/${last.steps.length} steps passed ·
+            ${last.steps.filter((x) => x.status === 'PASS').length}/${last.steps.length} steps passed
+            ${s.realTest.verified(last) ? html`· <strong>REAL-AI VERIFIED</strong>` : ''} ·
             <a href="/settings/ai-engine/real-test/${last.id}">details</a>
           </p>`
         : html`<p class="muted">Not run yet: every real-AI step is NOT TESTED until this runs.</p>`}

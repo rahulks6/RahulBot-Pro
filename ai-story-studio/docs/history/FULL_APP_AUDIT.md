@@ -1,3 +1,8 @@
+> **HISTORICAL DOCUMENTATION — NOT CURRENT SETUP INSTRUCTIONS.** This file records an earlier
+> release (v1.0–v1.2). Versions, test counts, the worker image on GHCR and other details in it are
+> out of date. Current setup: [README](../../README.md) → [RUNPOD_SETUP.md](../RUNPOD_SETUP.md);
+> current status: [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
+
 # AI Story Studio v1.1.1 — full application audit
 
 Date: 2026-09-26. Scope: every navigation area, every create/update/delete route, the mock production pipeline, export, backup/restore, settings, cloud safety, logging, start-up and the Windows installer.

@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-var version = "1.2.0" // overridden with -ldflags "-X main.version=..."
+var version = "dev" // overridden with -ldflags "-X main.version=..."
 
 //go:embed payload
 var payloadFS embed.FS

@@ -74,7 +74,7 @@ function voiceForm(v: Partial<VoiceProfile> = {}) {
         v.role ?? 'character',
       )}
       ${field('Voice model', 'voice_model', v.voice_model ?? 'mock-tts', {
-        help: 'Mock TTS only for now (in-process or worker). Open-source TTS models arrive in Phase 3/4.',
+        help: 'Leave as is: with real AI the voice model selected for the cloud (Kokoro by default) speaks; mock-tts only applies in developer test mode.',
       })}
       ${field('Voice identity / reference id', 'voice_identity', v.voice_identity)}
     </div>

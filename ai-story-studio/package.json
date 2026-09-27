@@ -1,8 +1,8 @@
 {
   "name": "ai-story-studio",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
-  "description": "Private, local-first AI Story Studio: story to final MP4, mock by default, real generation on a rented cloud GPU (RunPod) when you switch it on.",
+  "description": "Private, local-first AI Story Studio: original animated series in English and Hinglish, made with real open-source AI on a rented RunPod GPU (paste your key; nothing else to set up). Placeholder generation exists only for automated tests.",
   "type": "module",
   "engines": {
     "node": ">=22.18.0"

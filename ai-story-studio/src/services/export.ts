@@ -32,7 +32,8 @@ export interface BuildStep {
  * BUILD FINAL (spec §22, §51–§52). Runs the whole assembly and only marks
  * the export COMPLETE when validation passes. With local FFmpeg (Phase 4) the
  * master is a real H.264/AAC MP4, loudness-normalised and validated with
- * ffprobe; without it, a mock manifest plus the real WAV mix stands in.
+ * ffprobe. Only in developer test mode (MOCK_GENERATION=true) may a labelled mock manifest plus the
+ * real WAV mix stand in when FFmpeg is missing; with real AI a missing FFmpeg is an error.
  */
 export class ExportService {
   private readonly s: StudioCore;
@@ -99,7 +100,14 @@ export class ExportService {
 
   /** FFmpeg for assembly per ASSEMBLY_MODE; throws when `ffmpeg` is required but missing. */
   private ffmpegTools(): FfmpegTools | null {
-    if (this.s.env.assemblyMode === 'mock') return null;
+    // Real AI never gets a placeholder master: without FFmpeg the build fails and says why. The mock
+    // manifest exists only for developer test mode (MOCK_GENERATION=true).
+    if (!this.s.env.mockGeneration && !this.s.ffmpeg)
+      throw new AppError(
+        'PRECONDITION_FAILED',
+        'FFmpeg is needed to build the final video and was not found. Install FFmpeg (System Health shows how) or set FFMPEG_PATH / FFPROBE_PATH.',
+      );
+    if (this.s.env.assemblyMode === 'mock' && this.s.env.mockGeneration) return null;
     if (!this.s.ffmpeg && this.s.env.assemblyMode === 'ffmpeg')
       throw new AppError(
         'PRECONDITION_FAILED',

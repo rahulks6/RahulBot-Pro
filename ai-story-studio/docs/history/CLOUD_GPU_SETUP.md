@@ -1,3 +1,8 @@
+> **HISTORICAL DOCUMENTATION — NOT CURRENT SETUP INSTRUCTIONS.** This file records an earlier
+> release (v1.0–v1.2). Versions, test counts, the worker image on GHCR and other details in it are
+> out of date. Current setup: [README](../../README.md) → [RUNPOD_SETUP.md](../RUNPOD_SETUP.md);
+> current status: [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
+
 # Cloud GPU: how it works (Phase 5)
 
 For the click-by-click setup, see [RUNPOD_SETUP.md](RUNPOD_SETUP.md). This page explains the design.

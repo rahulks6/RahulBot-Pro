@@ -72,6 +72,10 @@ export interface WorkerSystem {
   mock_models: boolean;
   models: WorkerModel[];
   jobs: Record<string, number>;
+  /** Exact library versions the GPU bootstrap installed (name==version); empty on other workers. */
+  installed_packages?: string[];
+  /** Exact Hugging Face commits in the worker's model cache ("org/name@main" → commit). */
+  model_revisions?: Record<string, string>;
 }
 
 const TERMINAL = new Set(['complete', 'failed', 'cancelled']);

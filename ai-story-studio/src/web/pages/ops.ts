@@ -244,7 +244,7 @@ export function registerOpsPages(web: Web): void {
               ? html`<p class="flash">
                   <strong>MOCK_GENERATION=true</strong> in .env locks the studio to MOCK mode, whatever is
                   chosen here. Set MOCK_GENERATION=false in .env and restart to use LOCAL GPU or CLOUD GPU
-                  (docs/GPU_SETUP.md).
+                  (docs/RUNPOD_SETUP.md).
                 </p>`
               : ''}
             ${select(
@@ -386,9 +386,9 @@ export function registerOpsPages(web: Web): void {
                 'Preferred provider',
                 'preferredProvider',
                 [
-                  ['mock', 'Mock (Phase 1)'],
+                  ['mock', 'Mock (developer test mode)'],
                   ['local', 'Local GPU (future)'],
-                  ['runpod', 'RunPod (future)'],
+                  ['runpod', 'RunPod (Settings → AI Engine)'],
                   ['tensordock', 'TensorDock (future)'],
                   ['vast', 'Vast.ai (future)'],
                 ],

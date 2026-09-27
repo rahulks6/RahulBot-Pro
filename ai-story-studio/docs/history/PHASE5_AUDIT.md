@@ -1,3 +1,8 @@
+> **HISTORICAL DOCUMENTATION — NOT CURRENT SETUP INSTRUCTIONS.** This file records an earlier
+> release (v1.0–v1.2). Versions, test counts, the worker image on GHCR and other details in it are
+> out of date. Current setup: [README](../../README.md) → [RUNPOD_SETUP.md](../RUNPOD_SETUP.md);
+> current status: [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
+
 # Phase 5 audit — AI Story Studio before cloud GPU work
 
 Audited on 2026-09-25, at commit `44673fd`, before any Phase 5 code change. This audit documents what exists, what is mock, what is missing, and exactly what Phase 5 will touch.

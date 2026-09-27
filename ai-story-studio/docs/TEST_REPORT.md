@@ -1,42 +1,77 @@
-# Test report — v1.3.0 (series, English + Hinglish, zero manual infrastructure)
+# Test report — v1.3.1
 
-Where: the development container (Linux, **no NVIDIA GPU**, no access to RunPod, Hugging Face,
-PyPI or Google; FFmpeg 7 static build). Status words: **PASS** (executed and checked), **FAIL**,
-**BLOCKED** (needs something only you have), **NOT TESTED**.
+Three kinds of result, never mixed: **automated tests** (stand-ins), **real integration tests** (real
+RunPod, real models, real YouTube) and **manual media review** (a person watches and listens). A PASS in
+the first kind says nothing about the other two.
 
-"Automated" means executed in the test suite against **stand-ins**: a mock RunPod REST API
-(validated against RunPod's published OpenAPI schema), a fake cloud worker, the real Python worker
-with mock models, a mock Google OAuth + YouTube Data API server, and **real FFmpeg**. It proves the
-app's logic and file outputs; it does **not** prove real AI quality, real GPUs or real YouTube.
+Where: the development container (Linux, no NVIDIA GPU, Node.js v22.22.2, static FFmpeg 7). Its network
+proxy rejects RunPod, Hugging Face and Google; PyPI answers 403; no RunPod key exists there (checked
+2026-09-27).
 
-## Commands executed
+## 1. AUTOMATED TESTS (stand-ins: mock RunPod, fake worker, mock Google, placeholder AI; real FFmpeg)
 
-| Command                                                        | Result                  |
-| -------------------------------------------------------------- | ----------------------- |
-| `npm run check` (ESLint, Prettier, `tsc` strict, tests, build) | **CHECK**               |
-| `npm run check:worker` (ruff, ruff format, mypy, pytest)       | PASS — 126 worker tests |
-| Windows CI (setup .exe build, install, Edge smoke, uninstall)  | **CI**                  |
+| Command / suite                                                          | Result                                                          |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `npm run check` — ESLint, Prettier, `tsc` strict, all app tests, build   | **CHECK**                                                       |
+| Worker: `ruff check`, `ruff format --check`, `mypy` (strict), `pytest`   | **PASS** — 128 passed, 0 failed, 0 skipped (FFmpeg on the PATH) |
+| Installer (Go): `go vet`, `go test` in `installer/windows/setup`         | **PASS**                                                        |
+| Windows CI (build the .exe, install, Edge through every page, uninstall) | **CI**                                                          |
 
-## New tests (this version)
+The one skipped app test is "Windows DPAPI round trip" (Windows only; it runs in Windows CI).
 
-| File                                     | What it proves (automated)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test/worker-bootstrap.test.ts`          | The real bootstrap script receives the app's worker bundle (token + SHA-256), installs, and hands over to the real worker; tampered/unsafe archives are refused; the pod request uses the public PyTorch image and the bootstrap entrypoint.                                                                                                                                                                                                                                                                       |
-| `worker/tests/test_bootstrap.py`         | Bootstrap server: handover, unsafe archive → failed, missing token/checksum → exit.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `test/series.test.ts`                    | Continuity rules (name/look/place fixes, contradictions), duplicate detection by story features, Hinglish checks and speech text; episode 1 → English master + Hinglish version with the SAME picture/clip assets, EN + HI 1920×1080 MP4s, Shorts, Roman captions, Hindi voice profiles; approval → canon; episode 2 memory + repeat flagged; rejection keeps canon; **three consecutive episodes** (3 remembers approved 1, not rejected 2; no repeat; cast reused); Hinglish timing fit (rewrite → pace → flag). |
-| `test/series-web.test.ts`                | The Series screens through HTTP like a browser: SERIES in the menu, new series, bible and season edits, original characters with Hinglish style and Devanagari pronunciation, PLAN SEASON (planned only, repeats skipped, remove), GENERATE with no idea makes the next planned episode in English + Hinglish, episode review screen (both versions, named downloads, checks, proposed canon), APPROVE (nothing uploaded), canon by hand/retire, new season, Home "Continue Series".                               |
-| `test/channels.test.ts`                  | Two channel profiles against the mock Google: separate sign-ins and tokens, same-channel warning, per-channel schedules with the audience's time zone (18:00 IST = 12:30 UTC), APPROVE BOTH all-or-nothing, English file → English channel and Hinglish file → Hinglish channel with `hi-Latn` Roman captions and its own title/thumbnail, private scheduled uploads, no double upload, per-channel private test, no token in logs.                                                                                |
-| `test/real-mode-test.test.ts` (extended) | The Real Mode Test also sends a Hinglish line (mixed script, `hi-Latn`, a Hindi voice) and builds a validated Hinglish MP4 from the same animated clip.                                                                                                                                                                                                                                                                                                                                                            |
+What the app suite covers (all executed in this run): database (clean migration on a real SQLite
+file — 9 migrations, 53 tables, 27 indexes, FK and integrity checks, upgrade from 0008 with data kept,
+app start on the migrated file; installer migration list = `migrations/`), repositories, Series /
+Seasons / Episodes / Bible, continuity and canon approval over three consecutive episodes, duplicate
+detection, English script, Hinglish localization, style checks and timing fit, shared master visuals,
+Shorts, captions, thumbnails, metadata, the Series and Publish pages through HTTP, RunPod lifecycle
+(provisioning, fallback, budget, watchdog, recovery), the worker bootstrap (real bootstrap script + real
+worker, no GPU), YouTube with two channel profiles (mock Google; private only), the Real Mode Test harness
+(22 stages; image and motion validation, two MP4s from one clip, ffprobe, decode; clean-up on success,
+failure, cancel and timeout), the character consistency harness (13 reference-conditioned requests,
+contact sheet, verdict) and the 20–30 s bilingual scene (placeholder AI, real FFmpeg, EN + HI finals from
+one visual production).
 
-## What was NOT executed (and why)
+New or changed tests in v1.3.1: `migrations-schema.test.ts` (7), `scene-test.test.ts` (1),
+`real-mode-test.test.ts` (10, rewritten), `orchestrator.test.ts`, `worker/tests/test_bootstrap.py`
+(+2), `worker/tests/test_catalog_adapters.py` (Kokoro voice names).
 
-| Item                                                                        | Status  | Why / what is needed                                              |
-| --------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------- |
-| RunPod authentication, GPU, CUDA, worker bootstrap on a real pod            | BLOCKED | your RunPod API key (only on your PC); no RunPod access from here |
-| Real image, real image-to-video, real English and Hinglish voices           | BLOCKED | a real GPU (RunPod)                                               |
-| Real story / Hinglish writing quality, character consistency on real images | BLOCKED | a real GPU; then a person's judgement                             |
-| YouTube English / Hinglish channel, private upload, scheduling for real     | BLOCKED | your Google OAuth client and your channels                        |
+## 2. REAL INTEGRATION TESTS (real RunPod GPU, real models, real YouTube)
 
-The first real check is the **Real Mode Test** (Settings → AI Engine): one real picture → real
-animation → real English narration + real Hinglish narration → two MP4s, GPU terminated. Then the
-SAFE PRIVATE TEST UPLOAD on each channel (PUBLISH → YouTube). See REAL_MODE_TEST.md.
+| Stage                                     | Result                                          | What is needed                                        |
+| ----------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| RunPod authentication                     | **BLOCKED**                                     | your RunPod key (on your PC; RunPod unreachable here) |
+| GPU provision / CUDA proven by the worker | **BLOCKED**                                     | same                                                  |
+| Worker bootstrap on a real pod            | **BLOCKED**                                     | same                                                  |
+| Image model load + real image             | **BLOCKED**                                     | same                                                  |
+| Video model load + real animation         | **BLOCKED**                                     | same                                                  |
+| English TTS / Hinglish TTS                | **BLOCKED**                                     | same                                                  |
+| test_english.mp4 / test_hinglish.mp4      | **BLOCKED**                                     | same                                                  |
+| GPU clean-up (success / failure / cancel) | **NOT TESTED** for real (PASS against the mock) | same                                                  |
+| Character consistency (13 real pictures)  | **BLOCKED**                                     | same                                                  |
+| 20–30 s bilingual scene with real AI      | **BLOCKED**                                     | same                                                  |
+| YouTube private upload — English channel  | **BLOCKED**                                     | your Google OAuth client + channel                    |
+| YouTube private upload — Hinglish channel | **BLOCKED**                                     | same                                                  |
+
+No real asset was generated in this pass. No GPU was rented. Nothing was uploaded.
+
+## 3. MANUAL MEDIA REVIEW (a person watches and listens)
+
+| Review                      | Result         |
+| --------------------------- | -------------- |
+| Real image                  | **NOT TESTED** |
+| Real motion                 | **NOT TESTED** |
+| English voice               | **NOT TESTED** |
+| Hinglish voice              | **NOT TESTED** |
+| Character consistency       | **NOT TESTED** |
+| Bilingual scene (both cuts) | **NOT TESTED** |
+
+These are recorded in the app (Advanced → Real Mode Test) when you mark them after your run.
+
+## How to turn section 2 and 3 into results
+
+1. Install `AI-Story-Studio-Setup-1.3.1.exe`, paste your RunPod key (Settings → AI Engine), SAVE.
+2. Advanced → Real Mode Test → RUN → CONFIRM; review the four outputs.
+3. Run the character consistency test; give your verdict.
+4. Run the bilingual scene test; watch both versions.
+5. PUBLISH → YouTube: connect both channels; SAFE PRIVATE TEST UPLOAD on each.

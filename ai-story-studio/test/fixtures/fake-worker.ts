@@ -165,6 +165,10 @@ export class FakeCloudWorker {
           device: this.noGpu ? null : 'NVIDIA RTX A5000',
         },
         mock_models: false,
+        installed_packages: ['diffusers==0.35.1', 'transformers==4.56.1', 'kokoro==0.9.4', 'misaki==0.9.4'],
+        model_revisions: {
+          'black-forest-labs/FLUX.1-schnell@main': '0123456789abcdef0123456789abcdef01234567',
+        },
         models: [],
         jobs: {},
       });

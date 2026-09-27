@@ -1,4 +1,4 @@
-# AI Story Studio - Windows installer (v1.3.0)
+# AI Story Studio - Windows installer (v1.3.1)
 #
 # Safe to run more than once. It:
 #   1. checks Node.js (>= 22.18) and FFmpeg (required) and Python (>= 3.11, optional: only for the
@@ -247,18 +247,37 @@ try {
   Write-Log "Registered AI Story Studio $version in Settings > Apps." 'Green'
 
   Write-Log '== Installation checks' 'Cyan'
+  # Every database migration of this release, in order (test/installer-checks.test.ts keeps this
+  # list equal to the migrations folder). A missing or empty file would leave the database behind.
+  $expectedMigrations = @(
+    '0001_initial_schema.sql', '0002_model_benchmarks.sql', '0003_voice_consent.sql',
+    '0004_cloud_gpu.sql', '0005_local_models.sql', '0006_job_progress.sql',
+    '0007_videos_publishing.sql', '0008_story_format.sql', '0009_series_localization.sql'
+  )
+  $missingMigrations = @($expectedMigrations | Where-Object {
+    -not (Test-Path "migrations\$_") -or (Get-Item "migrations\$_").Length -eq 0 })
+  # The app files this release needs besides the built server (series, Hinglish, GPU worker code).
+  $requiredFiles = @(
+    'dist\src\web\pages\series.js', 'dist\src\services\localization.js', 'dist\src\services\hinglish.js',
+    'dist\src\services\publisher.js', 'worker\bootstrap\ais_bootstrap.py', 'worker\ais_worker\server.py',
+    'worker\models.cloud.json', 'worker\requirements-cloud.txt', 'docs\RUNPOD_SETUP.md', 'docs\REAL_MODE_TEST.md'
+  )
+  $missingFiles = @($requiredFiles | Where-Object { -not (Test-Path $_) })
   $checks = @(
     @{ Name = 'Built server'; Ok = (Test-Path 'dist\src\web\server.js') },
     @{ Name = '.env present'; Ok = (Test-Path '.env') },
     @{ Name = '.env readable'; Ok = ((Get-Content '.env' -Raw) -match '(?m)^MOCK_GENERATION=') },
     @{ Name = 'Worker environment (optional)'; Ok = (-not $pre.Python) -or (Test-Path 'worker\.venv\Scripts\python.exe') },
-    @{ Name = 'Database migrations'; Ok = (Test-Path 'migrations\0008_story_format.sql') },
+    @{ Name = "Database migrations ($($expectedMigrations.Count))"; Ok = ($missingMigrations.Count -eq 0) },
+    @{ Name = 'Series, Hinglish and GPU worker files'; Ok = ($missingFiles.Count -eq 0) },
     @{ Name = 'Uninstaller'; Ok = (Test-Path 'installer\windows\uninstall.ps1') }
   )
   $failed = 0
   foreach ($c in $checks) {
     if ($c.Ok) { Write-Log "  [OK]   $($c.Name)" 'Green' } else { Write-Log "  [FAIL] $($c.Name)" 'Red'; $failed++ }
   }
+  foreach ($m in $missingMigrations) { Write-Log "         missing or empty: migrations\$m" 'Red' }
+  foreach ($f in $missingFiles) { Write-Log "         missing: $f" 'Red' }
   if ($failed -gt 0) { throw "$failed installation check(s) failed. See $LogFile" }
   Write-Log '' 'Gray'
   Write-Log 'AI Story Studio is installed. Start it from the desktop or Start Menu shortcut (it opens http://127.0.0.1:3000/).' 'Green'

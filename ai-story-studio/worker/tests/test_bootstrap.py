@@ -139,6 +139,7 @@ def test_bootstrap_hands_over_to_the_real_worker(tmp_path: Path, stop: list[subp
     assert proc.poll() is None, "exec keeps the pod's main process"
     code_, system = call(f"{base}/system")
     assert code_ == 200 and "gpu" in system, system
+    assert system["installed_packages"] == [], "no libraries installed in test mode, so none are reported"
     assert call(f"{base}/system", token=None)[0] == 401
     assert (tmp_path / "pod" / "app" / "ais_worker" / "server.py").exists()
 
@@ -164,3 +165,26 @@ def test_bootstrap_requires_token_and_checksum(tmp_path: Path) -> None:
     proc = subprocess.run(ENTRYPOINT, env=env, capture_output=True, timeout=30, cwd=tmp_path, check=False)
     assert proc.returncode == 2
     assert b"WORKER_AUTH_TOKEN and AIS_CODE_SHA256 are required" in proc.stdout
+
+
+def test_worker_reports_the_libraries_the_bootstrap_installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ais_worker.diagnostics import installed_packages
+
+    listing = tmp_path / "installed-packages.txt"
+    listing.write_text("diffusers==0.35.1\nkokoro==0.9.4\n\nnot a pin\ntorch==2.7.1\n")
+    monkeypatch.setenv("AIS_INSTALLED_FILE", str(listing))
+    assert installed_packages() == ["diffusers==0.35.1", "kokoro==0.9.4", "torch==2.7.1"]
+    monkeypatch.setenv("AIS_INSTALLED_FILE", str(tmp_path / "missing.txt"))
+    assert installed_packages() == []
+
+
+def test_worker_reports_the_model_commits_in_the_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ais_worker.diagnostics import model_revisions
+
+    refs = tmp_path / "models--black-forest-labs--FLUX.1-schnell" / "refs"
+    refs.mkdir(parents=True)
+    (refs / "main").write_text("741f7c3ce8b383c54771c7003378a50191e9efe9\n")
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    assert model_revisions() == {"black-forest-labs/FLUX.1-schnell@main": "741f7c3ce8b383c54771c7003378a50191e9efe9"}
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "none"))
+    assert model_revisions() == {}

@@ -22,7 +22,7 @@ You need about 30 minutes the first time.
 
 ## Step 3: Nothing to publish (skip to step 4)
 
-Since version 1.2 a GPU starts from Docker Hub's public PyTorch image
+Since version 1.3 a GPU starts from Docker Hub's public PyTorch image
 (`pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime`) and AI Story Studio sends it the AI worker code itself,
 over the GPU's HTTPS address, protected by the per-session token and a checksum fixed when the GPU was
 created. There is **no Docker, GitHub or GHCR step**. The first start on a new GPU volume installs the AI
@@ -31,147 +31,14 @@ libraries (pinned versions, a few minutes; with a RunPod network volume they are
 > Status: this path is tested locally against the real bootstrap script and the real worker (without a
 > GPU); the first run on a real RunPod GPU is **NOT TESTED** yet — the Real Mode Test is that run.
 
-The rest of this step is only for **Advanced → Cloud GPU → Worker source: Prebuilt worker image**.
-
-### Optional: publish a prebuilt AI worker image
-
-The rented GPU runs the "AI worker" from a **container image**. RunPod downloads that image when the GPU starts, so it must be published where RunPod can read it **without a password**: GitHub Container Registry (`ghcr.io`), with the package set to **public**. The image holds program code only: **no model weights** (they download on the GPU the first time) and **no secrets**.
-
-The image name must be exactly:
-
-```
-ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
-```
-
-This is the app's default (**Cloud GPU → Advanced → Worker image**). If your GitHub user name is not `rahulks6`, replace it everywhere below, in lower case, and change the setting too.
-
-Until this step is done, the dry run shows **Worker image: IMAGE REQUIRES AUTHENTICATION**, and the app refuses to rent any GPU. That is intended.
-
-Choose **one** way to build and push the image: **A** or **B**. Then do **Make it public** and **Verify**.
-
-### Option A: let GitHub build it (no Docker needed)
-
-1. On **github.com**, open your repository → **Releases** → **Draft a new release**.
-2. Click **Choose a tag**, type `ai-story-studio-worker-v1.2.0`, and click **Create new tag … on publish**.
-3. Set **Target** to the branch with AI Story Studio (`claude/story-studio-audio-pipeline-w7vu3o`, or `main` after merging).
-4. Enter a title, e.g. `Worker image 1.2.0`, and click **Publish release**.
-5. **Actions** tab: wait for **AI Story Studio worker image** to show a green tick (20–40 minutes).
-
-It pushes `ghcr.io/rahulks6/ai-story-studio-worker:1.2.0` using GitHub's own short-lived token. You create no token.
-
-### Option B: build and push it on this PC with Docker Desktop
-
-It needs about 30 GB of free disk space, and downloads and uploads about 6 GB each way. Your PC needs no NVIDIA GPU.
-
-**The easy way:** double-click `scripts\Publish-Worker-Image.bat` in the AI Story Studio folder. It runs B1–B6 below and pauses for **Make it public**. To run the steps yourself, open **PowerShell** and continue with B1.
-
-**B1. Docker Desktop**
-
-- Install it (or download it from https://www.docker.com/products/docker-desktop/):
-  ```powershell
-  winget install -e --id Docker.DockerDesktop
-  ```
-- Restart Windows if it asks.
-- Start **Docker Desktop** and wait for **Engine running**.
-- Check it:
-  ```powershell
-  docker version
-  docker info --format "{{.OSType}}"
-  ```
-  The second command must print `linux`. If it prints `windows`, right-click the Docker icon near the clock → **Switch to Linux containers…**
-
-**B2. Create a GitHub token for uploading.** It is only needed for pushing, and is never stored in AI Story Studio.
-
-- Open https://github.com/settings/tokens/new?scopes=write:packages&description=AI%20Story%20Studio%20worker%20image (**Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**).
-- Keep **only** `write:packages` ticked, choose **7 days** as the expiration, then click **Generate token** and copy it.
-- Fine-grained tokens do not work for container packages.
-- Never paste the token into a file, `.env`, a script or a chat.
-
-**B3. Sign in to GitHub Container Registry**
-
-```powershell
-docker login ghcr.io -u rahulks6
-```
-
-At `Password:`, paste the token and press Enter. Nothing is shown while you paste. You should see `Login Succeeded`.
-
-**B4. Build the image**
-
-```powershell
-cd "$env:USERPROFILE\AI-Story-Studio"
-docker build --platform linux/amd64 -f worker\Dockerfile.cuda -t ghcr.io/rahulks6/ai-story-studio-worker:1.2.0 worker
-```
-
-It takes 20–60 minutes the first time and must end without `ERROR`. The build checks itself: every AI library must install and import, and PyTorch must stay at the CUDA 12.6 build.
-
-**B5. Check the image before pushing** (optional, about a minute, CPU only)
-
-```powershell
-docker image inspect --format "{{json .Config.Cmd}} {{json .Config.ExposedPorts}} {{.Architecture}}" ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
-docker run --rm -d --name ais-worker-test -p 8765:8765 -e WORKER_AUTH_TOKEN=aisw_local_test_only_0123456789abcdef ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
-curl.exe http://127.0.0.1:8765/health
-curl.exe -s -o NUL -w "%{http_code}\n" http://127.0.0.1:8765/models
-docker rm -f ais-worker-test
-```
-
-The expected output, line by line:
-
-- the `inspect` line shows `["python","-m","ais_worker"] {"8765/tcp":{}} amd64`;
-- `/health` returns `{"status": "ok", "version": "1.2.0", "ready": true}`;
-- `/models` returns `401`, because the worker refuses requests without the session token.
-
-**B6. Push the image, then sign out again**
-
-```powershell
-docker push ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
-docker logout ghcr.io
-```
-
-If the upload stops half-way, run `docker push` again: finished parts are not sent twice.
-
-`scripts\Build-Worker-Image.bat` and `scripts\Push-Worker-Image.bat` do B1–B6 with checks and plain-language errors. The push script asks for the token with hidden input, passes it through `--password-stdin`, and signs out afterwards.
-
-### Make it public (once, after option A or B)
-
-1. Open https://github.com/users/rahulks6/packages/container/package/ai-story-studio-worker. You can also get there from your GitHub profile → **Packages** → **ai-story-studio-worker**.
-2. Click **Package settings** (right side).
-3. Scroll to **Danger Zone** → **Change visibility** → **Public**. Type `ai-story-studio-worker` to confirm, and click the button.
-
-Anyone can download a public image. This one contains only the open-source worker code that is already in your public repository: no keys, tokens, model weights or stories.
-
-### Verify the anonymous pull
-
-This check uses **no password**, exactly like RunPod. Any one of these:
-
-```powershell
-scripts\Verify-Worker-Image.bat
-```
-
-```powershell
-npm run check:image
-```
-
-```powershell
-docker logout ghcr.io
-docker manifest inspect ghcr.io/rahulks6/ai-story-studio-worker:1.2.0
-```
-
-The first two must print **IMAGE EXISTS AND PUBLICLY PULLABLE**. The Docker command must print a JSON manifest that contains `"architecture": "amd64"`.
-
-| Result                                 | Meaning and what to do                                                                                                                  |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **IMAGE EXISTS AND PUBLICLY PULLABLE** | Done. RunPod can download it.                                                                                                           |
-| **IMAGE REQUIRES AUTHENTICATION**      | Still private, **or never pushed**: GitHub answers both the same way to anonymous users. Finish option A or B, then **Make it public**. |
-| **IMAGE DOES NOT EXIST**               | Wrong name or tag (for example `1.2.0` was not pushed), or no `linux/amd64` build.                                                      |
-| **REGISTRY UNREACHABLE**               | This PC could not reach `ghcr.io` (internet, proxy, firewall or antivirus). This says nothing about the image; try again.               |
-
-### Run the free dry run again
-
-In AI Story Studio, open **Cloud GPU → Run dry-run diagnostics (free)**. **Worker image** should now be **OK**.
+Only if you deliberately choose **Advanced → Cloud GPU → Worker source: Prebuilt worker image** do you
+need to build and publish an image yourself: see [ADVANCED_WORKER_IMAGE.md](ADVANCED_WORKER_IMAGE.md).
+Normal users skip this.
 
 ## Step 4: Connect RunPod in AI Story Studio
 
-Real AI on RunPod is the default in version 1.2: there is nothing to unlock in `.env`.
+Real AI on RunPod is the default: there is nothing to unlock in `.env`, and nothing falls back to
+placeholder media when generation fails (the step fails and says why).
 
 1. Start AI Story Studio. The first start opens the **setup wizard**; step 3 is **Connect RunPod**.
    (Later, the same is on **Settings → AI Engine**.)
@@ -185,16 +52,22 @@ Real AI on RunPod is the default in version 1.2: there is nothing to unlock in `
 
 Test and save never rent a GPU.
 
-## Step 5: The Real Mode Test (milestone 1)
+## Step 5: The Real Mode Test
 
-**Settings → AI Engine → RUN REAL MODE TEST** proves the whole chain once, for a few rupees:
+**Advanced Mode → Real Mode Test → RUN REAL MODE TEST** (also on Settings → AI Engine) proves the real
+engine once, for a few rupees:
 
 1. The app shows the GPU it would rent, its price and the estimated cost, and waits for **CONFIRM AND RUN**.
-2. It rents the GPU, starts the worker, makes one real picture, animates it, speaks one narration line,
-   builds a short MP4 on this PC with FFmpeg, checks the file (resolution, decoding, not frozen, not
-   black) and **terminates the GPU**.
-3. Each step shows **PASS**, **FAIL** or **BLOCKED** with the reason. The GPU is terminated even when a
-   step fails. See [REAL_MODE_TEST.md](REAL_MODE_TEST.md).
+2. It rents the GPU, starts the worker (which proves CUDA itself), draws one ORIGINAL test character,
+   animates it, speaks one English and one Hinglish line, **terminates the GPU**, then builds
+   `test_english.mp4` and `test_hinglish.mp4` from the SAME clip on this PC and checks both (ffprobe,
+   full decode, not frozen, not black).
+3. Each stage shows **PASS**, **FAIL**, **BLOCKED** or **NOT TESTED** with the reason. You then watch and
+   listen and mark the four review steps; only then can it say **REAL-AI VERIFIED**. See
+   [REAL_MODE_TEST.md](REAL_MODE_TEST.md).
+
+The same page has the **character consistency test** (13 pictures of one character,
+[CHARACTER_CONSISTENCY_TEST.md](CHARACTER_CONSISTENCY_TEST.md)) and the **20–30 s bilingual scene test**.
 
 Afterwards, check the **RunPod console → Pods** page: no pod named `ais-…` should be running.
 
@@ -209,8 +82,8 @@ terminates the GPU. You review the result, then approve publishing (see
 ## Step 7: Advanced Mode (optional)
 
 **Advanced Mode → Cloud GPU** keeps the expert controls: the free dry-run diagnostics, allowed GPU
-types, cloud type (secure/community), network volume, the worker image name, models and licences, and
-the individual switches. The dry run asks RunPod for stock and prices and checks the worker image
+types, cloud type (secure/community), network volume, the worker source (automatic, or your own image), models and licences, and
+the individual switches. The dry run asks RunPod for stock and prices and checks the pod's base image
 **without renting anything**:
 
 ```
@@ -221,7 +94,7 @@ A GPU counts only if it has enough VRAM for the models of the job, RunPod report
 its hosts offer CUDA 12.6 or newer, and its price is within your limits. Among those the studio prefers,
 in order: compatibility, enough VRAM, earlier successful starts, quality headroom, reliability, speed.
 If a GPU type cannot be started it tries up to two other suitable types. The app never rents a GPU
-while the worker image is not publicly pullable.
+while the pod's base image (by default the public PyTorch image) cannot be pulled anonymously.
 
 Optional hard limits in `.env` that the app can never exceed (rupees and minutes):
 

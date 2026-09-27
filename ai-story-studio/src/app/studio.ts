@@ -312,6 +312,7 @@ export function createStudio(opts: StudioOptions = {}): Studio {
       clock,
       logger,
       tempDir: storagePaths(env).tempRender,
+      referenceStrength: () => settings.get('generation').characterReferenceStrength,
     }),
     localModels,
     runtime: new RuntimeInstaller({

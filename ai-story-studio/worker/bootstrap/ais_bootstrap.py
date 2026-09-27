@@ -125,8 +125,22 @@ def install(app: Path, state: State) -> dict[str, str]:
             args += ["-c", str(constraints)]
         run(args, state, "installing the AI libraries (first time on this volume: a few minutes)")
         marker.write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    # Record exactly what was resolved (direct pins + their dependencies + the image's torch), so a
+    # real run documents its library versions and they can be committed as a lock.
+    installed = pyenv / "installed-packages.txt"
+    if not installed.exists() and pyenv.exists():
+        listing = subprocess.run(
+            [sys.executable, "-m", "pip", "list", "--disable-pip-version-check", "--format=freeze", "--path", str(pyenv)],
+            capture_output=True,
+            text=True,
+        )
+        installed.write_text(listing.stdout + ("\n" + pins.replace(";", "\n") if pins else "") + "\n")
     paths = [str(app), str(pyenv), env("PYTHONPATH")]
-    return {"PYTHONPATH": os.pathsep.join(p for p in paths if p), "WORKER_MODELS_FILE": str(app / "models.cloud.json")}
+    return {
+        "PYTHONPATH": os.pathsep.join(p for p in paths if p),
+        "WORKER_MODELS_FILE": str(app / "models.cloud.json"),
+        "AIS_INSTALLED_FILE": str(installed),
+    }
 
 
 def self_terminate(reason: str) -> None:

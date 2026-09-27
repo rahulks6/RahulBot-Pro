@@ -34,6 +34,7 @@ export const NAV: Array<[string, string]> = [
   ['/cloud', 'Cloud GPU'],
   ['/models', 'Model Manager'],
   ['/benchmarks', 'Model Benchmarks'],
+  ['/real-mode-test', 'Real Mode Test'],
   ['/settings/advanced', 'Advanced Settings'],
   ['/health', 'System Health'],
   ['/logs', 'Logs'],
@@ -151,7 +152,7 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
       </head>
       <body class="${simple ? 'simple' : 'advanced'}">
         <nav class="sidebar">
-          <div class="brand">AI Story Studio<span>v1.3.0${simple ? '' : ' · Advanced Mode'}</span></div>
+          <div class="brand">AI Story Studio<span>v1.3.1${simple ? '' : ' · Advanced Mode'}</span></div>
           ${nav.map(
             ([href, label]) =>
               html`<a href="${href}" class="${active === href ? 'active' : ''}">${label}</a>`,

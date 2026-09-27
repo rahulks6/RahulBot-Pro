@@ -227,6 +227,7 @@ const ADVANCED_NAV = [
   'Cloud GPU',
   'Model Manager',
   'Model Benchmarks',
+  'Real Mode Test',
   'Advanced Settings',
   'System Health',
   'Logs',

@@ -1,3 +1,8 @@
+> **HISTORICAL DOCUMENTATION — NOT CURRENT SETUP INSTRUCTIONS.** This file records an earlier
+> release (v1.0–v1.2). Versions, test counts, the worker image on GHCR and other details in it are
+> out of date. Current setup: [README](../../README.md) → [RUNPOD_SETUP.md](../RUNPOD_SETUP.md);
+> current status: [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md).
+
 # Phase 4 report: real episode assembly, AI audio adapters, upscaling, lip sync and voice consent
 
 **Status: Phase 4 is implemented and verified. Waiting for your approval before Phase 5 (one cloud GPU provider).** Nothing was rented, called or downloaded. The cost was ₹0 and `MOCK_GENERATION=true` is still the default.

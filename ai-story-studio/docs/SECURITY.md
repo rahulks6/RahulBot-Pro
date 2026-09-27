@@ -1,4 +1,4 @@
-# Security (Phase 5 review)
+# Security (current: v1.3.1)
 
 A private, single-user desktop tool. The main risks are leaking the cloud API key, someone else using the rented GPU, and money being spent unintentionally.
 
@@ -12,7 +12,15 @@ A private, single-user desktop tool. The main risks are leaking the cloud API ke
 
 The logger redacts secret-looking keys and values (`rpa_…`, `hf_…`, `aisw_…`, `Bearer …`, `apiKey`, `token` fields) before writing. Tests assert that the key never appears in the page, the log file or the Logs page. `.env`, `data/` and `secrets.json` are git-ignored and excluded from the release zip.
 
-## Container registry (worker image)
+## Worker code on the GPU (v1.3: no registry)
+
+By default no image of ours is published anywhere. The pod starts from Docker Hub's public
+`pytorch/pytorch` image; the app uploads the worker bundle to the pod's HTTPS address with the
+per-session bearer token, and the pod accepts it only if its SHA-256 equals `AIS_CODE_SHA256`, which
+was fixed when the pod was created. The archive is extracted with path-traversal and link checks. The
+RunPod API key is never sent to the pod (RunPod injects its own pod-scoped key for self-termination).
+
+## Container registry (only with your own worker image, Advanced)
 
 - **The image is public on purpose**, so RunPod can pull it without credentials. It contains only the open-source worker code and libraries: no keys, tokens, model weights or user content. The Dockerfile test checks that no credential pattern or token variable is in it.
 - **The upload token** (GitHub classic token with `write:packages`) is only needed to push. The Windows scripts:
@@ -42,7 +50,7 @@ Prompts never reach a shell. FFmpeg and ffprobe run as argument arrays via `exec
 
 ## Money-related safety
 
-See [CLOUD_GPU_SETUP.md](CLOUD_GPU_SETUP.md#cost-protection). In brief:
+See [RUNPOD_SETUP.md](RUNPOD_SETUP.md) (step 8, safety controls). In brief:
 
 - six gates before real generation;
 - `.env` hard caps;

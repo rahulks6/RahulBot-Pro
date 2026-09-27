@@ -308,6 +308,14 @@ def test_kokoro_adapter(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     _, job2 = post(api, "/generate/audio", {"kind": "tts", "text": "Hi", "voice_identity": "kokoro:af_bella"})
     wait(api, job2["id"])
     assert seen["voice"] == "af_bella", "a locked voice can pin an explicit Kokoro voice"
+    # The app sends its own profile id when no Kokoro voice is pinned: never a Kokoro voice name.
+    app_profile = {"kind": "tts", "text": "Hi", "presentation": "male", "voice_identity": "mock-tts:vox_k3j2abcd9x0q"}
+    _, job3 = post(api, "/generate/audio", app_profile)
+    wait(api, job3["id"])
+    assert seen["voice"] == "bm_george", "an app profile id falls back to the presentation's voice"
+    _, job4 = post(api, "/generate/audio", {"kind": "tts", "text": "Hi", "voice_identity": "kokoro:hm_omega"})
+    wait(api, job4["id"])
+    assert seen["voice"] == "hm_omega", "Hindi voice names are Kokoro voices too"
     api.close()
 
 

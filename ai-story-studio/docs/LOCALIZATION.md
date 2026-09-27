@@ -84,5 +84,6 @@ master).
 - The placeholder Hinglish in developer test mode is word substitution, clearly labelled — it says
   nothing about the quality of real Hinglish.
 - BLOCKED here: real Hinglish from the story model and real Hindi/Hinglish voices from Kokoro
-  (they need the RunPod worker). The Real Mode Test on your PC now includes a real Hinglish
-  narration and a Hinglish MP4 made from the same animated clip.
+  (they need the RunPod worker). The Real Mode Test on your PC includes a real Hinglish line
+  (`test_hinglish.mp4` from the same clip) with a listening review, and the 20–30 s bilingual scene test
+  makes a multi-shot scene in both languages from one visual production.

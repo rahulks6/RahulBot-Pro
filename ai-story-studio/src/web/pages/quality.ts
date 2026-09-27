@@ -174,7 +174,8 @@ export function registerQualityPages(web: Web): void {
             <p class="muted">
               Validates approved shots, generates missing narration/dialogue/music/ambience/SFX, applies lip
               sync where a speaking mouth is visible, arranges the timeline, mixes (ducking, normalisation,
-              peak protection), encodes and validates. Phase 1 writes a mock master (manifest + real WAV mix).
+              peak protection), encodes a 1920×1080 30 fps H.264/AAC MP4 with FFmpeg and validates it. Without
+              FFmpeg it stops with the reason (no placeholder file).
             </p>
             <button class="primary">BUILD FINAL</button>`,
         ),

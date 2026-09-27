@@ -48,19 +48,19 @@ When importing into an **existing project**, an entity whose **name** matches an
 
 ## Voice (narrator or character voice)
 
-| Field            | Notes                                                    |
-| ---------------- | -------------------------------------------------------- |
-| `name`           |                                                          |
-| `voiceModel`     | Defaults to `mock-tts` in Phase 1.                       |
-| `voiceIdentity`  | Model-specific speaker id or reference id.               |
-| `language`       | BCP-47-like code, e.g. `en`, `hi-IN`.                    |
-| `presentation`   | `male` / `female` / `neutral`                            |
-| `pitch`          | Semitones, from -12 to 12.                               |
-| `speed`          | From 0.5 to 2.                                           |
-| `speakingStyle`  |                                                          |
-| `narrationStyle` | e.g. `warm storyteller`, `calm bedtime narrator`         |
-| `defaultEmotion` | One of the emotions listed below.                        |
-| `settings`       | Free-form object for model-specific settings, max 16 KB. |
+| Field            | Notes                                                                           |
+| ---------------- | ------------------------------------------------------------------------------- |
+| `name`           |                                                                                 |
+| `voiceModel`     | Stored with the voice; real voices use the cloud TTS model (Kokoro by default). |
+| `voiceIdentity`  | Model-specific speaker id or reference id.                                      |
+| `language`       | BCP-47-like code, e.g. `en`, `hi-IN`.                                           |
+| `presentation`   | `male` / `female` / `neutral`                                                   |
+| `pitch`          | Semitones, from -12 to 12.                                                      |
+| `speed`          | From 0.5 to 2.                                                                  |
+| `speakingStyle`  |                                                                                 |
+| `narrationStyle` | e.g. `warm storyteller`, `calm bedtime narrator`                                |
+| `defaultEmotion` | One of the emotions listed below.                                               |
+| `settings`       | Free-form object for model-specific settings, max 16 KB.                        |
 
 Emotions: `neutral, happy, sad, excited, afraid, angry, whispering, tired, surprised, nervous, calm`.
 
