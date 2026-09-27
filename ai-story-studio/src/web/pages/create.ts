@@ -451,7 +451,7 @@ export function registerCreatePages(web: Web): void {
   });
 }
 
-function startInBackground(web: Web, videoId: string): void {
+export function startInBackground(web: Web, videoId: string): void {
   web.studio.orchestrator.start(videoId).catch((err: unknown) =>
     web.studio.logger.error('video production failed to start', {
       video: videoId,

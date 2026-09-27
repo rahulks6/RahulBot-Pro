@@ -4,9 +4,10 @@ import { html, join, raw, type SafeHtml } from './html.ts';
 /** Per-process CSRF token, set by the server at start-up. */
 export const csrf = { token: '' };
 
-/** Simple Mode: the whole product in six places. */
+/** Simple Mode: the whole product in seven places. */
 export const SIMPLE_NAV: Array<[string, string]> = [
   ['/', 'Home'],
+  ['/series', 'Series'],
   ['/create', 'Create'],
   ['/videos', 'My Videos'],
   ['/library/characters', 'Characters'],
@@ -150,7 +151,7 @@ export function page(title: string, active: string, body: SafeHtml, opts: PageOp
       </head>
       <body class="${simple ? 'simple' : 'advanced'}">
         <nav class="sidebar">
-          <div class="brand">AI Story Studio<span>v1.2.0${simple ? '' : ' · Advanced Mode'}</span></div>
+          <div class="brand">AI Story Studio<span>v1.3.0${simple ? '' : ' · Advanced Mode'}</span></div>
           ${nav.map(
             ([href, label]) =>
               html`<a href="${href}" class="${active === href ? 'active' : ''}">${label}</a>`,

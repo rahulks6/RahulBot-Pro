@@ -46,6 +46,12 @@ export class AudioPipeline {
     this.voiceRefs = core.voiceRefs;
   }
 
+  /** A language version's own voice for a character (or "narrator"), if it has one. */
+  private voiceOverride(storyId: string, key: string): string | undefined {
+    const story = this.s.stories.get(storyId);
+    return parseJson<Record<string, string>>(story.voice_overrides_json, {})[key] || undefined;
+  }
+
   /** Voice settings from the profile; a locked voice always uses its frozen identity. */
   voiceSettings(v: VoiceProfile): VoiceSettings & { language: string; lockKey: Record<string, unknown> } {
     const snap = v.locked
@@ -138,16 +144,18 @@ export class AudioPipeline {
     if (!line.character_id)
       throw new AppError('PRECONDITION_FAILED', 'Dialogue line has no speaking character');
     const character = this.s.characters.get(line.character_id);
-    if (!character.voice_profile_id) {
+    const override = this.voiceOverride(this.s.stories.storyIdForShot(line.shot_id), character.id);
+    if (!override && !character.voice_profile_id) {
       throw new AppError('PRECONDITION_FAILED', `Character "${character.name}" has no voice profile`);
     }
-    const voice = this.s.characters.getVoice(character.voice_profile_id);
+    const voice = this.s.characters.getVoice(override ?? character.voice_profile_id!);
     const projectId = character.project_id;
     const vs = await this.resolveVoice(voice);
     const provider = this.s.providers.tts;
+    const spoken = line.speech_text || line.text;
     const request = {
       layer: 'dialogue',
-      text: line.text,
+      text: spoken,
       language: line.language,
       emotion: line.emotion,
       speed: line.speed,
@@ -165,13 +173,13 @@ export class AudioPipeline {
     }
     const result = await provider.synthesize(
       {
-        text: line.text,
+        text: spoken,
         language: line.language,
         emotion: line.emotion,
         speed: line.speed,
         voice: vs,
         // Same text + voice + delivery → the same seed (repeatable speech with sampling models).
-        seed: seedFrom(JSON.stringify([line.text, line.emotion, line.speed, vs.lockKey])) % 2 ** 31,
+        seed: seedFrom(JSON.stringify([spoken, line.emotion, line.speed, vs.lockKey])) % 2 ** 31,
       },
       ctx,
     );
@@ -205,13 +213,16 @@ export class AudioPipeline {
     const scene = this.s.stories.getScene(line.scene_id);
     const projectId = this.projectForScene(scene);
     const project = this.s.projects.get(projectId);
-    if (!project.narrator_voice_id) throw new AppError('PRECONDITION_FAILED', NARRATOR_VOICE_NEEDED);
-    const voice = this.s.characters.getVoice(project.narrator_voice_id);
+    const override = this.voiceOverride(scene.story_id, 'narrator');
+    if (!override && !project.narrator_voice_id)
+      throw new AppError('PRECONDITION_FAILED', NARRATOR_VOICE_NEEDED);
+    const voice = this.s.characters.getVoice(override ?? project.narrator_voice_id!);
     const vs = await this.resolveVoice(voice);
     const provider = this.s.providers.tts;
+    const spoken = line.speech_text || line.text;
     const request = {
       layer: 'narration',
-      text: line.text,
+      text: spoken,
       language: line.language,
       emotion: line.emotion,
       speed: line.speed,
@@ -229,13 +240,13 @@ export class AudioPipeline {
     }
     const result = await provider.synthesize(
       {
-        text: line.text,
+        text: spoken,
         language: line.language,
         emotion: line.emotion,
         speed: line.speed,
         voice: vs,
         // Same text + voice + delivery → the same seed (repeatable speech with sampling models).
-        seed: seedFrom(JSON.stringify([line.text, line.emotion, line.speed, vs.lockKey])) % 2 ** 31,
+        seed: seedFrom(JSON.stringify([spoken, line.emotion, line.speed, vs.lockKey])) % 2 ** 31,
       },
       ctx,
     );

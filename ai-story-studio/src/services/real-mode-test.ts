@@ -14,14 +14,16 @@ import type { GpuRepository } from '../repositories/gpu.ts';
 import type { StorageProvider } from '../storage/storage.ts';
 import type { CloudService } from './cloud.ts';
 import type { GpuPlan, GpuSupervisor } from './gpu-supervisor.ts';
+import { speechText } from './hinglish.ts';
+import { HINGLISH } from './localization.ts';
 import type { ModelManager } from './model-manager.ts';
 
 /**
  * MILESTONE 1 — the Real Mode Test (Settings → AI Engine → RUN REAL MODE TEST).
  *
  *   RUNPOD CONNECTED → REAL GPU PROVISIONED → REAL WORKER HEALTHY → CUDA → REAL IMAGE →
- *   REAL IMAGE ANIMATED → REAL NARRATION → GPU TERMINATED → AUDIO+VIDEO COMBINED →
- *   SHORT MP4 VALIDATED → PLAYS
+ *   REAL IMAGE ANIMATED → REAL NARRATION → REAL HINGLISH NARRATION → GPU TERMINATED →
+ *   AUDIO+VIDEO COMBINED → SHORT MP4 VALIDATED → PLAYS → HINGLISH MP4 FROM THE SAME CLIP
  *
  * Every step is executed for real and reported as PASS / FAIL / BLOCKED / NOT TESTED. Nothing is
  * rented until the user confirms the GPU and price. The GPU is terminated as soon as the GPU work
@@ -63,10 +65,12 @@ export const MILESTONE_STEPS = [
   'Real image generated',
   'Real image animated (AI image-to-video)',
   'Real narration generated',
+  'Real Hinglish narration generated (Hindi voice, same clip)',
   'GPU terminated (billing stopped)',
   'Audio + video combined',
   'Short MP4 validated (H.264/AAC, 1920×1080, 30 fps)',
   'MP4 plays (full decode, moving picture, not black)',
+  'Hinglish MP4 from the same clip (validated, plays)',
 ] as const;
 
 const S = Object.fromEntries(MILESTONE_STEPS.map((name, i) => [name, i + 1])) as Record<
@@ -78,6 +82,9 @@ const PROMPT =
   'a friendly fox cub with orange fur and a green scarf waving hello in a sunny forest clearing, 3D animated children’s film style, soft light, vibrant colours';
 const NARRATION =
   'Hello! My name is Milo. Today I am going on a big adventure in the forest. Will you come with me?';
+/** The same line in Roman-script Hinglish (captions); the voice gets it in mixed script. */
+const HINGLISH_NARRATION =
+  'Hello! Mera naam Milo hai. Aaj main forest mein ek badi adventure pe ja raha hoon. Kya tum mere saath chaloge?';
 
 type TestRow = Omit<MilestoneRecord, 'steps'> & { steps_json: string; test_kind: string };
 
@@ -262,7 +269,7 @@ export class RealModeTest {
     let current = S['Real GPU provisioned'];
     mkdirSync(this.d.tempDir, { recursive: true });
     const work = mkdtempSync(join(this.d.tempDir, 'real-test-'));
-    const files: { image?: Buffer; clip?: Buffer; audio?: Buffer } = {};
+    const files: { image?: Buffer; clip?: Buffer; audio?: Buffer; audioHi?: Buffer } = {};
     try {
       // --- GPU part ------------------------------------------------------------------------
       this.set(id, current, 'RUNNING', `renting ${p.plan.offer.gpuModel}`);
@@ -404,6 +411,43 @@ export class RealModeTest {
         'PASS',
         `${voice.model} · ${voice.file.durationSec?.toFixed(1) ?? '?'} s of speech`,
       );
+
+      // The Hinglish version of the same clip: a Hindi voice reading Roman Hinglish (sent to the
+      // voice in mixed script so Hindi words use the Hindi phonemizer). Its failure does not stop
+      // the English result.
+      const hiStep = S['Real Hinglish narration generated (Hindi voice, same clip)'];
+      this.set(id, hiStep, 'RUNNING', `speaking Hinglish with ${p.models.tts}`);
+      try {
+        const hi = await providers.tts.synthesize(
+          {
+            text: speechText(HINGLISH_NARRATION, { Milo: 'माइलो' }),
+            language: HINGLISH,
+            emotion: 'happy',
+            speed: 1,
+            voice: {
+              voiceModel: p.models.tts,
+              voiceIdentity: 'kokoro:hm_omega',
+              presentation: 'male',
+              pitch: 0,
+              speed: 1,
+              speakingStyle: 'warm storyteller',
+            },
+            seed: 7,
+          },
+          ctx(hiStep),
+        );
+        files.audioHi = Buffer.from(hi.file.data);
+        this.set(
+          id,
+          hiStep,
+          'PASS',
+          `${hi.model} · ${hi.file.durationSec?.toFixed(1) ?? '?'} s · "${HINGLISH_NARRATION.slice(0, 40)}…"`,
+        );
+      } catch (err) {
+        const e = toAppError(err);
+        if (e.code === 'CANCELLED') throw e;
+        this.set(id, hiStep, 'FAIL', e.message);
+      }
     } catch (err) {
       const e = toAppError(err);
       error = e.message;
@@ -435,6 +479,17 @@ export class RealModeTest {
         } catch (err) {
           error = toAppError(err).message;
         }
+        if (outputKey && files.audioHi)
+          await this.combineAndCheck(id, ff, work, files.clip, files.audioHi, 'hinglish').catch(
+            () => undefined, // recorded as FAIL on its step
+          );
+        else if (!files.audioHi)
+          this.set(
+            id,
+            S['Hinglish MP4 from the same clip (validated, plays)'],
+            'NOT TESTED',
+            'no Hinglish narration',
+          );
       }
     }
     rmSync(work, { recursive: true, force: true });
@@ -464,13 +519,18 @@ export class RealModeTest {
     work: string,
     clip: Buffer,
     audio: Buffer,
+    version: 'english' | 'hinglish' = 'english',
   ): Promise<string> {
+    const hinglish = version === 'hinglish';
+    // The Hinglish MP4 is the same clip with the other voice; its three checks share one step.
+    const hiStep = S['Hinglish MP4 from the same clip (validated, plays)'];
     const clipPath = join(work, 'clip.mp4');
-    const audioPath = join(work, 'narration.wav');
-    const out = join(work, 'milestone-short.mp4');
+    const audioPath = join(work, hinglish ? 'narration-hinglish.wav' : 'narration.wav');
+    const name = hinglish ? 'milestone-short-hinglish.mp4' : 'milestone-short.mp4';
+    const out = join(work, name);
     writeFileSync(clipPath, clip);
     writeFileSync(audioPath, audio);
-    let step = S['Audio + video combined'];
+    let step = hinglish ? hiStep : S['Audio + video combined'];
     const duration = async (file: string): Promise<number> =>
       Number(
         (
@@ -536,7 +596,7 @@ export class RealModeTest {
         `${total.toFixed(1)} s (clip ${clipSec.toFixed(1)} s looped under ${voiceSec.toFixed(1)} s of narration)`,
       );
 
-      step = S['Short MP4 validated (H.264/AAC, 1920×1080, 30 fps)'];
+      step = hinglish ? hiStep : S['Short MP4 validated (H.264/AAC, 1920×1080, 30 fps)'];
       const probe = JSON.parse(
         (await runTool(ff.ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', out]))
           .stdout,
@@ -560,7 +620,7 @@ export class RealModeTest {
         `h264 1920×1080 30 fps + aac · ${Number(probe.format.duration).toFixed(1)} s`,
       );
 
-      step = S['MP4 plays (full decode, moving picture, not black)'];
+      step = hinglish ? hiStep : S['MP4 plays (full decode, moving picture, not black)'];
       const decode = await runTool(ff.ffmpeg, ['-v', 'error', '-i', out, '-f', 'null', '-']);
       if (decode.stderr.trim())
         throw new AppError(
@@ -601,13 +661,13 @@ export class RealModeTest {
       );
       if (blackSec > total * 0.5)
         throw new AppError('VALIDATION_FAILED', `The video is mostly black (${blackSec.toFixed(1)} s).`);
-      const key = `real-tests/${id}/milestone-short.mp4`;
+      const key = `real-tests/${id}/${name}`;
       await this.d.storage.put(key, readFileSync(out));
       this.set(
         id,
         step,
         'PASS',
-        `decoded without errors; the picture moves; ${blackSec.toFixed(1)} s black · saved to ${this.d.storage.localPath(key)}`,
+        `${hinglish ? 'h264 1920×1080 30 fps + aac, same clip as the English MP4; ' : ''}decoded without errors; the picture moves; ${blackSec.toFixed(1)} s black · saved to ${this.d.storage.localPath(key)}`,
       );
       return key;
     } catch (err) {

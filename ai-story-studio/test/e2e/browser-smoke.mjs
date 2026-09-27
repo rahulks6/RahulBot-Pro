@@ -232,7 +232,7 @@ const ADVANCED_NAV = [
   'Logs',
 ];
 // Simple Mode (the default): only the product pages.
-const SIMPLE_NAV = ['Home', 'Create', 'My Videos', 'Characters', 'Publish', 'Settings'];
+const SIMPLE_NAV = ['Home', 'Series', 'Create', 'My Videos', 'Characters', 'Publish', 'Settings'];
 // Real AI is the default; with no RunPod key the engine must say so (never pretend to be ready).
 const ENGINE_BANNER =
   /AI ENGINE NOT READY|DEVELOPER TEST MODE|MODE: LOCAL GPU|MODE: REAL CLOUD|Needs attention|READY ✓/;

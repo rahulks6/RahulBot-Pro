@@ -42,9 +42,12 @@ describe(
         JSON.stringify({ stages, attention: done.attention_json, err: done.error_message }, null, 1),
       );
       assert.ok(
-        stages.every((x) => ['done', 'warn'].includes(x.status)),
+        stages.every(
+          (x) => ['done', 'warn'].includes(x.status) || (x.stage === 'localize' && x.status === 'skipped'),
+        ),
         JSON.stringify(stages),
       );
+      assert.match(stages.find((x) => x.stage === 'localize')!.detail, /no other language version/);
       assert.match(stages[0]!.detail, /placeholder script: developer test mode/, 'mock writing is labelled');
       const exp = s.reports.getExport(done.episode_export_id!);
       assert.equal(exp.status, 'complete');

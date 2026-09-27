@@ -341,3 +341,42 @@ image is still code only; weights download on the GPU.
 **Honesty rules in code.** A placeholder output is always labelled (`is_mock`), a video made from
 placeholders says so on its page, a clip whose picture does not move fails the technical check,
 and a YouTube upload that YouTube keeps private is reported as BLOCKED, not as success.
+
+## 21. Version 1.3: zero-manual-infra worker, series, English + Hinglish, two channels
+
+```
+RunPod pod (Docker Hub pytorch/pytorch, public)          the app (Windows)
+  entrypoint: python -c exec(AIS_BOOTSTRAP)   ◄──────── POST /bootstrap/code (tar.gz of worker/ais_worker,
+  worker/bootstrap/ais_bootstrap.py                      models.cloud.json, requirements; bearer token +
+    apt ffmpeg/espeak-ng, pip --target a pyenv           AIS_CODE_SHA256) — services/cloud + worker-bundle.ts
+    exec python -m ais_worker
+```
+
+```
+SERIES pages (src/web/pages/series.ts)          PUBLISH pages (src/web/pages/publish.ts)
+   │                                                │
+   ├─ SeriesService (services/series.ts)            ├─ Publisher: one YoutubeClient per channel
+   │    create (project + bible + season 1 +        │    profile (token "youtubeToken" for English,
+   │    channel profiles), brief (compact           │    "youtubeToken:<id>" for others), a review row
+   │    memory), startEpisode, planSeason,          │    per language version, APPROVE BOTH (all or
+   │    approve / reject (canon), pipeline          │    nothing), channel defaults + audience time
+   │                                                │    zone (nextSlotIn), calendar, buffer
+   ├─ Orchestrator (services/orchestrator.ts)       │
+   │    story (series brief → writer → duplicate check → continuity validator → proposed facts)
+   │    ─ plan ─ characters ─ images ─ animation ─ final ─ captions ─ shorts ─ thumbnail ─ metadata
+   │    ─ localize (per language: LocalizationService → localized story sharing the SAME picture
+   │      and clip assets → BUILD FINAL → timing fit → captions → thumbnail → metadata)
+   │    ─ quality (incl. localization findings) ─ READY FOR REVIEW; episode status follows the video
+   │
+   ├─ continuity.ts: story-feature similarity, canon name/look/location checks
+   ├─ hinglish.ts: style guide, line checks, Roman → mixed-script speech text
+   └─ AudioPipeline: speech_text for TTS, per-language voice overrides (stories.voice_overrides_json)
+```
+
+**Database (migration 0009).** `series`, `seasons`, `episodes`, `series_characters`,
+`continuity_facts`, `localizations`, `channel_profiles`; `locations/props.canon_json`;
+`stories.source_story_id`, `stories.voice_overrides_json`; `dialogue_lines/narration_lines.speech_text`;
+`videos.episode_id`, `videos.localizations_json`; `publications.language`,
+`publications.channel_profile_id`, `publications.localization_id`. Additive only; existing videos
+and publications keep working (English, the original YouTube connection). See SERIES_SYSTEM.md,
+LOCALIZATION.md and HINGLISH_STYLE_GUIDE.md.

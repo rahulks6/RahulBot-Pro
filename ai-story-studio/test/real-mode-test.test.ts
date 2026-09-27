@@ -141,6 +141,17 @@ describe('Real Mode Test (milestone 1) harness', { skip: !ff && 'FFmpeg not inst
     );
     const i2v = worker.submitted.find((x) => x.path === '/generate/image-to-video')!;
     assert.ok(typeof i2v.body['image'] === 'string', 'the real image is what gets animated');
+    // Hinglish from the same clip: Roman captions, mixed-script speech, a Hindi voice.
+    const audio = worker.submitted.filter((x) => x.path === '/generate/audio');
+    assert.equal(audio.length, 2, 'English + Hinglish narration');
+    const hi = audio[1]!.body;
+    assert.equal(hi['language'], 'hi-Latn');
+    assert.match(String(hi['voice_identity']), /hm_omega/);
+    assert.match(String(hi['text']), /नाम माइलो है/, 'Hindi words in Devanagari for the Hindi phonemizer');
+    assert.match(String(hi['text']), /forest|adventure/, 'English words stay English');
+    const hiMp4 = done.steps.find((x) => x.name.startsWith('Hinglish MP4'))!;
+    assert.equal(hiMp4.status, 'PASS');
+    assert.match(hiMp4.detail, /milestone-short-hinglish\.mp4/);
   });
 
   it('a still-image camera move is not AI animation: FAIL, GPU still terminated, later steps NOT TESTED', async () => {

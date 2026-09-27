@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { AppError } from '../lib/errors.ts';
-import type { SecretStore } from './secrets.ts';
+import type { SecretName, SecretStore } from './secrets.ts';
 
 /**
  * YouTube Data API v3 with Google OAuth 2.0 for installed apps: the person's own Google Cloud
@@ -115,17 +115,25 @@ export class YoutubeClient {
   private readonly ep: YoutubeEndpoints;
   private readonly fetch: typeof fetch;
   private readonly now: () => number;
+  /** Where this channel's Google sign-in is kept (one per channel profile). */
+  readonly tokenName: SecretName;
   /** Pending sign-ins: state → PKCE verifier (valid 10 minutes). */
   private readonly pending = new Map<string, { verifier: string; redirectUri: string; at: number }>();
 
   constructor(
     secrets: SecretStore,
-    opts: { endpoints?: Partial<YoutubeEndpoints>; fetch?: typeof fetch; now?: () => number } = {},
+    opts: {
+      endpoints?: Partial<YoutubeEndpoints>;
+      fetch?: typeof fetch;
+      now?: () => number;
+      tokenName?: SecretName;
+    } = {},
   ) {
     this.secrets = secrets;
     this.ep = { ...GOOGLE, ...opts.endpoints };
     this.fetch = opts.fetch ?? fetch;
     this.now = opts.now ?? Date.now;
+    this.tokenName = opts.tokenName ?? 'youtubeToken';
   }
 
   // --- client credentials -----------------------------------------------------------------------
@@ -148,7 +156,7 @@ export class YoutubeClient {
   }
 
   connected(): boolean {
-    return this.secrets.source('youtubeToken') !== 'none';
+    return this.secrets.source(this.tokenName) !== 'none';
   }
 
   private client(): ClientCreds {
@@ -183,6 +191,11 @@ export class YoutubeClient {
   }
 
   /** The browser came back to the app: exchange the code for tokens. */
+  /** Whether this client started the sign-in that Google is returning to. */
+  startedSignIn(state: string): boolean {
+    return this.pending.has(state);
+  }
+
   async finishSignIn(state: string, code: string): Promise<void> {
     const p = this.pending.get(state);
     this.pending.delete(state);
@@ -223,7 +236,7 @@ export class YoutubeClient {
         'YOUTUBE_AUTH_FAILED',
         'Some YouTube permissions were not granted (upload and captions are both needed). Connect again and allow them.',
       );
-    this.secrets.setJson('youtubeToken', {
+    this.secrets.setJson(this.tokenName, {
       access_token: t.access_token,
       refresh_token: t.refresh_token,
       expires_at: this.now() + t.expires_in * 1000,
@@ -232,7 +245,7 @@ export class YoutubeClient {
   }
 
   private async accessToken(): Promise<string> {
-    const t = this.secrets.getJson<Tokens>('youtubeToken');
+    const t = this.secrets.getJson<Tokens>(this.tokenName);
     if (!t) throw new AppError('YOUTUBE_NOT_CONNECTED', 'YouTube is not connected (Publish → YouTube).');
     if (t.expires_at - this.now() > 60_000) return t.access_token;
     const c = this.client();
@@ -249,7 +262,7 @@ export class YoutubeClient {
     const text = await res.text();
     if (!res.ok) throw youtubeError(res.status, text);
     const n = JSON.parse(text) as { access_token: string; expires_in: number; scope?: string };
-    this.secrets.setJson('youtubeToken', {
+    this.secrets.setJson(this.tokenName, {
       ...t,
       access_token: n.access_token,
       expires_at: this.now() + n.expires_in * 1000,
@@ -259,12 +272,12 @@ export class YoutubeClient {
 
   /** Disconnect: revoke at Google, then forget the tokens here (the client ID/secret stay). */
   async disconnect(): Promise<void> {
-    const t = this.secrets.getJson<Tokens>('youtubeToken');
+    const t = this.secrets.getJson<Tokens>(this.tokenName);
     if (t)
       await this.fetch(`${this.ep.revoke}?${new URLSearchParams({ token: t.refresh_token })}`, {
         method: 'POST',
       }).catch(() => undefined);
-    this.secrets.delete('youtubeToken');
+    this.secrets.delete(this.tokenName);
   }
 
   forgetClient(): void {

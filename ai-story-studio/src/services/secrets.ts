@@ -17,7 +17,13 @@ import { AppError } from '../lib/errors.ts';
  * - An environment variable (e.g. RUNPOD_API_KEY in .env) takes precedence and
  *   is reported as coming from the environment.
  */
-export type SecretName = 'runpodApiKey' | 'hfToken' | 'youtubeClient' | 'youtubeToken';
+export type SecretName =
+  | 'runpodApiKey'
+  | 'hfToken'
+  | 'youtubeClient'
+  | 'youtubeToken'
+  // One Google sign-in per YouTube channel profile (the English channel keeps 'youtubeToken').
+  | `youtubeToken:${string}`;
 
 interface SecretFile {
   version: 2;

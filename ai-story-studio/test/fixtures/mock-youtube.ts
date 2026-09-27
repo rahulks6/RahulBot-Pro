@@ -22,15 +22,23 @@ export interface MockUpload {
   size: number;
   data: Buffer;
   videoId: string | null;
+  channel: string;
 }
 
 export interface MockVideo {
   id: string;
   meta: MockUpload['meta'];
+  /** The channel whose sign-in uploaded it. */
+  channel: string;
   bytes: number;
   status: { uploadStatus: string; privacyStatus: string; publishAt?: string };
   captions: Array<{ language: string; text: string }>;
   thumbnail: { mime: string; bytes: number } | null;
+}
+
+export interface MockChannel {
+  id: string;
+  title: string;
 }
 
 export class MockYoutube {
@@ -46,10 +54,10 @@ export class MockYoutube {
   readonly requests: Array<{ method: string; path: string }> = [];
   private readonly codes = new Map<
     string,
-    { challenge: string; redirectUri: string; clientId: string; scope: string }
+    { challenge: string; redirectUri: string; clientId: string; scope: string; channel: MockChannel }
   >();
-  private readonly access = new Map<string, number>(); // token → expiry (ms)
-  private readonly refresh = new Set<string>();
+  private readonly access = new Map<string, { exp: number; channel: MockChannel }>(); // token → expiry (ms)
+  private readonly refresh = new Map<string, MockChannel>();
 
   // --- behaviour switches for tests ---
   /** Unaudited API project: every upload is locked to private (and loses its publish time). */
@@ -62,6 +70,8 @@ export class MockYoutube {
   grantScopes: string[] | null = null;
   /** Access token lifetime in seconds. */
   tokenLifetime = 3600;
+  /** The YouTube channel of the Google account that signs in next (and stays with its tokens). */
+  signInChannel: MockChannel = { id: 'UCmockchannel', title: 'Milo Stories' };
   now: () => number = Date.now;
 
   async start(): Promise<this> {
@@ -119,20 +129,27 @@ export class MockYoutube {
     this.json(res, status, { error: { code: status, message, errors: [{ reason, message }] } });
   }
 
-  private authorized(req: IncomingMessage): boolean {
+  private caller(req: IncomingMessage): MockChannel | null {
     const m = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
-    const exp = m ? this.access.get(m[1]!) : undefined;
-    return exp !== undefined && exp > this.now();
+    const a = m ? this.access.get(m[1]!) : undefined;
+    return a && a.exp > this.now() ? a.channel : null;
   }
 
-  private issue(scope: string): {
+  private authorized(req: IncomingMessage): boolean {
+    return this.caller(req) !== null;
+  }
+
+  private issue(
+    scope: string,
+    channel: MockChannel,
+  ): {
     access_token: string;
     expires_in: number;
     scope: string;
     token_type: string;
   } {
     const access = `ya29.${randomBytes(24).toString('base64url')}`;
-    this.access.set(access, this.now() + this.tokenLifetime * 1000);
+    this.access.set(access, { exp: this.now() + this.tokenLifetime * 1000, channel });
     this.issued.push(access);
     return { access_token: access, expires_in: this.tokenLifetime, scope, token_type: 'Bearer' };
   }
@@ -156,6 +173,7 @@ export class MockYoutube {
         redirectUri: q.get('redirect_uri')!,
         clientId: q.get('client_id')!,
         scope: (this.grantScopes ?? q.get('scope')!.split(' ')).join(' '),
+        channel: this.signInChannel,
       });
       this.grantScopes = null;
       const back = new URL(q.get('redirect_uri')!);
@@ -182,17 +200,18 @@ export class MockYoutube {
             error_description: 'PKCE verification failed.',
           });
         const refresh = `1//${randomBytes(30).toString('base64url')}`;
-        this.refresh.add(refresh);
+        this.refresh.set(refresh, c.channel);
         this.issued.push(refresh);
-        return this.json(res, 200, { ...this.issue(c.scope), refresh_token: refresh });
+        return this.json(res, 200, { ...this.issue(c.scope, c.channel), refresh_token: refresh });
       }
       if (f.get('grant_type') === 'refresh_token') {
-        if (!this.refresh.has(f.get('refresh_token') ?? ''))
+        const channel = this.refresh.get(f.get('refresh_token') ?? '');
+        if (!channel)
           return this.json(res, 400, {
             error: 'invalid_grant',
             error_description: 'Token has been revoked.',
           });
-        return this.json(res, 200, this.issue('granted'));
+        return this.json(res, 200, this.issue('granted', channel));
       }
       return this.json(res, 400, { error: 'unsupported_grant_type' });
     }
@@ -241,6 +260,7 @@ export class MockYoutube {
       this.videos.set(id, {
         id,
         meta: up.meta,
+        channel: up.channel,
         bytes: up.data.length,
         status: {
           uploadStatus: 'uploaded',
@@ -255,8 +275,10 @@ export class MockYoutube {
 
     if (!this.authorized(req)) return this.apiError(res, 401, 'authError', 'Invalid Credentials');
 
-    if (req.method === 'GET' && path === '/youtube/v3/channels')
-      return this.json(res, 200, { items: [{ id: 'UCmockchannel', snippet: { title: 'Milo Stories' } }] });
+    if (req.method === 'GET' && path === '/youtube/v3/channels') {
+      const c = this.caller(req)!;
+      return this.json(res, 200, { items: [{ id: c.id, snippet: { title: c.title } }] });
+    }
 
     if (req.method === 'POST' && path === '/upload/youtube/v3/videos') {
       if (url.searchParams.get('uploadType') !== 'resumable') return this.json(res, 400, {});
@@ -271,6 +293,7 @@ export class MockYoutube {
         size: Number(req.headers['x-upload-content-length']),
         data: Buffer.alloc(0),
         videoId: null,
+        channel: this.caller(req)!.id,
       });
       res.writeHead(200, { location: `${this.base}/upload/session/${id}?upload_id=${id}` }).end();
       return;

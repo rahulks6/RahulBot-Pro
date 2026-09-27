@@ -5,6 +5,8 @@ import { AppError, toAppError } from '../lib/errors.ts';
 import { parseJson } from '../lib/json.ts';
 import type { AttentionItem, StageStatus, Video } from '../repositories/videos.ts';
 import { studioProject } from './simple-studio.ts';
+import { checkContinuity, DUPLICATE_THRESHOLD, proposedFacts, similarEpisodes } from './continuity.ts';
+import { SeriesService } from './series.ts';
 import { importStoryPackage } from './story-package.ts';
 import { languageCode, scriptToPackage, targetShots, writeScript } from './story-writer.ts';
 import { cuesFor, toSrt, toVtt } from './captions.ts';
@@ -40,6 +42,8 @@ export interface StageDef {
 }
 
 /** Stops the run: the listed shots need a person's decision. */
+type LineQa = { speaker: string; hinglish: string; issues: Array<{ message: string }> };
+
 export class NeedsAttention extends Error {
   readonly items: AttentionItem[];
   constructor(items: AttentionItem[]) {
@@ -63,6 +67,11 @@ export interface NewVideoInput {
   narrator: 'female' | 'male';
   musicMood: string;
   reviewPlan: boolean;
+  /** Series episodes: the series' project (its canon) and the episode row. */
+  projectId?: string;
+  episodeId?: string;
+  /** Language versions to make from the same master visuals, e.g. ["hi-Latn"]. */
+  localizations?: string[];
 }
 
 const ROUNDS = 3;
@@ -93,6 +102,7 @@ export class Orchestrator {
       { stage: 'shorts', label: 'Shorts (9:16)', run: (o, v, sig) => o.shorts(v, sig) },
       { stage: 'thumbnail', label: 'Thumbnails', run: (o, v) => o.thumbnails(v) },
       { stage: 'metadata', label: 'Titles, descriptions and tags', run: (o, v) => o.metadata(v) },
+      { stage: 'localize', label: 'Hinglish version', run: (o, v, sig) => o.languageVersions(v, sig) },
       { stage: 'quality', label: 'Quality check', run: (o, v) => o.qualityCheck(v) },
     ];
   }
@@ -112,7 +122,7 @@ export class Orchestrator {
       input.length === 'custom'
         ? Math.round(Math.min(30, Math.max(0.5, input.customMinutes ?? 2)) * 60)
         : VIDEO_LENGTHS[input.length].seconds;
-    const project = studioProject(this.s);
+    const project = input.projectId ? this.s.projects.get(input.projectId) : studioProject(this.s);
     return this.s.videos.create(
       {
         project_id: project.id,
@@ -128,6 +138,8 @@ export class Orchestrator {
         narrator: input.narrator,
         music_mood: input.musicMood,
         review_plan: input.reviewPlan ? 1 : 0,
+        episode_id: input.episodeId ?? null,
+        localizations_json: JSON.stringify(input.localizations ?? []),
       },
       this.stages.map(({ stage, label }) => ({ stage, label })),
     );
@@ -292,7 +304,26 @@ export class Orchestrator {
       }
     } finally {
       this.s.videos.update(videoId, { cost_inr: this.spent(videoId) });
+      this.syncEpisode(videoId);
     }
+  }
+
+  /** A series episode follows its video: generating → ready for review / needs attention / … */
+  private syncEpisode(videoId: string): void {
+    const v = this.s.videos.get(videoId);
+    if (!v.episode_id) return;
+    const e = this.s.series.episode(v.episode_id);
+    if (['approved', 'rejected'].includes(e.production_status)) return;
+    const map: Partial<Record<Video['status'], typeof e.production_status>> = {
+      generating: 'generating',
+      plan_review: 'generating',
+      ready: 'ready_for_review',
+      needs_attention: 'needs_attention',
+      failed: 'failed',
+      cancelled: 'cancelled',
+    };
+    const next = map[v.status];
+    if (next && next !== e.production_status) this.s.series.updateEpisode(e.id, { production_status: next });
   }
 
   /** Plain-language reason and what to do. */
@@ -338,10 +369,16 @@ export class Orchestrator {
   async writeStory(v: Video, signal: AbortSignal): Promise<{ status: 'done'; detail: string }> {
     if (v.story_id) return { status: 'done', detail: 'already written' };
     const project = this.s.projects.get(v.project_id);
-    const known = this.s.characters
-      .list(project.id)
-      .filter((c) => new RegExp(`\\b${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(v.idea))
-      .map((c) => ({ name: c.name, description: c.appearance || c.prompt }));
+    const episode = v.episode_id ? this.s.series.episode(v.episode_id) : null;
+    const brief = episode ? new SeriesService(this.s).brief(episode) : undefined;
+    const known = brief
+      ? brief.characters.map((c) => ({ name: c.name, description: c.look }))
+      : this.s.characters
+          .list(project.id)
+          .filter((c) =>
+            new RegExp(`\\b${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(v.idea),
+          )
+          .map((c) => ({ name: c.name, description: c.appearance || c.prompt }));
     const req: ScriptRequest = {
       idea: v.idea,
       targetSeconds: v.target_seconds,
@@ -349,6 +386,7 @@ export class Orchestrator {
       language: v.language as ScriptRequest['language'],
       style: videoStyle(v.style_id).label,
       knownCharacters: known,
+      ...(brief ? { series: brief } : {}),
     };
     const text = this.s.providers.text;
     const write = () =>
@@ -367,10 +405,50 @@ export class Orchestrator {
         },
         this.seedFor(v),
       );
-    const result =
+    const writeOnce = () =>
       text.info.computeLocation === 'cloud_gpu'
-        ? await this.onGpu(() => write(), ['text', 'image', 'video', 'tts'])
-        : await write();
+        ? this.onGpu(() => write(), ['text', 'image', 'video', 'tts'])
+        : write();
+    let result = await writeOnce();
+    let seriesNote = '';
+    if (episode && brief) {
+      // Duplicate detection: too close to an earlier episode → written again once with a warning.
+      const previous = new SeriesService(this.s).previousFeatures(episode);
+      let similar = similarEpisodes(result.script.episode?.features ?? {}, previous);
+      if (similar[0] && similar[0].score >= DUPLICATE_THRESHOLD) {
+        const top = similar[0];
+        this.detail(v.id, 'story', `too similar to episode ${top.number}; writing a different story`);
+        req.idea = `${req.idea}\nIMPORTANT: a first draft was too similar to episode ${top.number} (${top.fields.join(', ') || 'overall'}). Choose a clearly different problem, setting and solution.`;
+        result = await writeOnce();
+        similar = similarEpisodes(result.script.episode?.features ?? {}, previous);
+      }
+      const issues = checkContinuity(result.script, brief);
+      const notes = result.script.episode;
+      this.s.series.updateEpisode(episode.id, {
+        title_en: result.script.title,
+        premise: notes?.premise ?? '',
+        synopsis: notes?.synopsis ?? result.script.logline,
+        lesson: notes?.lesson ?? result.script.moral ?? '',
+        features_json: JSON.stringify(notes?.features ?? {}),
+        similarity_json: JSON.stringify(similar.slice(0, 3)),
+        continuity_json: JSON.stringify(issues),
+        continuity_summary: notes?.synopsis ?? '',
+        story_status: 'written',
+      });
+      for (const f of proposedFacts(notes))
+        this.s.series.addFact({
+          series_id: episode.series_id,
+          season_id: episode.season_id,
+          episode_id: episode.id,
+          kind: f.kind as never,
+          subject: f.subject,
+          fact: f.fact,
+        });
+      const dup = similar[0] && similar[0].score >= DUPLICATE_THRESHOLD ? similar[0] : null;
+      const errors = issues.filter((i) => i.severity === 'error').length;
+      const fixed = issues.filter((i) => i.severity === 'fixed').length;
+      seriesNote = ` · episode ${episode.number}${dup ? ` · still similar to episode ${dup.number} (check it)` : ''}${fixed ? ` · ${fixed} continuity fix(es)` : ''}${errors ? ` · ${errors} continuity question(s) for you` : ''}`;
+    }
     const pkg = scriptToPackage(result.script, req, {
       project,
       existingCharacters: this.s.characters.list(project.id).map((c) => c.name),
@@ -395,7 +473,7 @@ export class Orchestrator {
     });
     return {
       status: 'done',
-      detail: `"${result.script.title}" — ${result.script.scenes.length} scenes, ${shots} shots, ${result.script.characters.length} characters${result.isMock ? ' (placeholder script: developer test mode)' : ''}`,
+      detail: `"${result.script.title}" — ${result.script.scenes.length} scenes, ${shots} shots, ${result.script.characters.length} characters${result.isMock ? ' (placeholder script: developer test mode)' : ''}${seriesNote}`,
     };
   }
 
@@ -886,6 +964,294 @@ export class Orchestrator {
     };
   }
 
+  // --- stage: language versions (same master visuals) ------------------------------------------------
+
+  async languageVersions(
+    v: Video,
+    signal: AbortSignal,
+  ): Promise<{ status: 'done' | 'warn' | 'skipped'; detail: string }> {
+    const langs = parseJson<string[]>(v.localizations_json, []);
+    if (!langs.length) return { status: 'skipped', detail: 'no other language version was requested' };
+    const now = this.s.videos.get(v.id);
+    const storyId = this.storyOf(now);
+    const notes: string[] = [];
+    let warn = false;
+    for (const lang of langs) {
+      const targets: Array<{
+        shortId: string | null;
+        storyId: string;
+        vertical: boolean;
+        label: string;
+        title: string;
+      }> = [];
+      if (now.make_episode)
+        targets.push({ shortId: null, storyId, vertical: false, label: 'Episode', title: now.title });
+      for (const sh of this.s.videos.shorts(v.id).filter((x) => x.status === 'ready' && x.story_id))
+        targets.push({
+          shortId: sh.id,
+          storyId: sh.story_id!,
+          vertical: true,
+          label: `Short ${sh.idx + 1}`,
+          title: sh.hook || sh.title,
+        });
+      for (const t of targets) {
+        const loc = this.s.series.ensureLocalization(v.id, t.shortId, lang);
+        if (loc.status === 'ready') continue;
+        try {
+          const r = await this.localizeOne(now, loc.id, t, lang, signal);
+          notes.push(`${t.label}: ${r.detail}`);
+          if (r.warn) warn = true;
+        } catch (err) {
+          const e = toAppError(err);
+          if (['CANCELLED', 'SESSION_BUDGET_REACHED', 'BUDGET_EXCEEDED'].includes(e.code)) throw e;
+          this.s.series.updateLocalization(loc.id, { status: 'failed', error_message: e.message });
+          notes.push(`${t.label}: ${e.message}`);
+          warn = true;
+        }
+      }
+    }
+    const ready = this.s.series.videoLocalizations(v.id).filter((l) => l.status === 'ready').length;
+    return {
+      status: warn ? 'warn' : 'done',
+      detail: `${ready} Hinglish version(s) ready · ${notes.join(' · ')}`,
+    };
+  }
+
+  /** One language version of the episode or of a Short: words → story copy → build → fit timing → extras. */
+  private async localizeOne(
+    v: Video,
+    locId: string,
+    t: { shortId: string | null; storyId: string; vertical: boolean; label: string; title: string },
+    lang: string,
+    signal: AbortSignal,
+  ): Promise<{ detail: string; warn: boolean }> {
+    const L = this.s.localization;
+    const projectId = this.s.stories.projectIdForStory(t.storyId);
+    let loc = this.s.series.updateLocalization(locId, { status: 'localizing', error_message: null });
+    const names = L.names(projectId);
+    const pron = L.pronunciation(projectId);
+    const tree = this.s.stories.tree(t.storyId);
+    const lines = L.lines(t.storyId);
+    const input = [
+      {
+        id: '__title',
+        speaker: 'Title',
+        english: t.title,
+        maxSeconds: 30,
+        englishShare: 0.5,
+        notes: 'YouTube title',
+      },
+      ...(t.shortId
+        ? []
+        : [
+            {
+              id: '__logline',
+              speaker: 'Description',
+              english: tree.story.synopsis || v.title,
+              maxSeconds: 60,
+              englishShare: 0.45,
+              notes: 'description',
+            },
+            ...(tree.story.moral
+              ? [
+                  {
+                    id: '__moral',
+                    speaker: 'Lesson',
+                    english: tree.story.moral,
+                    maxSeconds: 30,
+                    englishShare: 0.4,
+                    notes: '',
+                  },
+                ]
+              : []),
+          ]),
+      ...lines.map((l) => ({
+        id: l.id,
+        speaker: l.speaker,
+        english: l.line.text,
+        maxSeconds: Math.round(l.seconds * 10) / 10,
+        ...L.style(l.characterId),
+      })),
+    ];
+    const ctx = { attemptKey: `video:${v.id}:loc:${locId}`, signal };
+    const text = this.s.providers.text;
+    const run = <T>(fn: () => Promise<T>): Promise<T> =>
+      text.info.computeLocation === 'cloud_gpu' ? this.onGpu(fn, ['text', 'tts']) : fn();
+    this.detail(v.id, 'localize', `${t.label}: writing the Hinglish lines`);
+    const out = await run(() => L.localize(text, input, names, pron, ctx, { seed: this.seedFor(v) }));
+    const qaIssues = out.qa.filter((q) => q.issues.length);
+    const missing = input.filter((l) => !out.texts.has(l.id));
+    this.s.series.updateLocalization(locId, { qa_json: JSON.stringify(qaIssues.slice(0, 200)) });
+    if (missing.length)
+      throw new AppError(
+        'LOCALIZATION_FAILED',
+        `${missing.length} line(s) could not be localized cleanly (e.g. "${missing[0]!.english.slice(0, 60)}": ${
+          out.qa
+            .find((q) => q.id === missing[0]!.id)
+            ?.issues.map((i) => i.message)
+            .join(' ') ?? 'no answer'
+        }). Edit them in the review, or press CONTINUE to try again.`,
+      );
+    const title = out.texts.get('__title')!.text;
+    if (!loc.story_id) {
+      const storyId = L.createLocalizedStory(t.storyId, lang, out.texts, title);
+      loc = this.s.series.updateLocalization(locId, { story_id: storyId });
+    }
+    const locStory = loc.story_id!;
+    this.s.series.updateLocalization(locId, { status: 'voicing' });
+    const build = async (): Promise<string> => {
+      this.detail(
+        v.id,
+        'localize',
+        `${t.label}: Hinglish voices and the ${t.vertical ? '9:16' : 'final'} video`,
+      );
+      const rec = await this.s.exports.buildFinal(locStory, t.vertical ? 'vertical' : 'landscape');
+      if (rec.status !== 'complete' || !rec.master_asset_id)
+        throw new AppError(
+          'FFMPEG_FAILED',
+          `The Hinglish ${t.label.toLowerCase()} could not be built: ${rec.error_message ?? ''}`,
+        );
+      return rec.id;
+    };
+    let exportId = await build();
+    // Timing: each Hinglish line must fit the time its English line had in the same shots.
+    const timing = {
+      lines: lines.length,
+      rewritten: 0,
+      paced: 0,
+      flagged: [] as Array<{ text: string; english: number; hinglish: number }>,
+    };
+    const kindOf = new Map(L.lines(locStory).map((l) => [l.id, l.kind]));
+    let over = L.overruns(t.storyId, locStory);
+    if (over.length) {
+      this.detail(v.id, 'localize', `${t.label}: ${over.length} line(s) too long, rewriting them shorter`);
+      const src = new Map(lines.map((l) => [l.id, l]));
+      const again = await run(() =>
+        L.localize(
+          text,
+          over.map((o) => ({
+            id: o.sourceId,
+            speaker: src.get(o.sourceId)!.speaker,
+            english: src.get(o.sourceId)!.line.text,
+            maxSeconds: Math.round(o.english * 10) / 10,
+            ...L.style(src.get(o.sourceId)!.characterId),
+          })),
+          names,
+          pron,
+          { ...ctx, attemptKey: `${ctx.attemptKey}:shorter` },
+          { shorter: true, seed: this.seedFor(v) + 1 },
+        ),
+      );
+      for (const o of over) {
+        const t2 = again.texts.get(o.sourceId);
+        if (t2) {
+          L.setLine(o.id, kindOf.get(o.id)!, t2);
+          timing.rewritten++;
+        }
+      }
+      exportId = await build();
+      over = L.overruns(t.storyId, locStory);
+      if (over.length) {
+        // A small, acceptable speed-up (never more than 12%).
+        for (const o of over) {
+          const line = L.lines(locStory).find((l) => l.id === o.id)!;
+          L.setLine(
+            o.id,
+            kindOf.get(o.id)!,
+            { text: line.line.text, speech: line.line.speech_text ?? line.line.text },
+            Math.min(1.12, Math.max(1.02, o.localized / o.english)),
+          );
+          timing.paced++;
+        }
+        exportId = await build();
+        over = L.overruns(t.storyId, locStory);
+        const byId = new Map(L.lines(locStory).map((l) => [l.id, l]));
+        timing.flagged = over.map((o) => ({
+          text: byId.get(o.id)?.line.text ?? '',
+          english: o.english,
+          hinglish: o.localized,
+        }));
+      }
+    }
+    const rec = this.s.reports.getExport(exportId);
+    const master = this.s.assets.get(rec.master_asset_id!);
+    const prefix = t.shortId
+      ? `videos/${v.id}/short-${this.s.videos.getShort(t.shortId).idx + 1}.${lang}`
+      : `videos/${v.id}/episode.${lang}`;
+    const caps = await this.writeCaptions(locStory, prefix);
+    let videoKey = master.storage_key;
+    if (
+      t.vertical &&
+      caps &&
+      this.s.settings.get('app').burnShortsCaptions &&
+      this.s.ffmpeg &&
+      !rec.is_mock
+    ) {
+      const burned = await burnCaptions(
+        this.s.ffmpeg,
+        this.check.tempDir,
+        await this.s.storage.get(master.storage_key),
+        toSrt(cuesFor(this.s, this.s.timeline, locStory)),
+      );
+      if (burned) {
+        videoKey = `${prefix}-captioned.mp4`;
+        await this.s.storage.put(videoKey, burned);
+      }
+    }
+    // Thumbnail: the same picture as the master's, with the Hinglish title.
+    const shots = this.s.stories.listStoryShots(locStory).filter((x) => x.approved_image_asset_id);
+    const cast = (id: string) => this.s.stories.shotCharacters(id).length;
+    const pick = t.vertical ? shots[0] : [...shots].sort((a, b) => cast(b.id) - cast(a.id))[0];
+    let thumbKey: string | null = null;
+    if (pick) {
+      const asset = this.s.assets.get(pick.approved_image_asset_id!);
+      const th = await renderThumbnail(this.s.ffmpeg, this.check.tempDir, {
+        image: await this.s.storage.get(asset.storage_key),
+        ext: asset.storage_key.split('.').pop() ?? 'png',
+        title,
+        vertical: t.vertical,
+      });
+      thumbKey = `${prefix}-thumbnail.${th.ext}`;
+      await this.s.storage.put(thumbKey, th.data);
+    }
+    const plan = parseJson<{ characters?: string[] }>(v.plan_json, {});
+    const characters = plan.characters ?? [];
+    const meta = t.shortId
+      ? shortMetadata({
+          episodeTitle: title,
+          hook: title,
+          characters,
+          language: lang,
+          index: this.s.videos.getShort(t.shortId).idx,
+          count: this.s.videos.shorts(v.id).length,
+        })
+      : episodeMetadata({
+          title,
+          logline: out.texts.get('__logline')?.text ?? title,
+          moral: out.texts.get('__moral')?.text ?? '',
+          characters,
+          style: videoStyle(v.style_id).label,
+          language: lang,
+          chapters: [],
+          totalSec: rec.duration_sec ?? 0,
+        });
+    const warn = timing.flagged.length > 0 || qaIssues.length > 0;
+    this.s.series.updateLocalization(locId, {
+      status: timing.flagged.length ? 'needs_attention' : 'ready',
+      export_id: exportId,
+      video_key: videoKey,
+      captions_srt_key: caps?.srt ?? null,
+      captions_vtt_key: caps?.vtt ?? null,
+      thumbnail_key: thumbKey,
+      metadata_json: JSON.stringify(meta),
+      timing_json: JSON.stringify(timing),
+    });
+    return {
+      warn,
+      detail: `${lines.length} line(s) localized${out.isMock ? ' (placeholder Hinglish: developer test mode)' : ''}${timing.rewritten ? `, ${timing.rewritten} shortened` : ''}${timing.paced ? `, ${timing.paced} paced slightly faster` : ''}${timing.flagged.length ? `, ${timing.flagged.length} still too long (shot needs a localized adjustment)` : ''}${qaIssues.length ? `, ${qaIssues.length} line(s) with style notes` : ''}`,
+    };
+  }
+
   // --- stage: quality check -----------------------------------------------------------------------
 
   async qualityCheck(v: Video): Promise<{ status: 'done' | 'warn'; detail: string }> {
@@ -907,6 +1273,42 @@ export class Orchestrator {
         message: x.message ?? '',
       })),
     ];
+    // Language versions: missing versions, lines that do not fit, localization notes, EN/HI mismatch.
+    for (const loc of this.s.series.videoLocalizations(v.id)) {
+      const where = loc.short_id ? `Short ${this.s.videos.getShort(loc.short_id).idx + 1}` : 'Episode';
+      if (loc.status === 'failed')
+        all.push({
+          code: 'localization',
+          severity: 'fail',
+          message: `${where} (${loc.language}): ${loc.error_message ?? 'not made'}`,
+        });
+      const timing = parseJson<{ flagged?: Array<{ text: string }> }>(loc.timing_json, {});
+      for (const f of timing.flagged ?? [])
+        all.push({
+          code: 'localization_timing',
+          severity: 'warn',
+          message: `${where} (${loc.language}): "${f.text.slice(0, 60)}" is longer than its shot allows.`,
+        });
+      const qa = parseJson<LineQa[]>(loc.qa_json, []);
+      for (const q of qa.slice(0, 20))
+        all.push({
+          code: 'localization_style',
+          severity: 'warn',
+          message: `${where} (${loc.language}) ${q.speaker}: "${q.hinglish.slice(0, 60)}" — ${q.issues.map((i) => i.message).join(' ')}`,
+        });
+      if (loc.story_id) {
+        const src = this.s.localization.lines(
+          loc.short_id ? this.s.videos.getShort(loc.short_id).story_id! : this.storyOf(v),
+        ).length;
+        const got = this.s.localization.lines(loc.story_id).length;
+        if (src !== got)
+          all.push({
+            code: 'localization_mismatch',
+            severity: 'fail',
+            message: `${where} (${loc.language}) has ${got} spoken lines; the English has ${src}.`,
+          });
+      }
+    }
     const fails = all.filter((f) => f.severity === 'fail');
     const warns = all.filter((f) => f.severity === 'warn');
     this.s.videos.update(v.id, { qc_json: JSON.stringify(all.slice(0, 200)) });
@@ -950,7 +1352,8 @@ export class Orchestrator {
   }
 
   /** Run on a cloud GPU session sized for every model this production uses. */
-  private async onGpu<T>(fn: () => Promise<T>, kinds: Array<'text' | 'image' | 'video' | 'tts'>): Promise<T> {
+  /** Run on a GPU session sized for these model kinds (cloud models only). */
+  async onGpu<T>(fn: () => Promise<T>, kinds: Array<'text' | 'image' | 'video' | 'tts'>): Promise<T> {
     const models = kinds.map((k) => this.s.models.selected(k)).filter((m) => m !== undefined);
     const plan = await this.s.gpu.plan(Math.max(0, ...models.map((m) => m.minVramGb)), 600, {
       recommendedVramGb: Math.max(0, ...models.map((m) => m.recommendedVramGb)),

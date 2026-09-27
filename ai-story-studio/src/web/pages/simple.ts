@@ -3,6 +3,7 @@ import { AppError, toAppError } from '../../lib/errors.ts';
 import type { Video } from '../../repositories/videos.ts';
 import type { EngineStatus } from '../../services/engine.ts';
 import type { Web } from '../app.ts';
+import { continueSeriesCard } from './series.ts';
 import { yes } from '../forms.ts';
 import { raw } from '../html.ts';
 import {
@@ -45,7 +46,7 @@ export function registerSimplePages(web: Web): void {
     const recent = s.videos.list({ limit: 6 });
     const body = html`<p class="subtitle">Turn your idea into a complete animated video.</p>
       <p><a class="btn primary huge" href="/create">+ CREATE NEW VIDEO</a></p>
-      ${engineCard(engine)}
+      ${engineCard(engine)} ${continueSeriesCard(web)}
       ${card(
         'Recent Videos',
         recent.length

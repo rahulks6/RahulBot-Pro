@@ -64,6 +64,11 @@ export function tagsFrom(words: string[]): string[] {
 
 const DISCLOSURE =
   'This story was made with AI Story Studio: the pictures, animation and voices are AI-generated (synthetic).';
+const DISCLOSURE_HINGLISH =
+  'Yeh kahani AI Story Studio se bani hai: pictures, animation aur voices AI-generated (synthetic) hain.';
+
+const hinglish = (language: string): boolean => /^hi-latn$|^hinglish$/i.test(language);
+const disclosure = (language: string): string => (hinglish(language) ? DISCLOSURE_HINGLISH : DISCLOSURE);
 
 export function episodeMetadata(i: {
   title: string;
@@ -78,12 +83,12 @@ export function episodeMetadata(i: {
   const chapters = validChapters(i.chapters, i.totalSec);
   const description = [
     i.logline,
-    i.moral ? `\nMoral: ${i.moral}` : '',
+    i.moral ? `\n${hinglish(i.language) ? 'Seekh' : 'Moral'}: ${i.moral}` : '',
     chapters.length
       ? `\nChapters:\n${chapters.map((c) => `${stamp(c.startSec)} ${c.title}`).join('\n')}`
       : '',
-    `\n${DISCLOSURE}`,
-    `\n#animation #story ${i.characters
+    `\n${disclosure(i.language)}`,
+    `\n${hinglish(i.language) ? '#hindicartoon #hinglish ' : ''}#animation #story ${i.characters
       .slice(0, 3)
       .map((c) => `#${c.replace(/[^\p{L}\p{N}]+/gu, '')}`)
       .join(' ')}`,
@@ -100,6 +105,7 @@ export function episodeMetadata(i: {
       'animation',
       'story time',
       'cartoon',
+      ...(hinglish(i.language) ? ['Hindi cartoon', 'Hinglish story', 'kids story Hindi'] : []),
       i.title,
     ]),
     categoryId: '1',
@@ -123,7 +129,10 @@ export function shortMetadata(i: {
       `${base}${i.count > 1 && base === i.episodeTitle ? ` (part ${i.index + 1})` : ''} #Shorts`,
       LIMIT_TITLE,
     ),
-    description: clip(`From "${i.episodeTitle}".\n\n${DISCLOSURE}\n\n#Shorts #animation`, LIMIT_DESCRIPTION),
+    description: clip(
+      `${hinglish(i.language) ? 'Episode' : 'From'} "${i.episodeTitle}".\n\n${disclosure(i.language)}\n\n#Shorts #animation${hinglish(i.language) ? ' #hinglish' : ''}`,
+      LIMIT_DESCRIPTION,
+    ),
     tags: tagsFrom(['Shorts', ...i.characters, 'animation', 'animated story', i.episodeTitle]),
     categoryId: '1',
     defaultLanguage: i.language.split('-')[0] || 'en',

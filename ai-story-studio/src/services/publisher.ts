@@ -4,8 +4,10 @@ import type { Studio } from '../app/studio.ts';
 import { AppError, toAppError } from '../lib/errors.ts';
 import { parseJson } from '../lib/json.ts';
 import { runTool } from '../media/ffmpeg.ts';
+import type { ChannelProfile } from '../repositories/series.ts';
 import type { Publication, Video } from '../repositories/videos.ts';
 import type { YoutubeMetadata } from './metadata.ts';
+import type { SecretName } from './secrets.ts';
 import type { VideoStatus, YoutubeClient } from './youtube.ts';
 
 /**
@@ -18,6 +20,11 @@ import type { VideoStatus, YoutubeClient } from './youtube.ts';
  * Nothing is uploaded straight after generation. The audience ("made for kids") must be chosen
  * for every upload; AI (synthetic) content is disclosed. Uploads run one at a time in the
  * background and resume where they stopped.
+ *
+ * Channels: each channel profile (English, Hinglish, ...) has its own Google sign-in, defaults and
+ * schedule. The English channel is the original "YouTube connection" (its token and the Publishing
+ * settings), so single-channel setups keep working unchanged. Every language version of a video gets
+ * its own review row, uploaded to its own channel with its own files.
  */
 export type PublicState =
   | 'READY FOR REVIEW'
@@ -61,46 +68,155 @@ export interface ReviewInput {
   synthetic: boolean;
 }
 
+/** One channel's publishing defaults (the English channel uses the Publishing settings). */
+export interface ChannelDefaults {
+  defaultPrivacy: 'private' | 'unlisted' | 'public';
+  schedule: 'none' | 'daily' | 'weekly';
+  time: string;
+  weekday: number;
+  audience: 'ask' | 'kids' | 'not_kids';
+  shortsGapHours: number;
+  /** The audience's time zone in minutes from UTC; null = this computer's time zone. */
+  utcOffsetMinutes: number | null;
+}
+
+export type ClientFactory = (tokenName: SecretName) => YoutubeClient;
+
 const API_AUDIT =
   'YouTube keeps videos uploaded through unverified API projects PRIVATE. Ask Google for an API audit (see YOUTUBE_SETUP.md), or change the visibility yourself in YouTube Studio.';
 
 export class Publisher {
   private readonly s: Studio;
+  /** The English channel's client (the original single YouTube connection). */
   readonly yt: YoutubeClient;
+  private readonly make: ClientFactory;
+  private readonly clients = new Map<SecretName, YoutubeClient>();
   private queue: Promise<void> = Promise.resolve();
   private readonly queued = new Set<string>();
 
-  constructor(s: Studio, yt: YoutubeClient) {
+  constructor(s: Studio, make: ClientFactory) {
     this.s = s;
-    this.yt = yt;
+    this.make = make;
+    this.yt = this.client('youtubeToken');
   }
 
-  /** Review rows for a finished video: the episode and each ready Short. */
+  private client(name: SecretName): YoutubeClient {
+    let c = this.clients.get(name);
+    if (!c) {
+      c = this.make(name);
+      this.clients.set(name, c);
+    }
+    return c;
+  }
+
+  /** Where a channel's Google sign-in is kept: the English channel keeps the original one. */
+  tokenFor(channel: ChannelProfile): SecretName {
+    return channel.language === 'en' ? 'youtubeToken' : `youtubeToken:${channel.id}`;
+  }
+
+  /** The YouTube client of a channel profile (none = the English channel). */
+  ytFor(channelId: string | null | undefined): YoutubeClient {
+    return channelId ? this.client(this.tokenFor(this.s.series.channel(channelId))) : this.yt;
+  }
+
+  /** The channel whose sign-in Google is returning to (each sign-in has its own state). */
+  channelForSignIn(state: string): { yt: YoutubeClient; channel: ChannelProfile | null } | null {
+    if (this.yt.startedSignIn(state)) return { yt: this.yt, channel: this.s.series.channelFor('en') ?? null };
+    for (const channel of this.s.series.channels()) {
+      const yt = this.ytFor(channel.id);
+      if (yt.startedSignIn(state)) return { yt, channel };
+    }
+    return null;
+  }
+
+  /** A channel's defaults: the English channel uses the Publishing settings, others their profile. */
+  defaults(channel: ChannelProfile | null | undefined): ChannelDefaults {
+    const pub = this.s.settings.get('publishing');
+    if (!channel || channel.language === 'en')
+      return {
+        defaultPrivacy: pub.defaultPrivacy,
+        schedule: pub.schedule,
+        time: pub.time,
+        weekday: pub.weekday,
+        audience: pub.audience,
+        shortsGapHours: pub.shortsGapHours,
+        utcOffsetMinutes: null,
+      };
+    return {
+      defaultPrivacy: channel.default_privacy,
+      schedule: channel.schedule,
+      time: channel.publish_time,
+      weekday: channel.weekday,
+      audience: channel.audience,
+      shortsGapHours: pub.shortsGapHours,
+      utcOffsetMinutes: channel.utc_offset_minutes,
+    };
+  }
+
+  /** The suggested publish time for a review row, from its own channel's schedule. */
+  suggestedSlot(p: Publication): Date | null {
+    const d = this.defaults(p.channel_profile_id ? this.s.series.channel(p.channel_profile_id) : null);
+    const short = p.short_id ? this.s.videos.getShort(p.short_id) : null;
+    const gap = short ? d.shortsGapHours * (short.idx + 1) : 0;
+    return nextSlotIn(d, this.s.clock.now(), gap);
+  }
+
+  channelName(p: Publication): string {
+    return p.channel_profile_id ? this.s.series.channel(p.channel_profile_id).name : 'YouTube';
+  }
+
+  /**
+   * Review rows for a finished video: the episode and each ready Short, and the same for every
+   * finished language version (each for its own channel, with that channel's defaults).
+   */
   ensurePublications(videoId: string): Publication[] {
     const v = this.s.videos.get(videoId);
     const existing = this.s.videos.publications(videoId);
-    const audience = this.s.settings.get('publishing').audience;
-    const kids = audience === 'kids' ? 1 : audience === 'not_kids' ? 0 : null;
-    const privacy = this.s.settings.get('publishing').defaultPrivacy;
-    if (v.episode_export_id && !existing.some((p) => p.kind === 'episode'))
+    const kidsOf = (a: ChannelDefaults['audience']) => (a === 'kids' ? 1 : a === 'not_kids' ? 0 : null);
+    const english = this.s.series.channelFor('en');
+    const en = this.defaults(english);
+    const master = existing.filter((p) => !p.localization_id);
+    if (v.episode_export_id && !master.some((p) => p.kind === 'episode'))
       this.s.videos.createPublication({
         video_id: v.id,
         short_id: null,
         kind: 'episode',
         metadata_json: v.metadata_json,
-        made_for_kids: kids,
-        privacy,
+        made_for_kids: kidsOf(en.audience),
+        privacy: en.defaultPrivacy,
+        channel_profile_id: english?.id ?? null,
       });
     for (const sh of this.s.videos.shorts(videoId))
-      if (sh.status === 'ready' && !existing.some((p) => p.short_id === sh.id))
+      if (sh.status === 'ready' && !master.some((p) => p.short_id === sh.id))
         this.s.videos.createPublication({
           video_id: v.id,
           short_id: sh.id,
           kind: 'short',
           metadata_json: sh.metadata_json,
-          made_for_kids: kids,
-          privacy,
+          made_for_kids: kidsOf(en.audience),
+          privacy: en.defaultPrivacy,
+          channel_profile_id: english?.id ?? null,
         });
+    const locs = this.s.series
+      .videoLocalizations(videoId)
+      .filter((l) => ['ready', 'needs_attention'].includes(l.status) && l.video_key);
+    if (locs.length) this.s.series.ensureDefaultChannels();
+    for (const loc of locs) {
+      if (existing.some((p) => p.localization_id === loc.id)) continue;
+      const channel = this.s.series.channelFor(loc.language) ?? null;
+      const d = this.defaults(channel);
+      this.s.videos.createPublication({
+        video_id: v.id,
+        short_id: loc.short_id,
+        kind: loc.short_id ? 'short' : 'episode',
+        metadata_json: loc.metadata_json,
+        made_for_kids: kidsOf(d.audience),
+        privacy: d.defaultPrivacy,
+        language: loc.language,
+        channel_profile_id: channel?.id ?? null,
+        localization_id: loc.id,
+      });
+    }
     return this.s.videos.publications(videoId);
   }
 
@@ -167,8 +283,57 @@ export class Publisher {
    */
   approve(pubId: string, mode: 'upload' | 'schedule'): Publication {
     const p = this.s.videos.getPublication(pubId);
-    if (!this.yt.connected())
-      throw new AppError('YOUTUBE_NOT_CONNECTED', 'Connect YouTube first (Publish → YouTube).');
+    this.checkApproval(p, mode);
+    const updated = this.s.videos.updatePublication(p.id, {
+      status: 'approved',
+      approved_at: this.s.clock.now().toISOString(),
+      error_message: null,
+      ...(mode === 'upload' ? { publish_at: null } : {}),
+    });
+    this.s.logger.info('publication approved', {
+      publication: p.id,
+      video: p.video_id,
+      language: p.language,
+      mode,
+      privacy: updated.privacy,
+    });
+    this.syncVideo(p.video_id);
+    this.enqueue(p.id);
+    return updated;
+  }
+
+  /**
+   * APPROVE BOTH (or all): every listed row is checked first, so either all are approved or none.
+   * For scheduling, a row without a time gets its own channel's next slot.
+   */
+  approveMany(pubIds: string[], mode: 'upload' | 'schedule'): Publication[] {
+    const pubs = pubIds.map((id) => this.s.videos.getPublication(id));
+    if (!pubs.length) throw new AppError('VALIDATION_FAILED', 'Nothing to approve.');
+    const planned = pubs.map((p) => {
+      if (mode !== 'schedule' || p.publish_at) return p;
+      const slot = this.suggestedSlot(p);
+      if (!slot)
+        throw new AppError(
+          'VALIDATION_FAILED',
+          `Choose the publish time for "${this.meta(p).title}" (${this.channelName(p)} has no schedule).`,
+        );
+      return { ...p, publish_at: slot.toISOString() };
+    });
+    for (const p of planned) this.checkApproval(p, mode);
+    for (const p of planned)
+      if (p.publish_at !== this.s.videos.getPublication(p.id).publish_at)
+        this.s.videos.updatePublication(p.id, { publish_at: p.publish_at });
+    return planned.map((p) => this.approve(p.id, mode));
+  }
+
+  private checkApproval(p: Publication, mode: 'upload' | 'schedule'): void {
+    if (!this.ytFor(p.channel_profile_id).connected())
+      throw new AppError(
+        'YOUTUBE_NOT_CONNECTED',
+        p.channel_profile_id && p.language !== 'en'
+          ? `Connect the ${this.channelName(p)} first (Publish → YouTube).`
+          : 'Connect YouTube first (Publish → YouTube).',
+      );
     if (p.made_for_kids === null)
       throw new AppError(
         'VALIDATION_FAILED',
@@ -182,21 +347,6 @@ export class Publisher {
     }
     if (!['ready_for_review', 'failed', 'blocked'].includes(p.status))
       throw new AppError('CONFLICT', 'This video was already approved.');
-    const updated = this.s.videos.updatePublication(p.id, {
-      status: 'approved',
-      approved_at: this.s.clock.now().toISOString(),
-      error_message: null,
-      ...(mode === 'upload' ? { publish_at: null } : {}),
-    });
-    this.s.logger.info('publication approved', {
-      publication: p.id,
-      video: p.video_id,
-      mode,
-      privacy: updated.privacy,
-    });
-    this.syncVideo(p.video_id);
-    this.enqueue(p.id);
-    return updated;
   }
 
   /** Try again (continues an interrupted upload). */
@@ -234,7 +384,15 @@ export class Publisher {
     let videoKey: string | null = null;
     let srtKey: string | null;
     let thumbKey: string | null;
-    if (p.kind === 'episode') {
+    let language: string | null = null;
+    if (p.localization_id) {
+      // A language version: its own video, captions and thumbnail (same pictures, other voices).
+      const loc = this.s.series.localization(p.localization_id);
+      videoKey = loc.video_key;
+      srtKey = loc.captions_srt_key;
+      thumbKey = loc.thumbnail_key;
+      language = loc.language;
+    } else if (p.kind === 'episode') {
       const exp = v.episode_export_id ? this.s.reports.getExport(v.episode_export_id) : null;
       videoKey = exp?.master_asset_id ? this.s.assets.get(exp.master_asset_id).storage_key : null;
       srtKey = v.captions_srt_key;
@@ -253,14 +411,15 @@ export class Publisher {
       data: readFileSync(this.s.storage.localPath(videoKey)),
       srt: read(srtKey),
       thumb: t ? { data: t, mime: thumbKey!.endsWith('.png') ? 'image/png' : 'image/jpeg' } : null,
-      language: (story?.language ?? 'en').split('-')[0]!,
+      language: language ?? (story?.language ?? 'en').split('-')[0]!,
     };
   }
 
   private async upload(pubId: string): Promise<void> {
     let p = this.s.videos.getPublication(pubId);
     if (p.status !== 'approved' && p.status !== 'uploading') return;
-    const log = this.s.logger.child({ publication: p.id, video: p.video_id });
+    const log = this.s.logger.child({ publication: p.id, video: p.video_id, language: p.language });
+    const yt = this.ytFor(p.channel_profile_id);
     try {
       const f = this.file(p);
       const meta = this.meta(p);
@@ -269,7 +428,7 @@ export class Publisher {
       let videoId: string | null = null;
       if (p.upload_url) {
         try {
-          const prog = await this.yt.uploadProgress(p.upload_url, f.data.length);
+          const prog = await yt.uploadProgress(p.upload_url, f.data.length);
           if ('videoId' in prog) videoId = prog.videoId;
           else from = prog.received;
         } catch {
@@ -278,13 +437,13 @@ export class Publisher {
       }
       if (!videoId) {
         if (!p.upload_url) {
-          const url = await this.yt.startUpload(
+          const url = await yt.startUpload(
             {
               title: meta.title,
               description: meta.description,
               tags: meta.tags,
               categoryId: meta.categoryId,
-              defaultLanguage: meta.defaultLanguage || f.language,
+              defaultLanguage: meta.defaultLanguage || f.language.split('-')[0]!,
               privacy: p.privacy,
               publishAt: p.publish_at,
               madeForKids: p.made_for_kids === 1,
@@ -294,7 +453,7 @@ export class Publisher {
           );
           p = this.s.videos.updatePublication(p.id, { upload_url: url });
         }
-        videoId = await this.yt.sendFile(p.upload_url!, f.data, from, (bytes) => {
+        videoId = await yt.sendFile(p.upload_url!, f.data, from, (bytes) => {
           this.s.videos.updatePublication(pubId, { uploaded_bytes: bytes });
         });
       }
@@ -308,13 +467,13 @@ export class Publisher {
       log.info('uploaded to youtube', { youtubeVideo: videoId });
       let captions = 'not included (no speech)';
       if (f.srt)
-        captions = await this.yt.uploadCaptions(videoId, f.language, f.srt).then(
+        captions = await yt.uploadCaptions(videoId, f.language, f.srt).then(
           () => 'uploaded',
           (err: unknown) => `not uploaded: ${toAppError(err).message}`,
         );
       let thumbnail = 'not included';
       if (f.thumb)
-        thumbnail = await this.yt.setThumbnail(videoId, f.thumb.data, f.thumb.mime).then(
+        thumbnail = await yt.setThumbnail(videoId, f.thumb.data, f.thumb.mime).then(
           () => 'uploaded',
           (err: unknown) => {
             const e = toAppError(err);
@@ -342,7 +501,7 @@ export class Publisher {
   async refresh(pubId: string): Promise<Publication> {
     const p = this.s.videos.getPublication(pubId);
     if (!p.youtube_video_id) return p;
-    const st = await this.yt.status(p.youtube_video_id);
+    const st = await this.ytFor(p.channel_profile_id).status(p.youtube_video_id);
     const next = mapStatus(p, st);
     const out = this.s.videos.updatePublication(p.id, next);
     this.syncVideo(p.video_id);
@@ -359,6 +518,73 @@ export class Publisher {
     else if (pubs.some((p) => p.status === 'scheduled')) status = 'scheduled';
     else if (pubs.some((p) => ['approved', 'uploading', 'uploaded'].includes(p.status))) status = 'approved';
     if (status !== v.status) this.s.videos.update(videoId, { status });
+  }
+
+  /** Production calendar: what goes out on which channel over the next days (scheduled or timed). */
+  calendar(days = 21): Array<{
+    at: string;
+    channel: string;
+    language: string;
+    kind: Publication['kind'];
+    title: string;
+    state: PublicState;
+    videoId: string;
+  }> {
+    const now = this.s.clock.now().getTime();
+    const until = now + days * 86_400_000;
+    return this.s.videos
+      .publications()
+      .filter((p) => p.publish_at && ['approved', 'uploading', 'scheduled', 'published'].includes(p.status))
+      .filter((p) => {
+        const t = Date.parse(p.publish_at!);
+        return t >= now - 86_400_000 && t <= until;
+      })
+      .map((p) => ({
+        at: p.publish_at!,
+        channel: this.channelName(p),
+        language: p.language,
+        kind: p.kind,
+        title: this.meta(p).title,
+        state: publicState(p),
+        videoId: p.video_id,
+      }))
+      .sort((a, b) => a.at.localeCompare(b.at));
+  }
+
+  /**
+   * Content buffer per channel: full episodes already scheduled for the future (and until when),
+   * and finished ones still waiting for review. A small buffer means: make the next episodes now.
+   */
+  buffer(): Array<{
+    channel: string;
+    language: string;
+    scheduled: number;
+    through: string | null;
+    ready: number;
+  }> {
+    const now = this.s.clock.now().toISOString();
+    const channels = this.s.series.channels();
+    const rows = channels.length
+      ? channels.map((c) => ({ id: c.id as string | null, name: c.name, language: c.language }))
+      : [{ id: null, name: 'YouTube', language: 'en' }];
+    const english = this.s.series.channelFor('en')?.id ?? null;
+    const pubs = this.s.videos.publications().filter((p) => p.kind === 'episode');
+    return rows.map((c) => {
+      const mine = pubs.filter(
+        (p) => (p.channel_profile_id ?? english) === c.id || (!c.id && !p.channel_profile_id),
+      );
+      const ahead = mine
+        .filter((p) => p.status === 'scheduled' && p.publish_at && p.publish_at > now)
+        .map((p) => p.publish_at!)
+        .sort();
+      return {
+        channel: c.name,
+        language: c.language,
+        scheduled: ahead.length,
+        through: ahead[ahead.length - 1] ?? null,
+        ready: mine.filter((p) => p.status === 'ready_for_review').length,
+      };
+    });
   }
 
   /** After a restart: an upload that was running is shown as failed and continues on RETRY. */
@@ -381,7 +607,13 @@ export class Publisher {
    * SAFE PRIVATE TEST UPLOAD: a 3-second test picture uploaded as PRIVATE (never public), then
    * its status read back. Proves the connection, upload, and status reading. Delete it afterwards.
    */
-  async privateTest(): Promise<{ videoId: string; state: string; privacy: string }> {
+  private testKey(channelId: string | null | undefined): string {
+    const ch = channelId ? this.s.series.channel(channelId) : null;
+    return ch && ch.language !== 'en' ? `youtube.privateTest:${ch.id}` : 'youtube.privateTest';
+  }
+
+  async privateTest(channelId?: string | null): Promise<{ videoId: string; state: string; privacy: string }> {
+    const yt = this.ytFor(channelId);
     if (!this.s.ffmpeg) throw new AppError('PRECONDITION_FAILED', 'FFmpeg is needed to make the test clip.');
     const tmp = join(this.s.env.dataDir, 'tmp');
     mkdirSync(tmp, { recursive: true });
@@ -413,7 +645,7 @@ export class Publisher {
         { cwd: dir },
       );
       const data = readFileSync(join(dir, 'test.mp4'));
-      const url = await this.yt.startUpload(
+      const url = await yt.startUpload(
         {
           title: 'AI Story Studio — private test upload (safe to delete)',
           description: 'A private test made by AI Story Studio to check the YouTube connection.',
@@ -427,8 +659,8 @@ export class Publisher {
         },
         data.length,
       );
-      const videoId = await this.yt.sendFile(url, data, 0, () => undefined);
-      const st = await this.yt.status(videoId);
+      const videoId = await yt.sendFile(url, data, 0, () => undefined);
+      const st = await yt.status(videoId);
       const result = {
         videoId,
         state: st.uploadStatus,
@@ -437,7 +669,7 @@ export class Publisher {
       };
       this.s.db.run(
         'INSERT INTO app_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-        'youtube.privateTest',
+        this.testKey(channelId),
         JSON.stringify(result),
       );
       this.s.logger.info('youtube private test uploaded', {
@@ -450,7 +682,7 @@ export class Publisher {
     }
   }
 
-  lastPrivateTest(): {
+  lastPrivateTest(channelId?: string | null): {
     videoId: string;
     state: string;
     privacy: string;
@@ -459,19 +691,19 @@ export class Publisher {
   } | null {
     const row = this.s.db.get<{ value: string }>(
       'SELECT value FROM app_meta WHERE key = ?',
-      'youtube.privateTest',
+      this.testKey(channelId),
     );
     return row ? parseJson(row.value, null) : null;
   }
 
-  async deletePrivateTest(): Promise<void> {
-    const t = this.lastPrivateTest();
+  async deletePrivateTest(channelId?: string | null): Promise<void> {
+    const t = this.lastPrivateTest(channelId);
     if (!t || t.deleted) return;
-    await this.yt.deleteVideo(t.videoId);
+    await this.ytFor(channelId).deleteVideo(t.videoId);
     this.s.db.run(
       'UPDATE app_meta SET value = ? WHERE key = ?',
       JSON.stringify({ ...t, deleted: true }),
-      'youtube.privateTest',
+      this.testKey(channelId),
     );
   }
 }
@@ -514,4 +746,26 @@ export function nextSlot(
     while (d.getDay() !== pub.weekday || d.getTime() < soon) d.setDate(d.getDate() + 1);
   }
   return new Date(d.getTime() + offsetHours * 3_600_000);
+}
+
+/**
+ * The next publishing slot for a channel. With a channel time zone (minutes from UTC) the time is
+ * the audience's wall-clock time (e.g. 18:00 in India); without one, this computer's local time.
+ */
+export function nextSlotIn(d: ChannelDefaults, now: Date, offsetHours = 0): Date | null {
+  if (d.utcOffsetMinutes === null) return nextSlot(d, now, offsetHours);
+  if (d.schedule === 'none') return null;
+  const shift = d.utcOffsetMinutes * 60_000;
+  const [h, m] = d.time.split(':').map(Number) as [number, number];
+  // Work on the audience's wall clock, held in a Date's UTC fields.
+  const wall = new Date(now.getTime() + shift);
+  const t = new Date(wall);
+  t.setUTCHours(h, m, 0, 0);
+  const soon = wall.getTime() + 20 * 60_000;
+  if (d.schedule === 'daily') {
+    while (t.getTime() < soon) t.setUTCDate(t.getUTCDate() + 1);
+  } else {
+    while (t.getUTCDay() !== d.weekday || t.getTime() < soon) t.setUTCDate(t.getUTCDate() + 1);
+  }
+  return new Date(t.getTime() - shift + offsetHours * 3_600_000);
 }

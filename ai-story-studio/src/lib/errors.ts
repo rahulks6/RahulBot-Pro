@@ -55,6 +55,8 @@ export const ERROR_CODES = [
   'YOUTUBE_QUOTA_EXCEEDED',
   'YOUTUBE_UPLOAD_FAILED',
   'YOUTUBE_BLOCKED',
+  // v1.3: series and language versions
+  'LOCALIZATION_FAILED',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

@@ -33,6 +33,46 @@ export interface ScriptScene {
   shots: ScriptShot[];
 }
 
+/** What the writer reports about a series episode (continuity memory, duplicate detection). */
+export interface EpisodeNotes {
+  premise: string;
+  synopsis: string;
+  lesson: string;
+  features: {
+    problem: string;
+    setting: string;
+    villain: string;
+    science: string;
+    resolution: string;
+    lesson: string;
+    setpiece: string;
+  };
+  /** Facts this episode adds to the series (proposed; canon only after approval). */
+  canon: Array<{ kind: string; subject?: string; fact: string }>;
+  /** Mysteries opened / resolved in this episode. */
+  opened?: string[];
+  resolved?: string[];
+}
+
+/** Compact, relevant series memory given to the writer (never the whole history). */
+export interface SeriesBrief {
+  series: string;
+  premise: string;
+  world: string;
+  rules: string;
+  tone: string;
+  targetAge: string;
+  season: { number: number; title: string; premise: string; mystery: string; arcs: string };
+  episodeNumber: number;
+  characters: Array<{ name: string; role: string; look: string; personality: string; speech: string }>;
+  locations: Array<{ name: string; description: string }>;
+  facts: Array<{ kind: string; subject: string; fact: string }>;
+  recent: Array<{ number: number; title: string; synopsis: string }>;
+  openMysteries: string[];
+  /** Recently used problems, antagonists, settings and lessons: do not repeat them. */
+  avoid: { problems: string[]; villains: string[]; settings: string[]; lessons: string[] };
+}
+
 export interface StoryScript {
   title: string;
   logline: string;
@@ -41,6 +81,8 @@ export interface StoryScript {
   characters: ScriptCharacter[];
   locations: Array<{ name: string; description: string }>;
   scenes: ScriptScene[];
+  /** Series episodes only. */
+  episode?: EpisodeNotes;
 }
 
 /** What the writer asks for; also embedded in the prompt as JSON after SCRIPT_REQUEST_MARKER. */
@@ -52,6 +94,11 @@ export interface ScriptRequest {
   style: string;
   /** Characters already in the library that the idea mentions (reused with the same look and voice). */
   knownCharacters: Array<{ name: string; description: string }>;
+  /** Series episodes: canon, season arc and recent history (the script is written in English). */
+  series?: SeriesBrief;
 }
+
+/** Marks a season-planning request (the developer-test-mode writer recognises it). */
+export const PLAN_MARKER = 'SEASON PLAN REQUEST (JSON):';
 
 export const SCRIPT_REQUEST_MARKER = 'STORY REQUEST (JSON):';

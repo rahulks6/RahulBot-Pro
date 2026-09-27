@@ -69,6 +69,10 @@ export interface Video {
   updated_at: string;
   started_at: string | null;
   finished_at: string | null;
+  /** Series episodes only. */
+  episode_id: string | null;
+  /** Language versions to make from the same master visuals, e.g. ["hi-Latn"]. */
+  localizations_json: string;
 }
 
 export interface VideoShort {
@@ -124,6 +128,10 @@ export interface Publication {
   thumbnail_status: string | null;
   remote_status: string | null;
   error_message: string | null;
+  /** 'en' for the master; a localization's language (e.g. 'hi-Latn') for a language version. */
+  language: string;
+  channel_profile_id: string | null;
+  localization_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -143,7 +151,8 @@ export type NewVideo = Pick<
   | 'narrator'
   | 'music_mood'
   | 'review_plan'
->;
+> &
+  Partial<Pick<Video, 'episode_id' | 'localizations_json'>>;
 
 export class VideoRepository {
   private readonly db: Database;
@@ -287,7 +296,9 @@ export class VideoRepository {
 
   createPublication(
     values: Pick<Publication, 'video_id' | 'short_id' | 'kind' | 'metadata_json'> &
-      Partial<Pick<Publication, 'made_for_kids' | 'privacy'>>,
+      Partial<
+        Pick<Publication, 'made_for_kids' | 'privacy' | 'language' | 'channel_profile_id' | 'localization_id'>
+      >,
   ): Publication {
     const id = newId('pub');
     const at = this.now();

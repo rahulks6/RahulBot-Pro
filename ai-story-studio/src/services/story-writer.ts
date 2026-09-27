@@ -2,6 +2,8 @@ import type { Project } from '../domain/types.ts';
 import { EMOTIONS } from '../domain/enums.ts';
 import {
   SCRIPT_REQUEST_MARKER,
+  type EpisodeNotes,
+  type SeriesBrief,
   type ScriptRequest,
   type ScriptScene,
   type ScriptShot,
@@ -45,10 +47,32 @@ function languageName(l: ScriptRequest['language']): string {
       : 'English';
 }
 
+/** Compact series memory for the writer (bible, season arc, canon, recent episodes, what to avoid). */
+export function seriesBlock(b: SeriesBrief): string {
+  const list = (xs: string[]) => xs.filter(Boolean).slice(0, 12).join('; ');
+  return `SERIES: "${b.series}" — episode ${b.episodeNumber} of season ${b.season.number}${b.season.title ? ` ("${b.season.title}")` : ''}. Audience: children ${b.targetAge}. Tone: ${b.tone}.
+Premise: ${b.premise}
+World: ${b.world}
+Rules (never break): ${b.rules}
+Season: ${b.season.premise}${b.season.mystery ? ` Main mystery: ${b.season.mystery}.` : ''}${b.season.arcs ? ` Arcs: ${b.season.arcs}.` : ''}
+Recurring characters (same names, looks and personalities): ${b.characters.map((c) => `${c.name} — ${c.role}; looks: ${c.look}; personality: ${c.personality}${c.speech ? `; speaks: ${c.speech}` : ''}`).join(' | ') || '(none yet)'}
+Known places: ${b.locations.map((l) => `${l.name} (${l.description})`).join('; ') || '(none yet)'}
+Canon so far: ${b.facts.map((f) => `${f.subject ? `${f.subject}: ` : ''}${f.fact}`).join(' | ') || '(nothing yet)'}
+Previous episodes: ${b.recent.map((e) => `Ep ${e.number} "${e.title}": ${e.synopsis}`).join(' | ') || '(this is the first)'}
+Open mysteries you may advance (not all at once): ${list(b.openMysteries) || '(none)'}
+Do NOT repeat these recent problems / antagonists / settings / lessons: ${list(b.avoid.problems)} / ${list(b.avoid.villains)} / ${list(b.avoid.settings)} / ${list(b.avoid.lessons)}
+The episode must be understandable on its own. Write it in English (it is the master script; other languages are made from it).`;
+}
+
+const EPISODE_SHAPE = `"episode": {"premise": "one sentence", "synopsis": "2-3 sentences", "lesson": "…",
+  "features": {"problem": "the central problem", "setting": "main setting", "villain": "antagonist or obstacle", "science": "science/tech idea", "resolution": "how it is solved", "lesson": "…", "setpiece": "the biggest moment"},
+  "canon": [{"kind": "event|relationship|discovery|new_character|new_location|object_state|character_state", "subject": "who/what", "fact": "what is now true"}],
+  "opened": ["new mystery"], "resolved": ["mystery that is solved"]}`;
+
 const SHOT_SHAPE = `{"visual": "…", "characters": ["Name"], "camera": "wide shot|medium shot|close-up", "movement": "slow push-in|pan left|pan right|static|tilt up|pull out", "narration": "…", "dialogue": [{"character": "Name", "line": "…", "emotion": "happy"}], "sfx": ["footsteps"]}`;
 
 export function fullPrompt(r: ScriptRequest): string {
-  return `Write the complete script for this video.
+  return `${r.series ? `${seriesBlock(r.series)}\n\n` : ''}Write the complete script for this ${r.series ? 'episode' : 'video'}.
 Idea: ${r.idea}
 Length: about ${Math.round(r.targetSeconds)} seconds, so exactly ${r.targetShots} shots in total, in ${Math.max(1, Math.round(r.targetShots / 4))} to ${Math.max(1, Math.round(r.targetShots / 2))} scenes.
 Language for narration and dialogue: ${languageName(r.language)}.
@@ -59,12 +83,12 @@ Return JSON of this shape:
  "characters": [{"name": "…", "description": "what they look like: species, colours, clothes", "personality": "…", "voice": "female|male|child"}],
  "locations": [{"name": "…", "description": "what it looks like"}],
  "scenes": [{"title": "…", "location": "a location name", "mood": "…", "ambience": "forest|city|river|ocean|rain|night|indoor|space|village",
-   "shots": [${SHOT_SHAPE}]}]}
+   "shots": [${SHOT_SHAPE}]}]${r.series ? `,\n ${EPISODE_SHAPE}` : ''}}
 ${SCRIPT_REQUEST_MARKER} ${JSON.stringify(r)}`;
 }
 
 export function outlinePrompt(r: ScriptRequest, scenes: number): string {
-  return `Plan a longer video as an outline (the shots are written later, scene by scene).
+  return `${r.series ? `${seriesBlock(r.series)}\n\n` : ''}Plan a longer video as an outline (the shots are written later, scene by scene).
 Idea: ${r.idea}
 Length: about ${Math.round(r.targetSeconds)} seconds: ${scenes} scenes, ${r.targetShots} shots in total.
 Language for narration and dialogue: ${languageName(r.language)}. Visual style: ${r.style}.
@@ -72,7 +96,7 @@ ${r.knownCharacters.length ? `Existing characters (same names and looks): ${r.kn
 Return JSON: {"title": "…", "logline": "…", "moral": "…", "mood": "…",
  "characters": [{"name": "…", "description": "…", "personality": "…", "voice": "female|male|child"}],
  "locations": [{"name": "…", "description": "…"}],
- "scenes": [{"title": "…", "location": "a location name", "mood": "…", "ambience": "…", "summary": "what happens", "shots": number}]}
+ "scenes": [{"title": "…", "location": "a location name", "mood": "…", "ambience": "…", "summary": "what happens", "shots": number}]${r.series ? `,\n ${EPISODE_SHAPE}` : ''}}
 ${SCRIPT_REQUEST_MARKER} ${JSON.stringify(r)}`;
 }
 
@@ -171,6 +195,7 @@ export function checkScript(
   const total = scenes.reduce((n, s) => n + s.shots.length, 0);
   if (total && (total < r.targetShots * 0.6 || total > r.targetShots * 1.5))
     problems.push(`There are ${total} shots in total; write about ${r.targetShots}.`);
+  const episode = r.series ? checkEpisodeNotes(o['episode'], problems) : undefined;
   if (problems.length) return { script: null, problems };
   return {
     script: {
@@ -181,9 +206,39 @@ export function checkScript(
       characters,
       locations,
       scenes,
+      ...(episode ? { episode } : {}),
     },
     problems,
   };
+}
+
+/** The writer's notes about a series episode (premise, features for duplicate detection, canon). */
+export function checkEpisodeNotes(raw: unknown, problems: string[]): EpisodeNotes | undefined {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const f = (o['features'] ?? {}) as Record<string, unknown>;
+  const notes: EpisodeNotes = {
+    premise: str(o['premise'], 400),
+    synopsis: str(o['synopsis'], 1200),
+    lesson: str(o['lesson'], 300),
+    features: {
+      problem: str(f['problem'], 300),
+      setting: str(f['setting'], 200),
+      villain: str(f['villain'], 200),
+      science: str(f['science'], 200),
+      resolution: str(f['resolution'], 300),
+      lesson: str(f['lesson'], 200),
+      setpiece: str(f['setpiece'], 300),
+    },
+    canon: (Array.isArray(o['canon']) ? o['canon'] : [])
+      .map((c) => c as Record<string, unknown>)
+      .map((c) => ({ kind: str(c['kind'], 40), subject: str(c['subject'], 80), fact: str(c['fact'], 400) }))
+      .filter((c) => c.fact),
+    opened: (Array.isArray(o['opened']) ? o['opened'] : []).map((x) => str(x, 300)).filter(Boolean),
+    resolved: (Array.isArray(o['resolved']) ? o['resolved'] : []).map((x) => str(x, 300)).filter(Boolean),
+  };
+  if (!notes.premise || !notes.synopsis || !notes.features.problem)
+    problems.push('"episode" needs "premise", "synopsis" and "features.problem".');
+  return notes;
 }
 
 export function checkShots(

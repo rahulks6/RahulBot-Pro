@@ -33,25 +33,27 @@ Cancel. Combining, checking and playing happen on your PC with FFmpeg.
 
 ## What each step proves
 
-| #   | Step                          | PASS means                                                                                                                                          |
-| --- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | RunPod API connected          | RunPod accepted the key; the RunPod API still matches what the app expects.                                                                         |
-| 2   | AI worker available to RunPod | RunPod can download the worker image without a password.                                                                                            |
-| 3   | GPU chosen and price shown    | A compatible GPU is in stock, chosen by VRAM, past success, stock and speed (price only breaks ties), within your limits.                           |
-| 4   | Your confirmation             | You pressed CONFIRM AND RUN.                                                                                                                        |
-| 5   | Real GPU provisioned          | A pod was created. If a GPU type has no capacity, the next compatible type is tried and the step says so.                                           |
-| 6   | Real worker healthy           | The AI worker on the pod answers with its secret session token.                                                                                     |
-| 7   | CUDA verified                 | The worker sees the NVIDIA GPU **and** PyTorch can use CUDA (GPU name, VRAM, CUDA and PyTorch versions are shown).                                  |
-| 8   | Real image generated          | A real image model returned a valid PNG/JPEG.                                                                                                       |
-| 9   | Real image animated           | The real image-to-video model animated **that image** into an MP4. A clip made by the worker's still-image camera move (not AI) is a **FAIL** here. |
-| 10  | Real narration generated      | A real text-to-speech model returned decodable speech.                                                                                              |
-| 11  | GPU terminated                | RunPod confirmed the pod is gone (billing stopped).                                                                                                 |
-| 12  | Audio + video combined        | FFmpeg made one MP4 from the clip (looped if needed) and the narration.                                                                             |
-| 13  | Short MP4 validated           | ffprobe: H.264 video, AAC audio, 1920×1080, 30 fps, correct length.                                                                                 |
-| 14  | MP4 plays                     | FFmpeg decodes the whole file without errors, the animated clip actually moves (not a frozen picture), and it is not mostly black.                  |
+| #   | Step                            | PASS means                                                                                                                                          |
+| --- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | RunPod API connected            | RunPod accepted the key; the RunPod API still matches what the app expects.                                                                         |
+| 2   | AI worker available to RunPod   | RunPod can download the pod's base image without a password (by default Docker Hub's public PyTorch image; the app then uploads the worker code).   |
+| 3   | GPU chosen and price shown      | A compatible GPU is in stock, chosen by VRAM, past success, stock and speed (price only breaks ties), within your limits.                           |
+| 4   | Your confirmation               | You pressed CONFIRM AND RUN.                                                                                                                        |
+| 5   | Real GPU provisioned            | A pod was created. If a GPU type has no capacity, the next compatible type is tried and the step says so.                                           |
+| 6   | Real worker healthy             | The AI worker on the pod answers with its secret session token.                                                                                     |
+| 7   | CUDA verified                   | The worker sees the NVIDIA GPU **and** PyTorch can use CUDA (GPU name, VRAM, CUDA and PyTorch versions are shown).                                  |
+| 8   | Real image generated            | A real image model returned a valid PNG/JPEG.                                                                                                       |
+| 9   | Real image animated             | The real image-to-video model animated **that image** into an MP4. A clip made by the worker's still-image camera move (not AI) is a **FAIL** here. |
+| 10  | Real narration generated        | A real text-to-speech model returned decodable speech.                                                                                              |
+| 11  | Real Hinglish narration         | The same line in Roman Hinglish, sent to the voice in mixed script (Hindi words in Devanagari), spoken by a Hindi voice (`hm_omega`). Listen to it. |
+| 12  | GPU terminated                  | RunPod confirmed the pod is gone (billing stopped).                                                                                                 |
+| 13  | Audio + video combined          | FFmpeg made one MP4 from the clip (looped if needed) and the narration.                                                                             |
+| 14  | Short MP4 validated             | ffprobe: H.264 video, AAC audio, 1920×1080, 30 fps, correct length.                                                                                 |
+| 15  | MP4 plays                       | FFmpeg decodes the whole file without errors, the animated clip actually moves (not a frozen picture), and it is not mostly black.                  |
+| 16  | Hinglish MP4 from the same clip | The same animated clip with the Hinglish narration: validated and decoded like step 15 (the shared-master idea in one clip).                        |
 
-The result words are only **PASS**, **FAIL**, **BLOCKED** (something only you can fix, e.g. no key or
-worker image not published) and **NOT TESTED** (the step was never reached). Nothing is ever shown as
+The result words are only **PASS**, **FAIL**, **BLOCKED** (something only you can fix, e.g. no RunPod
+key) and **NOT TESTED** (the step was never reached). Nothing is ever shown as
 PASS without having run.
 
 ## Where the result is kept

@@ -2,6 +2,8 @@
 
 A private, local-first studio for **original** animated story videos. You type an idea; it writes the story, designs the characters, draws and animates every shot with real open-source AI models on a rented **RunPod** GPU, records the voices, and builds a **1080p full episode** plus **9:16 Shorts**, captions, thumbnails and YouTube metadata. You review, then approve, and it uploads or schedules through the official YouTube API. Your PC needs **no NVIDIA GPU**.
 
+> **v1.3.0 — animated series in English + Hinglish, zero manual infrastructure.** SERIES in Simple Mode: a Series Bible, recurring characters with English and Hinglish voices, seasons, GENERATE NEXT EPISODE with the series memory, PLAN SEASON, duplicate detection, a continuity validator, and canon that only changes when you approve an episode. Every episode is made once in English and localized into natural Roman-script Hinglish that shares the SAME pictures and clips (EPISODE_EN.mp4 + EPISODE_HINGLISH.mp4, Shorts, captions, thumbnails and metadata per language). Two YouTube channel profiles with their own sign-in and schedule, APPROVE BOTH, a production calendar. RunPod pods now start from Docker Hub's public PyTorch image and the app uploads its own worker code: no Docker, GitHub or GHCR step for you. See [Series](docs/SERIES_SYSTEM.md) · [Localization](docs/LOCALIZATION.md) · [Hinglish style](docs/HINGLISH_STYLE_GUIDE.md) · [Test report](docs/TEST_REPORT.md).
+>
 > **v1.2.0 — idea → video → YouTube.** Simple Mode (Home, Create, My Videos, Characters, Publish, Settings), a first-run setup wizard, the AI Engine page (RunPod key stored encrypted), automatic story writing, the production orchestrator with automatic retries, Shorts drawn natively in 9:16, captions, thumbnails, YouTube publishing behind a human approval, one AI storage location, and an uninstaller. **Real AI is the default**; the mock providers remain only as the labelled developer test mode for automated tests.
 >
 > **Status (honest):** everything is implemented and tested against local stand-ins (mock RunPod, mock worker, mock Google). **No real RunPod GPU, real model or real YouTube upload has been run by the developers** (no key or GPU was available). The in-app **Real Mode Test** is the first real check. See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
@@ -26,20 +28,20 @@ MOCK_GENERATION=true npm run seed   # optional demo project with labelled placeh
 npm run dev                 # http://127.0.0.1:3000
 ```
 
-| Script                 | What it does                                                                                       |
-| ---------------------- | -------------------------------------------------------------------------------------------------- |
-| `npm run dev`          | Run from TypeScript sources with auto-restart                                                      |
-| `npm run build`        | Compile to `dist/`                                                                                 |
-| `npm start`            | Run the compiled build                                                                             |
-| `npm run migrate`      | Apply database migrations (they also run automatically on start)                                   |
-| `npm run seed`         | Create the demo project (mock mode only)                                                           |
-| `npm test`             | 335 tests (Node test runner; mock RunPod, mock Google, fake cloud worker; real worker run; FFmpeg) |
-| `npm run check:image`  | Can RunPod pull the worker image? (anonymous check; see docs/RUNPOD_SETUP.md step 3)               |
-| `npm run worker`       | Start the local Python AI worker (Phase 2) — see [worker/README.md](worker/README.md)              |
-| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (123 tests)                                                    |
-| `npm run lint`         | ESLint + Prettier check                                                                            |
-| `npm run typecheck`    | `tsc` strict type checking                                                                         |
-| `npm run check`        | lint, typecheck, test and build, in that order                                                     |
+| Script                 | What it does                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`          | Run from TypeScript sources with auto-restart                                                                         |
+| `npm run build`        | Compile to `dist/`                                                                                                    |
+| `npm start`            | Run the compiled build                                                                                                |
+| `npm run migrate`      | Apply database migrations (they also run automatically on start)                                                      |
+| `npm run seed`         | Create the demo project (mock mode only)                                                                              |
+| `npm test`             | Node test runner: mock RunPod, mock Google, fake cloud worker, real worker run, real FFmpeg (see docs/TEST_REPORT.md) |
+| `npm run check:image`  | Only for a self-built worker image: can RunPod pull it? (see docs/RUNPOD_SETUP.md)                                    |
+| `npm run worker`       | Start the local Python AI worker (Phase 2) — see [worker/README.md](worker/README.md)                                 |
+| `npm run check:worker` | Worker: ruff, mypy --strict, pytest (123 tests)                                                                       |
+| `npm run lint`         | ESLint + Prettier check                                                                                               |
+| `npm run typecheck`    | `tsc` strict type checking                                                                                            |
+| `npm run check`        | lint, typecheck, test and build, in that order                                                                        |
 
 Data (SQLite database, media, logs) goes to `DATA_DIR`, which defaults to `./data` and is git-ignored.
 

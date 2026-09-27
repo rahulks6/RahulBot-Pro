@@ -180,6 +180,10 @@ export interface Story extends Timestamps {
   production_notes: string;
   /** 'vertical' = a Short made natively in 9:16 (pictures and clips drawn vertically). */
   format: 'landscape' | 'vertical';
+  /** A language version: the story it was localized from (same pictures and clips). */
+  source_story_id: string | null;
+  /** This version's voices: {character_id | "narrator": voice_profile_id}. */
+  voice_overrides_json: string;
 }
 
 export interface Scene extends Timestamps {
@@ -260,6 +264,8 @@ export interface DialogueLine extends Timestamps {
   language: string;
   required: Flag;
   audio_asset_id: string | null;
+  /** What the voice says when it differs from the caption text (e.g. Hinglish in mixed script). */
+  speech_text: string | null;
 }
 
 export interface NarrationLine extends Timestamps {
@@ -273,6 +279,7 @@ export interface NarrationLine extends Timestamps {
   language: string;
   required: Flag;
   audio_asset_id: string | null;
+  speech_text: string | null;
 }
 
 export interface GeneratedAsset {

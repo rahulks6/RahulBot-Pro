@@ -21,6 +21,7 @@ import { registerStoryPages } from './pages/stories.ts';
 import { registerCreatePages } from './pages/create.ts';
 import { registerLibraryPages } from './pages/library.ts';
 import { registerPublishPages } from './pages/publish.ts';
+import { registerSeriesPages } from './pages/series.ts';
 import { registerSetupPages } from './pages/setup.ts';
 import { registerSimplePages } from './pages/simple.ts';
 import { registerSystemPages } from './pages/system.ts';
@@ -103,6 +104,7 @@ export function createWebApp(
   registerSystemPages(web);
   registerModelPages(web);
   registerSimplePages(web);
+  registerSeriesPages(web);
   registerLibraryPages(web);
   registerCreatePages(web);
   registerPublishPages(web);
